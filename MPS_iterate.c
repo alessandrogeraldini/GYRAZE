@@ -21,13 +21,14 @@
 
 int main() {
 clock_t begin_it = clock(); // Finds the start time of the computation
+int upgraded = 1;
 int convergence = 0, problem = 0, p_size = 1000,i,cols = 0, cut_points = 10000; 
 /* convergence = 0 tells newguess.c to set smoothing for the next iteration, convergence = 1 tells it to not smooth, and convergence = 2 means that the convergence criterion has been satisfied and the iteration is finished */
 int N_iterations = 1000, N , use_new = 0;
 /* Number of maximum iterations is set to some large number e.g. 100 but iterations should converge in about 20. If they don't, then there is a problem. */
-double tot_time, v_max, v_cut;
+double tot_time, v_max, v_cut, u_e;
 
-double* ne_grid, * phi_grid, *ne_cut_grid, *phi_cut_grid, *ne_new_grid, *phi_new_grid;
+double* ne_grid, * phi_grid, *ne_cut_grid, *phi_cut_grid, *ne_new_grid, *phi_new_grid, v_cutDS = 0.5;
 
 //struct spline spl_phitone, spl_netophi, spl_new_phitone, spl_new_netophi;
 
@@ -46,7 +47,6 @@ if (fptr1 == NULL)
 i = 0;
 while (fgets(line_pot1, 20, fptr1) != NULL)
 {
-	printf("YOLO\n");
 	string_pot1 = malloc(strlen(line_pot1) * sizeof(char));
 	string_pot1 = line_pot1;
 	storevalspot1 = linetodata(string_pot1, strlen(string_pot1), &cols);
@@ -70,7 +70,9 @@ phi_new_grid = malloc(p_size * sizeof(double));
 phi_cut_grid = malloc(cut_points * sizeof(double));
 ne_cut_grid = malloc(cut_points * sizeof(double));
 
-makelookup(phi_grid, ne_grid, p_size, v_cut);
+if (upgraded == 0) 
+	makelookup(phi_grid, ne_grid, p_size, v_cut, v_cutDS, &u_e);
+else v_cutDS = v_cut;
 //generate_cspline(&spl_netophi, ne_grid, phi_grid, p_size);
 //generate_cspline(&spl_phitone, phi_grid, ne_grid, p_size);
 
@@ -88,22 +90,33 @@ for (N=0;N<N_iterations;N++)
 	printf("Iteration number is %d\n", N);
 	if (use_new == 0)
 	{
-		problem = iondens(0, ne_grid, phi_grid, p_size); //The argument of iondens set to zero makes the module not compute the ion distribution function
+		printf("use_new = %d\n", use_new);
+		problem = iondens(0, ne_grid, phi_grid, &p_size); //The argument of iondens set to zero makes the module not compute the ion distribution function
 	}
 	else if (use_new == 1)
 	{
-		problem = iondens(0, ne_new_grid, phi_new_grid, p_size); //The argument of iondens set to zero makes the module not compute the ion distribution function
+		printf("use_new = %d\n", use_new);
+		problem = iondens(0, ne_new_grid, phi_new_grid, &p_size); //The argument of iondens set to zero makes the module not compute the ion distribution function
 	}
-	convergence = newguess(convergence, problem, ne_grid, phi_grid, p_size, ne_new_grid, phi_new_grid, ne_cut_grid, phi_cut_grid, cut_points,&use_new);
+	if (upgraded == 1) {
+		printf("vcut = %f\nphi[0] = %f\n", v_cut, phi_grid[0]);
+		if (v_cut*v_cut > - 2.0*phi_grid[0])
+			v_cutDS = sqrt(v_cut*v_cut + 2.0*phi_grid[0]);
+		else v_cutDS = 0.001;
+		makelookup(phi_grid, ne_grid, p_size, v_cut, v_cutDS, &u_e);
+	}
+	convergence = newguess(convergence, problem, ne_grid, phi_grid, p_size, ne_new_grid, phi_new_grid, ne_cut_grid, phi_cut_grid, cut_points,&use_new, u_e, &v_cut);
 	if (convergence == 2)
 	{
 		if (use_new == 0)
 		{
-			iondens(1,ne_grid,phi_grid,p_size); //The argument of iondens set to one makes the module compute the ion distribution function at x=0
+		printf("use_new = %d\n", use_new);
+			iondens(1,ne_grid,phi_grid,&p_size); //The argument of iondens set to one makes the module compute the ion distribution function at x=0
 		}
 		else if (use_new == 1)
 		{
-			iondens(1,ne_new_grid,phi_new_grid,p_size); //The argument of iondens set to one makes the module compute the ion distribution function at x=0
+		printf("use_new = %d\n", use_new);
+			iondens(1,ne_new_grid,phi_new_grid,&p_size); //The argument of iondens set to one makes the module compute the ion distribution function at x=0
 		}
 		clock_t end_it = clock(); // finds end time of last iteration
 		tot_time = (double) (end_it - begin_it) / CLOCKS_PER_SEC;
@@ -113,7 +126,7 @@ for (N=0;N<N_iterations;N++)
 }
 if (N_iterations == 0)
 {	
-	problem = iondens(1, ne_grid, phi_grid, p_size);
+	problem = iondens(1, ne_grid, phi_grid, &p_size);
 }
 printf("No convergence after %d iterations\n", N_iterations);
 exit(0);

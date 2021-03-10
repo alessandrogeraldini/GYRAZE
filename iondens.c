@@ -14,9 +14,10 @@
 #include "Headerfiles/Fgenerator.h"
 #define M_PI acos(-1)
 
-int iondens(int dodistfunc,double* ne_grid, double* phi_grid, int p_size)
+int iondens(int dodistfunc,double* ne_grid, double* phi_grid, int *p_sizepoint)
 {// DECLARATIONS
 clock_t begin = clock(); // Finds the start time of the computation
+int upgraded = 1, p_size = *p_sizepoint;
 double alpha, *gg, *xx, pos, *phi, *phip, *ne, *niclosed, *niopen, *nitotal, **chi, **chiop, Te, Telarge, Tesmall, small = 1e-6, stoplimit = 0.96;
 /* alpha is the angle the magnetic field makes with the wall, read from inputfile.txt; gg = sqrt(x). I often refer to it as g but call it gg to make searching for it easier; pos is x, the position (distance from the wall); phi contains the values of phi(x), extracted from a file. phip is phi prime, first derivative of phi. phipp is the second derivative; phipg and phippg are derivatives of phi wrt g = sqrt(x). ne is the electron density; niclosed is the closed orbit ion density, niopen is the open orbit ion density, nitotal is the sum of the two; newphi is the new electrostatic potential guess; chi is the effective potential; small is just a small number used to make some inequalities work numerically in case of exact equality. */
 int debug=0, n, stop = 0, sizexbar, icritlow = 0, icritup = 0, ilocalmax = 0, L1, problem = 0, noback = 0, maxj;
@@ -77,7 +78,6 @@ while (fgets(line_input, 20, input) != NULL)
 	//free(string_input);
 }
 fclose(input);
-Fgenerator(phi_grid[0]);
 // Introduce a number that equals Te when Te > 1 and 1 when Te<1. When Te is large, this number increases the number of grid points in tot. energy U to account for the fact that vz ~ vB > v_t,i when the electron temperature is large. Moreover, |v| ~ vB > v_t,i at the Debye sheath entrance, and so the number of grid points in xbar must also be increased.
 if (Te>1.0)
 {	Telarge = Te;
@@ -126,6 +126,11 @@ while (fgets(line_pot, 200, fp) != NULL)
 	i += 1;
 }
 fclose(fp); // Close file
+
+if (upgraded == 0) 
+	Fgenerator(phi_grid[0]);
+else 
+	Fgenerator(phi[0]);
 
 /* FORM XBAR GRIDS 
 Take derivatives of phi and use them to obtain two grids for xbar, one to be used for closed orbits and one to be used for open orbits. */
@@ -554,7 +559,8 @@ while (fgets(line_distfile, 200000, distfile) != NULL)
 	mumu = (double*)calloc(ncols_distfile,sizeof(double));
 	rows = ncols_distfile;
 	FF[nrows_distfile] = storevals;
-	nrows_distfile +=1; }
+	nrows_distfile +=1; 
+}
 fclose(distfile);
 printf("~~~~~The second element of FF is %f~~~~~\n",FF[0][1]);
 /* Now we extract the two 1D arrays representing the grid points on which FF (the distribution function array) is defined. */
@@ -885,7 +891,8 @@ while (stop == 0) // i<L1; i++)
 		} 
 	} 
 	fprintf(fout, "%f %f %f %f\n", gg[i], nitotal[i], niclosed[i], niopen[i]);
-	i += 1; } 
+	i += 1; 
+} 
 fclose(fout);
 clock_t int2 = clock(); // Finds the start time of the computation
 double inttime1  = (double)(int2 - int1) / CLOCKS_PER_SEC;
@@ -1007,31 +1014,34 @@ if (dodistfunc != 0)
 	int cont = 1;
 	int i = 0;
 	double ne_p0;
-	while (cont == 1)
-	{
-		if (i == p_size - 1)
+
+	if (upgraded == 0) {
+		while (cont == 1)
 		{
-			printf("The phi value exceeds the given phi grid\n");
-			printf("The phi value was: %.10f", phi[0]);
-			exit(EXIT_FAILURE);
-		}
-		if (phi[0]/Te >= phi_grid[i])
-		{
-			if (phi[0]/Te < phi_grid[i + 1])
+			if (i == p_size - 1)
 			{
-				if (i != 0)
-				{
-					ne_p0 = (ne_grid[i + 1] - ne_grid[i - 1]) / (phi_grid[i + 1] - phi_grid[i - 1]);//+(phi[0] - phi_grid[i])* ((ne_grid[i + 1] + ne_grid[i - 1] - (2.0 * ne_grid[i])) / (pow((phi_grid[i + 1] - phi_grid[i]), 2.0)));
-				}
-				else
-				{
-					ne_p0 = (ne_grid[i + 1] - ne_grid[i]) / (phi_grid[i + 1] - phi_grid[i]);
-				}
-				printf("the value of ne_p0 is %.8f\n", ne_p0);
-				cont = 0;
+				printf("The phi value exceeds the given phi grid\n");
+				printf("The phi value was: %.10f", phi[0]);
+				exit(EXIT_FAILURE);
 			}
+			if (phi[0]/Te >= phi_grid[i])
+			{
+				if (phi[0]/Te < phi_grid[i + 1])
+				{
+					if (i != 0)
+					{
+						ne_p0 = (ne_grid[i + 1] - ne_grid[i - 1]) / (phi_grid[i + 1] - phi_grid[i - 1]);//+(phi[0] - phi_grid[i])* ((ne_grid[i + 1] + ne_grid[i - 1] - (2.0 * ne_grid[i])) / (pow((phi_grid[i + 1] - phi_grid[i]), 2.0)));
+					}
+					else
+					{
+						ne_p0 = (ne_grid[i + 1] - ne_grid[i]) / (phi_grid[i + 1] - phi_grid[i]);
+					}
+					printf("the value of ne_p0 is %.8f\n", ne_p0);
+					cont = 0;
+				}
+			}
+			i++;
 		}
-		i++;
 	}
 
 	printf("The density at x=0 obtained from the extracted distribution function is %f\nThe density at x=0 obtained from the ion density integral (more direct) is %f\n", intdvxopen, nitotal[0]);
@@ -1045,8 +1055,8 @@ if (dodistfunc != 0)
 }
 // If you love your variables (and your memory) set them free
 free(ne);
-free(phi);
-free(phip);
+//free(phi);
+//free(phip);
 free(gg);
 free(xx);
 free(niclosed);
@@ -1095,6 +1105,15 @@ for (int w = 0; w < nrows_distfile; w++)
 }
 free(FF);
 
+if (upgraded == 1) {
+	for (i=0; i<n; i++) {
+		phi_grid[i] = phi[i];
+		//printf("iondens.c: phi = %f\n", phi[i]);
+	}
+	*p_sizepoint = n;
+}
+free(phi);
+free(phip);
 
 printf("Iondens module ran in %f seconds\n", jobtime);
 return problem;

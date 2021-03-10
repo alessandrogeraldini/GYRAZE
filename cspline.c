@@ -149,12 +149,22 @@ double lin_interp(double* x_grid, double* y_grid,double given_x ,int n, int line
 
 	while (cont == 1)
 	{
-		if (i == n - 1)
+		if (i == n)
 		{
-			printf("The x value exceeds the given x grid");
-			printf("The x value was: %.10f\n", given_x);
-			printf("Error on line %d", line);
-			exit(EXIT_FAILURE);
+			if (fabs(given_x - x_grid[0]) < 1e-10) {
+				interp_y = y_grid[0];
+				cont = 0;
+			}
+			else if (fabs(given_x - x_grid[n-1]) < 1e-10) {
+				interp_y = y_grid[n-1];
+				cont = 0;
+			}
+			else {
+				printf("The x value exceeds the given x grid");
+				printf("The x value was: %.10f\n", given_x);
+				printf("Error on line %d", line);
+				exit(EXIT_FAILURE);
+			}
 		}
 		if (given_x > x_grid[i])
 		{

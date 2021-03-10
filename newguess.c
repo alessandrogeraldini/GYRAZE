@@ -22,22 +22,23 @@
 //
 //};
 
-int newguess(int convergence, int problem, double* ne_grid, double* phi_grid,int p_size,double* ne_new_grid, double * phi_new_grid, double* ne_cut_grid, double* phi_cut_grid, int cut_points,int *use_new)
+int newguess(int convergence, int problem, double* ne_grid, double* phi_grid,int p_size,double* ne_new_grid, double * phi_new_grid, double* ne_cut_grid, double* phi_cut_grid, int cut_points,int *use_new, double u_e, double *v_cut)
 {//DECLARATIONS
 	clock_t begin = clock(); // Finds the start time of the computation
-	int debug = 0;
+	int debug = 0, lookup_inversion = 0, upgraded = 1;
 	int row, col, i, ii, sizemumu, sizeUU, j, L1=0, n, cont = 1, h;
 	char line[200000], *string;
 	double *storevals, *gg, *xx, *ni, **FF, *mumu, *UU, k32, k32denom, k32num, k1DK, *Tevect, *k1GKvect; 
 	double *phipg, *phippg, *phip, *phipp;;
 	double k1DKnum1old, densinf, fluxinf, k1GK, **FFprime, k32denom1, k1DKnum1, k1DKnum, *newphi, k32denom1old, fluxinf1old, fluxinf1;
 	double densinf1old, densinf1;
-	double CC, *flux, *ne, k1DKthres = 0.2, Fprime, Fprimeold, F, Fold, Te, Teor1, fluxinfintgrdold, fluxinfintgrd;
+	double CC, *flux, *ne, k1DKthres = 0.3, Fprime, Fprimeold, F, Fold, Te, Teor1, fluxinfintgrdold, fluxinfintgrd;
 	double phi1, alpha, weight, U, u, du, *phi;
 	double smoothweight = 2.0/3.0;
 	double sig=0.0, siglimit, siglimit1, dev, devbig;
 	double random_value;
 	double negradinf, dev_0;
+	double u_etilde, u_i, current = 0.0, mioverme = 1836.0, set_current = 1, old_v_cut;
 	*use_new = 0;
 
 
@@ -115,7 +116,7 @@ else
 	Teor1 = 1.0; 
 }
 siglimit1 = 0.03;//0.03
-siglimit = 0.007;//0.007
+siglimit = 0.009;//0.007
 if (Te>2.1)
 {
 	siglimit1 = 0.012;
@@ -343,10 +344,11 @@ for (i=0; i<sizemumu; i++)
 	densinf += 0.5*(mumu[i]-mumu[i-1])*(densinf1 + densinf1old);
 	}
 }
+if (upgraded == 0) {
 if (phi[0] / Te < phi_grid[0])
 {
 	printf("##The potential exceeds the cutoff potentia##\n");
-	makelookup(phi_new_grid, ne_new_grid, p_size, sqrt(-2 * phi[0]/Te) + pow(10.0,-10.0));
+	makelookup(phi_new_grid, ne_new_grid, p_size, sqrt(-2 * phi[0]/Te) + pow(10.0,-10.0), 0.0, &u_e);
 	//generate_cspline(spl_new_netophi, ne_new_grid, phi_new_grid, p_size);
 	//generate_cspline(spl_new_phitone, phi_new_grid, ne_new_grid, p_size);
 	printf("New phi cut off = %.5f\nNew ne cut off = %.5f\n", Te*phi_new_grid[0], ne_new_grid[0]);
@@ -367,7 +369,7 @@ if (*use_new == 1)
 			}
 			if ((ne_new_grid[0] + weight * (ni[0] - ne_new_grid[0]) <= ne_cut_grid[h]) && (ne_new_grid[0] + weight * (ni[0] - ne_new_grid[0]) > ne_cut_grid[h + 1]))
 			{
-				makelookup(phi_new_grid, ne_new_grid, p_size, sqrt(fabs(2.0*phi_cut_grid[h + 1])));
+				makelookup(phi_new_grid, ne_new_grid, p_size, sqrt(fabs(2.0*phi_cut_grid[h + 1])), sqrt(fabs(2.0*phi_cut_grid[h + 1] - 2.0*Te*phi_new_grid[0])), &u_e);
 				//generate_cspline(spl_new_netophi, ne_new_grid, phi_new_grid, p_size);
 				//generate_cspline(spl_new_phitone, phi_new_grid, ne_new_grid, p_size);
 				*use_new = 1;
@@ -378,7 +380,7 @@ if (*use_new == 1)
 		}
 	}
 }
-else if (*use_new == 0)
+else if (*use_new == 0) // I think I need to remove this now
 {
 	if (ni[0] < ne_grid[0])
 	{
@@ -395,7 +397,7 @@ else if (*use_new == 0)
 			if ((ne_grid[0] + weight * (ni[0] - ne_grid[0]) <= ne_cut_grid[h]) && (ne_grid[0] + weight * (ni[0] - ne_grid[0]) > ne_cut_grid[h + 1]))
 			{
 				//printf("The reduced weighted density is %.5f\n", ne_cut_grid[h + 1]);
-				makelookup(phi_new_grid, ne_new_grid, p_size, sqrt(fabs(2.0*phi_cut_grid[h + 1])));
+				makelookup(phi_new_grid, ne_new_grid, p_size, sqrt(fabs(2.0*phi_cut_grid[h + 1])), sqrt(fabs(2.0*phi_cut_grid[h + 1] - 2.0*Te*phi_new_grid[0])), &u_e);
 				//generate_cspline(spl_new_netophi, ne_new_grid, phi_new_grid, p_size);
 				//generate_cspline(spl_new_phitone, phi_new_grid, ne_new_grid, p_size);
 				*use_new = 1;
@@ -405,6 +407,7 @@ else if (*use_new == 0)
 			h++;
 		}
 	}
+}
 }
 if (*use_new == 0)
 {
@@ -459,7 +462,13 @@ for (i=0; i<L1; i++)
 	if (*use_new == 0)
 	{
 		//ne[i] = call_spline(spl_phitone, phi_grid, phi[i] / Te, p_size,421);
-		ne[i] = lin_interp(phi_grid, ne_grid, phi[i] / Te, p_size, 421);
+		//if (phi[i]/Te < phi_grid[0]) ne[i] = ne_grid[0];
+		//else
+		//printf("%f %f \n", phi_grid[i], phi[i]/Te);
+		//ne[i] = lin_interp(phi_grid, ne_grid, phi[i] / Te, p_size, 462);
+		ne[i] = ne_grid[i];
+		//printf("%f %f \n", ne_grid[i], ne[i]/Te);
+		//printf("i=%d\nne[i] = %f\nphi[i]/Te = %f\nphi_grid[0] = %f\nne_grid[0] = %f\n", i, ne[i], phi[i]/Te, phi_grid[0], ne_grid[0]);
 		if (ne[i] > 1)
 		{
 			printf("ne[i] is greater than one\n");
@@ -472,7 +481,7 @@ for (i=0; i<L1; i++)
 	else if (*use_new == 1)
 	{
 		//ne[i] = call_spline(spl_new_phitone, phi_new_grid, phi[i] / Te, p_size,425);
-		ne[i] = lin_interp(phi_new_grid, ne_new_grid, phi[i] / Te, p_size, 425);
+		ne[i] = lin_interp(phi_new_grid, ne_new_grid, phi[i] / Te, p_size, 475);
 		if (ne[i] > 1)
 		{
 			printf("ne[i] is greater than one\n");
@@ -495,12 +504,18 @@ for (i=0; i<L1; i++)
 			if (*use_new == 0)
 			{
 				//newphi[i] = Te * call_spline(spl_netophi, ne_grid, ne[i] + weight * (ni[i] - ne[i]), p_size, 439);
-				newphi[i] = Te * lin_interp(ne_grid, phi_grid, ne[i] + weight * (ni[i] - ne[i]), p_size, 439);
+				if (lookup_inversion == 1)
+					newphi[i] = Te * lin_interp(ne_grid, phi_grid, ne[i] + weight * (ni[i] - ne[i]), p_size, 498);
+				else 
+					newphi[i] = Te * log(weight * (ni[i] - ne[i] + exp(phi[i]/Te)) + (1.0-weight)*exp(phi[i]/Te)); 
 			}
 			else if (*use_new == 1)
 			{
 				//newphi[i] = Te * call_spline(spl_new_netophi, ne_new_grid, ne[i] + weight * (ni[i] - ne[i]), p_size, 443);
-				newphi[i] = Te * lin_interp(ne_new_grid, phi_new_grid, ne[i] + weight * (ni[i] - ne[i]), p_size, 443);
+				if (lookup_inversion == 1)
+					newphi[i] = Te * lin_interp(ne_new_grid, phi_new_grid, ne[i] + weight * (ni[i] - ne[i]), p_size, 503);
+				else 
+					newphi[i] = Te * log(weight * (ni[i] - ne[i] + exp(phi[i]/Te)) + (1.0-weight)*exp(phi[i]/Te)); 
 			}
 		}
 		else
@@ -530,13 +545,19 @@ for (i=0; i<L1; i++)
 			if (*use_new == 0)
 			{
 				//newphi[i] = Te * call_spline(spl_netophi, ne_grid, ne[i] + weight * (ni[i] - ne[i]), p_size, 469);
-				newphi[i] = Te * lin_interp(ne_grid, phi_grid, ne[i] + weight * (ni[i] - ne[i]), p_size, 469);
+				if (lookup_inversion == 1)
+					newphi[i] = Te * lin_interp(ne_grid, phi_grid, ne[i] + weight * (ni[i] - ne[i]), p_size, 533);
+				else 
+					newphi[i] = Te * log(weight * (ni[i] - ne[i] + exp(phi[i]/Te)) + (1.0-weight)*exp(phi[i]/Te)); 
 			}
 			if (*use_new == 1)
 			{
 				//printf("%d\n", i);
 				//newphi[i] = Te * call_spline(spl_new_netophi, ne_new_grid, ne[i] + weight * (ni[i] - ne[i]), p_size, 473);
-				newphi[i] = Te * lin_interp(ne_new_grid, phi_new_grid, ne[i] + weight * (ni[i] - ne[i]), p_size, 473);
+				if (lookup_inversion == 1)
+					newphi[i] = Te * lin_interp(ne_new_grid, phi_new_grid, ne[i] + weight * (ni[i] - ne[i]), p_size, 539);
+				else
+					newphi[i] = Te * log(weight * (ni[i] - ne[i] + exp(phi[i]/Te)) + (1.0-weight)*exp(phi[i]/Te)); 
 			}
 			
 		}
@@ -553,7 +574,6 @@ for (i=L1; i<n; i++)
 {
 	if (fabs(k1DK) < k1DKthres)
 	{
-		//printf("%f = newphi[i]\n", newphi[i]);
 		newphi[i] = -2.0*(400.0/pow(k32, 2.0))/pow(gg[i]*gg[i] + CC, 4.0);
 	}
 	else if (fabs(k1DK) > k1DKthres)
@@ -565,13 +585,14 @@ for (i=L1; i<n; i++)
 	if (*use_new == 0)
 	{
 		//ne[i] = call_spline(spl_phitone, phi_grid, phi[i] / Te, p_size, 500);
-		ne[i] = lin_interp(phi_grid, ne_grid, phi[i] / Te, p_size, 500);
-
+		printf("%f\n", phi[i]/Te);
+		//ne[i] = lin_interp(phi_grid, ne_grid, phi[i] / Te, p_size, 568);
+		ne[i] = ne_grid[i];
 	}
 	else if (*use_new == 1)
 	{
 		//ne[i] = call_spline(spl_new_phitone, phi_new_grid, phi[i] / Te, p_size, 504);
-		ne[i] = lin_interp(phi_new_grid, ne_new_grid, phi[i] / Te, p_size, 504);
+		ne[i] = lin_interp(phi_new_grid, ne_new_grid, phi[i] / Te, p_size, 574);
 	}
 	
 }
@@ -681,7 +702,23 @@ for (int m = 0;m < sizeUU;m++)
 }
 free(FF);
 
-
+u_i = fluxinf/alpha;
+if (set_current == 1) {
+	printf("Old v_cut = %f\n", *v_cut);
+	old_v_cut = *v_cut;
+	u_etilde = u_e - sqrt(mioverme/M_PI)*0.5*exp(-0.5*old_v_cut*old_v_cut);
+	printf("u_etilde = %f\n", u_etilde);
+	printf("u_e = %f\n", u_e);
+	printf("u_i = %f\n", u_i);
+	printf("current = %f\n", current);
+	*v_cut = 0.8*(*v_cut) + 0.2*sqrt(-2.0*log(2.0*(-current + u_i - u_etilde)) - log(M_PI/mioverme) );
+	//printf("New v_cut = %f\n", *v_cut);
+	if ( (*v_cut*(*v_cut)*0.5 < - phi_grid[0]) )  *v_cut = sqrt(- 2.0*phi_grid[0]);
+	printf("New v_cut = %f\n", *v_cut);
+	printf("New phi_cut = %f\n", 0.5*(*v_cut)*(*v_cut));
+	//if ( (fabs(old_v_cut - (*v_cut)) > 0.02) && (convergence == 2) ) convergence = 1;
+	if ( (fabs(current - u_i + u_e)/u_i > 0.008) && (convergence == 2) ) convergence = 1;
+}
 
 clock_t end = clock(); // finds the end time of the computation
 double jobtime  = (double)(end - begin) / CLOCKS_PER_SEC;
