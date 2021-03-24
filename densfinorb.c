@@ -24,7 +24,10 @@ double tophat(double x1, double x2, double x) {
 
 int densfinorb(int dodistfunc,double* ne_grid, double* phi_grid, int *p_sizepoint)
 {// DECLARATIONS
+double rho_over_unitgrid = 1.0; // this needs to be an input; for ions in the magnetic presheath this is 1.0, for electrons in the Debye sheath this can be chosen as min(1.0, rho_e/lambda_D)
+double temp_over_unitgrid = 1.0;
 clock_t begin = clock(); // Finds the start time of the computation
+double phi_cut = -999.0;
 int reflected = 0;
 int upgraded = 1, p_size = *p_sizepoint;
 double Ucrit = 0.0;
@@ -36,8 +39,9 @@ double *openorbit, openorbitantycal, **mu, *muopen, *Ucritf, *xbar, *xbarop, **F
 /* openorbit is the integral Delta_M in the paper (an integral over the last closed orbit, representing how much U_perp - chi_M change in one full last orbit); openorbitantycal is the analytical value of openorbit for a flat potential (the first potential guess usually); mu is the array containing values of mu(xbar, Uperp). The index j is for values of xbar, k is for values of Uperp; xbar is the grid of values used in the closed orbit integral; xbarop is an alternative grid used for open orbit integral; FF contains the distribution function, read from the file distfile.txt. UU and mumu contain the values of U and mu corresponding to the function FF (which is F(mu, U)); FFprime is the numerical first derivative of F with respect to U; Many of these arrays are pointers because we don't initially know the array size, until we read the files (e.g. the file with the potential and the one with the distribution function); Note: first index of FF and FFprime is mu, second one is U; Interesting output variables; xifunction is the function of x which defines the grid of values of xbar by finding a chi whose minimum lies exactly at each grid point x */
 int *jmclosed, *jmopen,  i=0, j=0, k=0, l=0, sizeU;
 /* jmclosed represent minimum values of xbar above which we integrate open and closed orbit density integrals respectively (xbar_m,o and xbar_m in the paper); i is an index usually representing the positin x (= gg^2); j is an index usually representing the orbit position xbar; k is an index usually representing the energy Uperp (or velocity vx). It's always used in conjunction with j (and sometimes i); l is an index (used in for loops) usually representing the total energy (or velocity vz). It's used only in the DENSITY INTEGRALS part of the code; sizeU is the size of the integration range over U (or velocity vz). It is set later on in the code */
-int *crossed_max, *crossed_min;
-	/* crossed_max and crossed_min is non-zero when a minimum (or maximum) of chi is found for some xbar[j] */
+int *crossed_max, *crossed_min, *kdrop;
+/* crossed_max and crossed_min is non-zero when a minimum (or maximum) of chi is found for some xbar[j]; kdrop is an integer which is non-zero only if there is an additional potential barrier for the particle at x << rho e.g. for an ion if the sheath reverses Uperp is allowed to be above chiMax and therefore the k = 0 of Uperp[j][k] starts for Uperp[j][0] = chiMax[j] + phi_barrier instead of Uperp[j][0] = chiMax[j] which is the conventional way */
+	
 int temporary = 0, nrows_distfile = 0, ncols_distfile = 0, ncols_Umufile = 0, sizeUU, sizemumu;
 /* the temporary flag is a fix that ensures the minimum value of chi is stored (otherwise the minimum flag which just turned on prevents it); nrows_distfile counts the number of rows in the input file with the distribution function; ncols_distfile does the same for columns; ncols_Umufile  finds the number of columns for both rows or Umufile.txt. The first rows contains values of U, the second of mu. The columns are the possible values; sizeUU and sizemumu stores the final number of columns */
 int *lowerlimit, *upperlimit, **upper, cols, rows, *itop, *imax, *imin;
@@ -137,12 +141,13 @@ Take derivatives of phi and use them to obtain two grids for xbar, one to be use
 xbar = (double*)calloc(n,sizeof(double));	
 xbarop = (double*)calloc(n,sizeof(double)); // Open orbit grid defined such that every position x has a corresponding chi for which xM = x. This allows better resolution of the places where the open orbit integrand, oorbintgrd, is large (~alpha^(1/2))	
 for (i=0; i<n; i++)
-{	//if (i!=0)
-	//{	xiprime[i-1] = (xiprime[i]-xiprime[i-1])/(gg[i]*gg[i]-gg[i-1]*gg[i-1]); }
+{	
+	//if (i!=0)	xiprime[i-1] = (xiprime[i]-xiprime[i-1])/(xx[i]-xx[i-1]); 
 	// Evaluate derivative of phi
 	jmopen[i] = jmclosed[i] = 0;
 	if (i == 0)
-	{	//phip[i] = 0.5*(phi[i+2] - phi[i+1])/(gg[i+2]*gg[i+2] - gg[i+1]*gg[i+1]) + 0.5*(phi[i+1] - phi[i])/(gg[i+1]*gg[i+1] - gg[i]*gg[i]); 
+	{	
+		//phip[i] = 0.5*(phi[i+2] - phi[i+1])/(xx[i+2] - xx[i+1]) + 0.5*(phi[i+1] - phi[i])/(xx[i+1] - xx[i]); 
 		//phip[0] = 0.5*(phi[2] - phi[1])/(xx[2] - xx[1]) + 0.5*(phi[1] - phi[0])/(xx[1]-xx[0]) + (xx[0] - xx[1])*(0.5*(phi[3] - phi[2])/(xx[3]-xx[2]) - 0.5*(phi[1] - phi[0])/(xx[1]-xx[0]))/(xx[2]-xx[1]) ; 
 		phip[0] = (phi[1] - phi[0])/(xx[1]-xx[0]) + (xx[0] - xx[1])*((phi[2] - phi[1])/(xx[2]-xx[1]) - (phi[1] - phi[0])/(xx[1]-xx[0]))/(xx[2]-xx[1]) ; }
 		
@@ -221,6 +226,7 @@ chiMax = (double*)calloc(sizexbar,sizeof(double));
 chiMpp = (double*)calloc(sizexbar,sizeof(double));
 crossed_min = (int*)calloc(sizexbar,sizeof(int)); 
 crossed_max = (int*)calloc(sizexbar,sizeof(int));
+kdrop = (int*)calloc(sizexbar,sizeof(int));
 twopimuprime = (double*)calloc(sizexbar,sizeof(double));
 openintegral = (double*)calloc(sizexbar,sizeof(double));
 openorbit = (double*)calloc(sizexbar,sizeof(double));
@@ -281,14 +287,19 @@ FINDING MAXIMA/MINIMA
 /* Below, we use the array elements to define arrays for the effective potential maxima and minima that exist for every xbar (index j). We search through the chi curve from x=0 to the largest value of x but we search through every chi curve first (so first scan in xbar at fixed x, then move to the next x). We create arrays of mu, Uperp and vx.
 Because I am comparing neighbouring values of x to find a maximum, I need to consider two distinct cases.The first one is treated in the if loop below, which the program should enter only if chi is decreasing at x=0. Implying that chi(x=0) is an effective potential maximum. The second one is the else if loop after that, which finds maxima of chi that are stationary points by comparing the value of the function before and after each point. Note that because we compare the function at a point with the function at points before and after, the point we consider at every iteration step in the index i is indexed (i-1), compared with (i-2) and i.  */
 		if ( (i==1) && (chi[j][i] < chi[j][i-1]) )
-		{	crossed_max[j] += 1;		
+		{	
+			if (phi_cut > chiMax[j]) 
+				kdrop[j] = (int)((phi_cut - chiMax[j])/0.2); 
+			else kdrop[j] = 0;
+			crossed_max[j] += 1;		
 			imax[j] = 0;
 			chiMax[j] = chi[j][i-1];
-			Uperp[j][0] = chi[j][0];
+			Uperp[j][kdrop[j]] = chi[j][0];
 			mu[j][0] = 0.0;
 			vx[j][0][0] = 0.0; } 
 		else if ( (i > 1) && ((chi[j][i] < chi[j][i-1]) && (chi[j][i-1] > chi[j][i-2])) )
-		{	crossed_max[j] += 1;
+		{
+			crossed_max[j] += 1;
 // crossed_min and crossed_max let the code know whether we go up or down the effective potential well. We are starting to go down!
 			if (crossed_max[j] > 1)
 			{	
@@ -302,7 +313,11 @@ Because I am comparing neighbouring values of x to find a maximum, I need to con
 				crossed_max[j] = 1; 
 			}
 			imax[j] = i-1; // Store the index of the maximum 
-			chiMax[j] = chi[j][i-1]; } //Store chi Maximum itself, a function of xbar (index j)
+			chiMax[j] = chi[j][i-1]; //Store chi Maximum itself, a function of xbar (index j)
+			if (phi_cut > chiMax[j]) 
+				kdrop[j] = (int)((phi_cut - chiMax[j])/0.2); 
+			else kdrop[j] = 0;
+		}
 /* We store the index corresponding to the position of a minimum for a given value of xbar.*/
 		else if ( (i > 1) && ((chi[j][i] > chi[j][i-1] - small ) && (chi[j][i-1] < chi[j][i-2] + small)) )
 		{	
@@ -331,11 +346,11 @@ Because I am comparing neighbouring values of x to find a maximum, I need to con
 		if ( (crossed_max[j] == 1  && crossed_min[j] == 0) || (temporary == 1) )
 		{
 			temporary = 0;
-			Uperp[j][i-1-imax[j]] = chi[j][i-1];
-			if (Uperp[j][i-1-imax[j]] < 10.0*Telarge && Uperp[j][i-2-imax[j]] > 10.0*Telarge)
-				lowerlimit[j] = i-1- imax[j]; 
-			mu[j][i-1-imax[j]] = 0.0;
-			upper[j][i-1] = i-1-imax[j];
+			Uperp[j][i-1-imax[j]+kdrop[j]] = chi[j][i-1];
+			if (Uperp[j][i-1-imax[j]+kdrop[j]] < 10.0*Telarge && Uperp[j][i-2-imax[j]+kdrop[j]] > 10.0*Telarge)
+				lowerlimit[j] = i-1-imax[j]+kdrop[j]; 
+			mu[j][i-1-imax[j]+kdrop[j]] = 0.0;
+			upper[j][i-1] = i-1-imax[j]+kdrop[j];
 /* Note that the size of the dimension of the array with values of Uperp is set to n, which is larger than the size it will turn out to be. Unfortunately in C I have no way to append elements to arrays as I go along, but need to give enough memory to the array from the start. n is the largest possible size the array could have. */
 			for (k=0;k<=upper[j][i-1]; k++) 
 			{	
@@ -366,7 +381,7 @@ Because I am comparing neighbouring values of x to find a maximum, I need to con
 					mu[j][k] += (1.0/M_PI)*(vx[j][i-1][k] + vx[j][i-2][k])*(pow(gg[i-1], 2.0) - pow(gg[i-2], 2.0)); 
 				}
 				else if (Uperp[j][k-1] > chi[j][i-1] - small && Uperp[j][k] < chi[j][i-1] + small)
-				{	//vx[j][i-1][k] = sqrt((Uperp[j][k] - chi[j][i-1]));
+				{	
 					upper[j][i-1] = k;
 					mu[j][k] += (2.0/M_PI)*(vx[j][i-2][k])*(pow(gg[i-1], 2.0) - pow(gg[i-2], 2.0))*(Uperp[j][k] - chi[j][i-2])/(chi[j][i-1] - chi[j][i-2]); 
 				}
@@ -393,9 +408,10 @@ Because I am comparing neighbouring values of x to find a maximum, I need to con
 			xtop[j] = gg[i-2]*gg[i-2] + ((chiMax[j] - chi[j][i-2])/(chi[j][i-1] - chi[j][i-2]))*(gg[i-1]*gg[i-1] - gg[i-2]*gg[i-2]);
 			chiprimetop[j] = (chi[j][i-1] - chi[j][i-2])/(gg[i-1]*gg[i-1] - gg[i-2]*gg[i-2]);
 			for (k=0; k<upper[j][i-2]; k++)
-			{	mu[j][k] += (1.0/M_PI)*(vx[j][i-2][k])*(pow(gg[i-1], 2.0) - pow(gg[i-2], 2.0))*(Uperp[j][k] - chi[j][i-2])/(chi[j][i-1] - chi[j][i-2]);
-				if (mu[j][k] != mu[j][k])  
-				{	printf("mu is NAN\n");} }
+			{
+				mu[j][k] += (1.0/M_PI)*(vx[j][i-2][k])*(pow(gg[i-1], 2.0) - pow(gg[i-2], 2.0))*(Uperp[j][k] - chi[j][i-2])/(chi[j][i-1] - chi[j][i-2]);
+				if (mu[j][k] != mu[j][k])  printf("mu is NAN\n");
+			}
 			crossed_max[j] = 0; }
 		if (j!=0)
 		{	
