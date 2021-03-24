@@ -8,7 +8,6 @@
 #include <stdio.h>
 #include <math.h>
 #include <string.h>
-#define M_PI acos(-1)
 void main()
 {
 	FILE *fptr;

@@ -1,3 +1,4 @@
+
 // LAST SUBSTANTIAL MODIFICATION MADE 13 NOV 2018
 /* This code calculates the next electrostatic potential guess in the iteration to obtain the self-consistent magnetic presheath electrostatic potential profile */
 
@@ -6,28 +7,14 @@
 #include <math.h>
 #include <string.h>
 #include <time.h>
-#include "Headerfiles/linetodata.h"
-#include "Headerfiles/newguess.h"
-#include "Headerfiles/bilin_int.h"
-#include "Headerfiles/cspline.h"
-#include "Headerfiles/makelookup.h"
-#define M_PI acos(-1)
-
-//struct spline
-//{
-//	double* a;
-//	double* b;
-//	double* c;
-//	double* d;
-//
-//};
+#include "mps.h"
 
 int newguess(int convergence, int problem, double* ne_grid, double* phi_grid,int p_size,double* ne_new_grid, double * phi_new_grid, double* ne_cut_grid, double* phi_cut_grid, int cut_points,int *use_new, double u_e, double *v_cut)
 {//DECLARATIONS
 	clock_t begin = clock(); // Finds the start time of the computation
 	int debug = 0, lookup_inversion = 0, upgraded = 1;
 	int row, col, i, ii, sizemumu, sizeUU, j, L1=0, n, cont = 1, h;
-	char line[200000], *string;
+	char line[200000];
 	double *storevals, *gg, *xx, *ni, **FF, *mumu, *UU, k32, k32denom, k32num, k1DK, *Tevect, *k1GKvect; 
 	double *phipg, *phippg, *phip, *phipp;;
 	double k1DKnum1old, densinf, fluxinf, k1GK, **FFprime, k32denom1, k1DKnum1, k1DKnum, *newphi, k32denom1old, fluxinf1old, fluxinf1;
@@ -75,9 +62,6 @@ rewind(fp);
 while (fgets(line, 2000, fp) != NULL)
 {	
 	//Fill phi and gg arrays
-	//string = malloc(strlen(line)*sizeof(char));
-	//string = line;
-	//storevals = linetodata(string, strlen(string), &col);
 	storevals = linetodata(line, strlen(line), &col);
 	gg[row] = *storevals;
 	phi[row] = *(storevals+1);
@@ -94,10 +78,6 @@ if ((input = fopen("inputfile.txt", "r")) == NULL)
 i=0;
 while (fgets(line, 20, input) != NULL)
 {	
-	//string = malloc(strlen(line)*sizeof(char));
-    //string = line;
-    //printf("The string is %s\n", string);
-	//storevals = linetodata(string, strlen(string), &col);
 	storevals = linetodata(line, strlen(line), &col);
 
 	if (i==0)
@@ -143,9 +123,6 @@ if ((Umufile = fopen("Umufile.txt", "r")) == NULL)
 row=0;
 while (fgets(line, 200000, Umufile) != NULL)
 {	
-	//string = malloc(strlen(line)*sizeof(char));
-	//string = line;
-	//storevals = linetodata(string, strlen(string), &col);
 	storevals = linetodata(line, strlen(line), &col);
 	if (row == 0)
 	{	mumu = storevals;
@@ -176,10 +153,6 @@ if ((distfile = fopen("distfuncin.txt", "r")) == NULL)
 while (fgets(line, 200000, distfile) != NULL)
 { 
 	/* While loop dedicated to reading each line of the file, extracting the data (ie the numbers in the line) and counting the columns. Once the columns are counted we allocate memory to FF and assign each number to a different column of FF (for a fixed row). The  while loop then jumps to a new line and repeats the process. */
-	//string = malloc(strlen(line)*sizeof(char));
-	//string = line;
-	//printf("The string is %s\n", string);
-	//storevals = linetodata(string, strlen(string), &col);
 	storevals = linetodata(line, strlen(line), &col);
 
 	FF[row] = (double*)calloc(col,sizeof(double));
@@ -202,9 +175,6 @@ rewind(densfile);
 while (fgets(line, 20000, densfile) != NULL)
 {
 	/* While loop dedicated to reading each line of the file, extracting the data (ie the numbers in the line) and counting the columns. Once the columns are counted we allocate memory to FF and assign each number to a different column of FF (for a fixed row). The  while loop then jumps to a new line and repeats the process. */
-	//string = malloc(strlen(line)*sizeof(char));
-	//string = line;
-	//storevals = linetodata(string, strlen(string), &col);
 	storevals = linetodata(line, strlen(line), &col);
 
 	ni[row] = *(storevals+1);
@@ -243,9 +213,6 @@ rewind(fpk1);
 row=0;
 while (fgets(line, 2000, fpk1) != NULL)
 {
-	//string = malloc(strlen(line)*sizeof(char));
-	//string = line;
-	//storevals = linetodata(string, strlen(string), &col);
 	storevals = linetodata(line, strlen(line), &col);
 
 	Tevect[row] = *storevals;
@@ -413,11 +380,12 @@ if (*use_new == 0)
 {
 	negradinf = (ne_grid[p_size - 3] - ne_grid[p_size - 1]) / (phi_grid[p_size - 3] - phi_grid[p_size - 1]);
 }
-else if (*use_new == 1)
+//else if (*use_new == 1)
+else
 {
 	negradinf = (ne_new_grid[p_size - 3] - ne_new_grid[p_size - 1]) / (phi_new_grid[p_size - 3] - phi_new_grid[p_size - 1]);
 }
-printf("negradinf = %.5f%\n", negradinf);
+printf("negradinf = %.5f\n", negradinf);
 
 printf("Tevect = %f\n", Tevect[0]);
 i = 0;

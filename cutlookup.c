@@ -1,3 +1,4 @@
+
 // Author: Robbie Ewart 
 // MODIFIED: 15/08/2019
 /*This code is very similar to makelookup.c in that it generates values of electron density and is given values of phi however,
@@ -11,9 +12,9 @@ on the other hand is taking all reasonable cut off values and calculating the co
 #include <stdio.h>
 #include <math.h>
 #include <string.h>
-#include "Headerfiles/linetodata.h"
-#include "Headerfiles/cutlookup.h"
-#define M_PI acos(-1)
+#include "mps.h"
+//#include "Headerfiles/linetodata.h"
+//#include "Headerfiles/cutlookup.h"
 
 
 void cutlookup(double* phi_cut, double* ne_cut, int cut_points)
@@ -36,7 +37,6 @@ void cutlookup(double* phi_cut, double* ne_cut, int cut_points)
 	FILE* fptr1;
 
 	char line_pot2[200], line_pot1[20];
-	char* string_pot2, * string_pot1;
 	double* storevalspot1, * storevalspot2; //temporarily holds values to be moved around
 
 	//getting some of the parameters
@@ -49,8 +49,6 @@ void cutlookup(double* phi_cut, double* ne_cut, int cut_points)
 
 	while (fgets(line_pot1, 20, fptr1) != NULL)
 	{
-		//string_pot1 = malloc(strlen(line_pot1) * sizeof(char));
-		//string_pot1 = line_pot1;
 		storevalspot1 = linetodata(line_pot1, strlen(line_pot1), &cols);
 		if (i == 0)
 		{
@@ -99,8 +97,6 @@ void cutlookup(double* phi_cut, double* ne_cut, int cut_points)
 	i = 0;
 	while (fgets(line_pot2, 200, fptr1) != NULL)
 	{
-		//string_pot2 = malloc(strlen(line_pot2) * sizeof(char));
-		//string_pot2 = line_pot2;
 		storevalspot2 = linetodata(line_pot2, strlen(line_pot2), &cols);
 		F[i] = *storevalspot2;
 		i++;

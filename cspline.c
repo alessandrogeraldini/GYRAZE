@@ -33,7 +33,7 @@ and this is the purpose of the arrays a,b,c,d
 #include <stdio.h>
 #include <math.h>
 #include <string.h>
-#include "Headerfiles/cspline.h"
+#include "mps.h"
 
 
 //struct spline

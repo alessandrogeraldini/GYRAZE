@@ -3,21 +3,7 @@
 #include <math.h>
 #include <time.h>
 #include <string.h>
-#include "Headerfiles/iondens.h"
-#include "Headerfiles/newguess.h"
-#include "Headerfiles/cspline.h"
-#include "Headerfiles/makelookup.h"
-#include "Headerfiles/linetodata.h"
-#include "Headerfiles/cutlookup.h"
-
-//struct spline
-//{
-//	double* a;
-//	double* b;
-//	double* c;
-//	double* d;
-//
-//};
+#include "mps.h"
 
 int main() {
 clock_t begin_it = clock(); // Finds the start time of the computation
@@ -91,12 +77,12 @@ for (N=0;N<N_iterations;N++)
 	if (use_new == 0)
 	{
 		printf("use_new = %d\n", use_new);
-		problem = iondens(0, ne_grid, phi_grid, &p_size); //The argument of iondens set to zero makes the module not compute the ion distribution function
+		problem = densfinorb(0, ne_grid, phi_grid, &p_size); //The argument of densfinorb set to zero makes the module not compute the ion distribution function
 	}
 	else if (use_new == 1)
 	{
 		printf("use_new = %d\n", use_new);
-		problem = iondens(0, ne_new_grid, phi_new_grid, &p_size); //The argument of iondens set to zero makes the module not compute the ion distribution function
+		problem = densfinorb(0, ne_new_grid, phi_new_grid, &p_size); //The argument of densfinorb set to zero makes the module not compute the ion distribution function
 	}
 	if (upgraded == 1) {
 		printf("vcut = %f\nphi[0] = %f\n", v_cut, phi_grid[0]);
@@ -111,12 +97,12 @@ for (N=0;N<N_iterations;N++)
 		if (use_new == 0)
 		{
 		printf("use_new = %d\n", use_new);
-			iondens(1,ne_grid,phi_grid,&p_size); //The argument of iondens set to one makes the module compute the ion distribution function at x=0
+			densfinorb(1,ne_grid,phi_grid,&p_size); //The argument of densfinorb set to one makes the module compute the ion distribution function at x=0
 		}
 		else if (use_new == 1)
 		{
 		printf("use_new = %d\n", use_new);
-			iondens(1,ne_new_grid,phi_new_grid,&p_size); //The argument of iondens set to one makes the module compute the ion distribution function at x=0
+			densfinorb(1,ne_new_grid,phi_new_grid,&p_size); //The argument of densfinorb set to one makes the module compute the ion distribution function at x=0
 		}
 		clock_t end_it = clock(); // finds end time of last iteration
 		tot_time = (double) (end_it - begin_it) / CLOCKS_PER_SEC;
@@ -126,7 +112,7 @@ for (N=0;N<N_iterations;N++)
 }
 if (N_iterations == 0)
 {	
-	problem = iondens(1, ne_grid, phi_grid, &p_size);
+	problem = densfinorb(1, ne_grid, phi_grid, &p_size);
 }
 printf("No convergence after %d iterations\n", N_iterations);
 exit(0);

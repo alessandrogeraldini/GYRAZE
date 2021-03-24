@@ -1,3 +1,4 @@
+
 // Author: Robbie Ewart 
 // MODIFIED: 15/08/2019
 /*This code generates a lookup table for values of phi given values of the electron density and should be run at the start of the program*/
@@ -7,10 +8,7 @@
 #include <stdio.h>
 #include <math.h>
 #include <string.h>
-#include "Headerfiles/linetodata.h"
-#include "Headerfiles/makelookup.h"
-#include "Headerfiles/cspline.h"
-#define M_PI acos(-1)
+#include "mps.h"
 
 double FF(double beta) {
 	double integrand, integral=0.0, beta_s = 0.005, betaval;
@@ -64,7 +62,6 @@ void makelookup(double *phi,double *ne, int p_size,double v_cut, double v_cutDS,
 	FILE* fptr1;
 
 	char line_pot2[200], line_pot1[20];
-	char* string_pot2, * string_pot1;
 	double* storevalspot1, * storevalspot2; //temporarily holds values to be moved around
 
 	//getting some of the parameters
@@ -76,8 +73,6 @@ void makelookup(double *phi,double *ne, int p_size,double v_cut, double v_cutDS,
 	i = 0;
 	while (fgets(line_pot1, 20, fptr1) != NULL)
 	{
-		//string_pot1 = malloc(strlen(line_pot1) * sizeof(char));
-		//string_pot1 = line_pot1;
 		storevalspot1 = linetodata(line_pot1, strlen(line_pot1), &cols);
 		if (i == 0)
 		{
@@ -132,8 +127,6 @@ void makelookup(double *phi,double *ne, int p_size,double v_cut, double v_cutDS,
 	i = 0;
 	while (fgets(line_pot2, 200, fptr1) != NULL)
 	{
-		//string_pot2 = malloc(strlen(line_pot2) * sizeof(char));
-		//string_pot2 = line_pot2;
 		storevalspot2 = linetodata(line_pot2, strlen(line_pot2), &cols);
 		F[i] = *storevalspot2;
 		i++;
