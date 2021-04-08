@@ -7,6 +7,8 @@
 #include <math.h>
 #include <string.h>
 #include <time.h>
+#include <gsl/gsl_errno.h>
+#include <gsl/gsl_spline.h>
 #include "mps.h"
 
 double tophat(double x1, double x2, double x) {
@@ -27,16 +29,18 @@ int densfinorb(int dodistfunc, double Te, double alpha, int size_phigrid, int *s
 //double rho_over_unitgrid = 1.0; // this needs to be an input; for ions in the magnetic presheath this is 1.0, for electrons in the Debye sheath this can be chosen as min(1.0, rho_e/lambda_D)
 //double temp_over_unitgrid = 1.0;
 clock_t begin = clock(); // Finds the start time of the computation
+int zoomfactor = 3;
 double phi_cut = -999.0;
 int reflected = 0;
 double Ucrit = 0.0;
+double deltax;
 double *xx, pos, *phi, *phip, *ne, *niclosed, *niopen, *nitotal, **chi, **chiop, Telarge, Tesmall, small = 1e-6, stoplimit = 0.96;
-/* pos is x, the position (distance from the wall); phi contains the values of phi(x), extracted from a file. phip is phi prime, first derivative of phi. phipp is the second derivative; phipg and phippg are derivatives of phi wrt g = sqrt(x). ne is the electron density; niclosed is the closed orbit ion density, niopen is the open orbit ion density, nitotal is the sum of the two; newphi is the new electrostatic potential guess; chi is the effective potential; small is just a small number used to make some inequalities work numerically in case of exact equality. */
-int debug=0, n, stop = 0, sizexbar, icritlow = 0, icritup = 0, ilocalmax = 0, problem = 0, noback = 0, maxj;
+/* pos is x, the position (distance from the wall); phi contains the values of phi(x), extracted from a file. phip is phi prime, first derivative of phi. ne is the electron density; niclosed is the closed orbit ion density, niopen is the open orbit ion density, nitotal is the sum of the two; newphi is the new electrostatic potential guess; chi is the effective potential; small is just a small number used to make some inequalities work numerically in case of exact equality. */
+int debug=0, stop = 0, sizexbar, icritlow = 0, icritup = 0, ilocalmax = 0, problem = 0, noback = 0, maxj;
 /* n is the domain of the position x (the largest value of the index i, so e.g. x_grid[n] = L_2 in the paper); sizexbar is the domain of the position xbar (the largest value of the index j); */ 
 double *openorbit, openorbitantycal, **mu, *muopen, *Ucritf, *xbar, *twopimuprime, *openintegral, *xifunction;
-/* openorbit is the integral Delta_M in the paper (an integral over the last closed orbit, representing how much U_perp - chi_M change in one full last orbit); openorbitantycal is the analytical value of openorbit for a flat potential (the first potential guess usually); mu is the array containing values of mu(xbar, Uperp). The index j is for values of xbar, k is for values of Uperp; xbar is the grid of values used in the closed orbit integral; xbarop is an alternative grid used for open orbit integral; FF contains the distribution function, read from the file distfile.txt. UU and mumu contain the values of U and mu corresponding to the function FF (which is F(mu, U)); FFprime is the numerical first derivative of F with respect to U; Many of these arrays are pointers because we don't initially know the array size, until we read the files (e.g. the file with the potential and the one with the distribution function); Note: first index of FF and FFprime is mu, second one is U; Interesting output variables; xifunction is the function of x which defines the grid of values of xbar by finding a chi whose minimum lies exactly at each grid point x */
-int *jmclosed, *jmopen,  i=0, j=0, k=0, l=0, sizeU;
+/* openorbit is the integral Delta_M in the paper (an integral over the last closed orbit, representing how much U_perp - chi_M change in one full last orbit); openorbitantycal is the analytical value of openorbit for a flat potential (the first potential guess usually); mu is the array containing values of mu(xbar, Uperp). The index j is for values of xbar, k is for values of Uperp; xbar is the grid of values used in the closed orbit integral; FF contains the distribution function, read from the file distfile.txt. UU and mumu contain the values of U and mu corresponding to the function FF (which is F(mu, U)); FFprime is the numerical first derivative of F with respect to U; Many of these arrays are pointers because we don't initially know the array size, until we read the files (e.g. the file with the potential and the one with the distribution function); Note: first index of FF and FFprime is mu, second one is U; Interesting output variables; xifunction is the function of x which defines the grid of values of xbar by finding a chi whose minimum lies exactly at each grid point x */
+int *jmclosed, *jmopen,  i=0, ic=0, j=0, k=0, l=0, sizeU, size_finegrid;
 /* jmclosed represent minimum values of xbar above which we integrate open and closed orbit density integrals respectively (xbar_m,o and xbar_m in the paper); i is an index usually representing the positin x  j is an index usually representing the orbit position xbar; k is an index usually representing the energy Uperp (or velocity vx). It's always used in conjunction with j (and sometimes i); l is an index (used in for loops) usually representing the total energy (or velocity vz). It's used only in the DENSITY INTEGRALS part of the code; sizeU is the size of the integration range over U (or velocity vz). It is set later on in the code */
 int *crossed_max, *crossed_min, *kdrop;
 /* crossed_max and crossed_min is non-zero when a minimum (or maximum) of chi is found for some xbar[j]; kdrop is an integer which is non-zero only if there is an additional potential barrier for the particle at x << rho e.g. for an ion if the sheath reverses Uperp is allowed to be above chiMax and therefore the k = 0 of Uperp[j][k] starts for Uperp[j][0] = chiMax[j] + phi_barrier instead of Uperp[j][0] = chiMax[j] which is the conventional way */
@@ -63,6 +67,44 @@ double oorbintgrdxbar, oorbintgrdsquare, intdUopenxbar = 0.0, intdUopensquare = 
 /* oorbintgrdxbar is an integral over the open orbit distribution function at x=0 which is needed to evaluate a coefficient that appears when; expanding quasineutrality near x=0. It was just for playing around and at the moment plays no role in the code; similarly with all other integrals here */
 double oorbintgrdxbarold, oorbintgrdsquareold, intdUopenxbarold, intdUopensquareold;
 // all used to take integrals above
+double xi, *gg;
+
+  gg = malloc(size_phigrid*sizeof(double));
+  for (i=0; i<size_phigrid; i++) {
+    gg[i] = sqrt(x_grid[i]);
+  }
+  size_finegrid = size_phigrid*zoomfactor;
+  xx = (double*)calloc(size_finegrid,sizeof(double)); // xx = x has correct size
+  phi = (double*)calloc(size_finegrid,sizeof(double)); // phi now has correct size
+  FILE *fp;
+  i=0;
+  deltax = 0.5/zoomfactor;
+  size_finegrid = (pow(gg[size_phigrid-1] + sqrt(0.5), 2.0) - 0.5)/deltax;
+  printf("size_phigrid = %d\n", size_phigrid);
+  {
+    gsl_interp_accel *acc
+      = gsl_interp_accel_alloc ();
+    gsl_spline *spline
+      = gsl_spline_alloc (gsl_interp_cspline, size_phigrid);
+
+    gsl_spline_init (spline, gg, phi_grid, size_phigrid);
+
+    fp = fopen("phispline.txt", "w");
+    if (fp == NULL) printf("Error: phispline not created\n");
+    //printf ("%f\n", gg[size_phigrid-1]);
+    for (i = 0; i < size_finegrid; i += 1)
+      {
+	xi = sqrt(0.5+i*deltax) - sqrt(0.5);
+	phi[i] = gsl_spline_eval (spline, xi, acc);
+	phi[i] *= (charge/temp_over_unitgrid);
+	xx[i] = xi*xi/rho_over_unitgrid;
+        //printf ("i=%d, %f %f\n",i, xi, phi[i]);
+      }
+    gsl_spline_free (spline);
+    gsl_interp_accel_free (acc);
+  fclose(fp);
+  }
+  printf("size_phigrid = %d\n", size_phigrid);
 
 // Introduce a number that equals Te when Te > 1 and 1 when Te<1. When Te is large, this number increases the number of grid points in tot. energy U to account for the fact that vz ~ vB > v_t,i when the electron temperature is large. Moreover, |v| ~ vB > v_t,i at the Debye sheath entrance, and so the number of grid points in xbar must also be increased.
 if (Te>1.0) {	
@@ -78,32 +120,28 @@ Ucap = 18.0 + 4.0*Te;
 printf("Ucap =%f\n", Ucap);
 i=0;
 printf("alpha = %f\n", alpha);
-n=size_phigrid; // n is the array size
 /* We initialize all arrays that contain functions of position x with the correct size n */
-ne = (double*)calloc(n,sizeof(double)); // phi now has correct size
-phi = (double*)calloc(n,sizeof(double)); // phi now has correct size
-phip = (double*)calloc(n,sizeof(double)); // phi now has correct size
-xx = (double*)calloc(n,sizeof(double)); // xx = x has correct size
-niclosed = (double*)calloc(n,sizeof(double)); // array containing the density of closed orbits
-niopen = (double*)calloc(n,sizeof(double)); // array containing the density of open orbits
-nitotal = (double*)calloc(n,sizeof(double)); // array containing the total density of ions 
-jmclosed = (int*)calloc(n,sizeof(int));
-jmopen = (int*)calloc(n,sizeof(int));
-xifunction = (double*)calloc(n,sizeof(double));
-
-for (i=0; i<size_phigrid; i++) {
-	xx[i] = x_grid[i]/rho_over_unitgrid;
-	phi[i] = charge*phi_grid[i]/temp_over_unitgrid;
-	//printf("i=%d. xx=%f, phi=%f\n", i, xx[i], phi[i]);
-}
+ne = (double*)calloc(size_phigrid,sizeof(double)); // phi now has correct size
+niclosed = (double*)calloc(size_phigrid,sizeof(double)); // array containing the density of closed orbits
+niopen = (double*)calloc(size_phigrid,sizeof(double)); // array containing the density of open orbits
+nitotal = (double*)calloc(size_phigrid,sizeof(double)); // array containing the total density of ions 
+phip = (double*)calloc(size_finegrid,sizeof(double)); // phi now has correct size
+jmclosed = (int*)calloc(size_finegrid,sizeof(int));
+jmopen = (int*)calloc(size_finegrid,sizeof(int));
+xifunction = (double*)calloc(size_finegrid,sizeof(double));
+//for (i=0; i<size_phigrid; i++) {
+//	xx[i] = x_grid[i]/rho_over_unitgrid;
+//	phi[i] = charge*phi_grid[i]/temp_over_unitgrid;
+//	//printf("i=%d. xx=%f, phi=%f\n", i, xx[i], phi[i]);
+//}
 
 //Fgenerator(phi_grid[0]);
 
 /* FORM XBAR GRIDS 
 Take derivatives of phi and use them to obtain two grids for xbar, one to be used for closed orbits and one to be used for open orbits. */
-xbar = (double*)calloc(n,sizeof(double));	
+xbar = (double*)calloc(size_finegrid,sizeof(double));	
 //xbarop = (double*)calloc(n,sizeof(double)); // Open orbit grid defined such that every position x has a corresponding chi for which xM = x. This allows better resolution of the places where the open orbit integrand, oorbintgrd, is large (~alpha^(1/2))	
-for (i=0; i<n; i++)
+for (i=0; i<size_finegrid; i++)
 {	
 	//if (i!=0)	xiprime[i-1] = (xiprime[i]-xiprime[i-1])/(xx[i]-xx[i-1]); 
 	// Evaluate derivative of phi
@@ -114,7 +152,7 @@ for (i=0; i<n; i++)
 		//phip[0] = 0.5*(phi[2] - phi[1])/(xx[2] - xx[1]) + 0.5*(phi[1] - phi[0])/(xx[1]-xx[0]) + (xx[0] - xx[1])*(0.5*(phi[3] - phi[2])/(xx[3]-xx[2]) - 0.5*(phi[1] - phi[0])/(xx[1]-xx[0]))/(xx[2]-xx[1]) ; 
 		phip[0] = (phi[1] - phi[0])/(xx[1]-xx[0]) + (xx[0] - xx[1])*((phi[2] - phi[1])/(xx[2]-xx[1]) - (phi[1] - phi[0])/(xx[1]-xx[0]))/(xx[2]-xx[1]) ; }
 		
-	else if (i == n-1)
+	else if (i == size_finegrid-1)
 	{	
 		phip[i] = 0.5*(phi[i] - phi[i-1])/(xx[i] - xx[i-1]); 
 	}
@@ -151,14 +189,15 @@ if (ilocalmax != 0)
 {	i=0;
 	printf("ilocalmax = %d\n", ilocalmax);
 	while (xifunction[i] > xifunction[ilocalmax])
-	{	i+=1; }
-	icritlow = i-1; }
+		i+=1; 
+	icritlow = i-1; 
+}
 j=0;
 //if (icritlow == icritup)
 //{ 	xbar[0] = xifunction[icritlow]; j = 1; }
 k = icritup+1;	
 for (i=icritlow-1;i>=0;i--) {	
-	while ( (xifunction[k] < xifunction[i]) && (k<n) ) {	
+	while ( (xifunction[k] < xifunction[i]) && (k<size_finegrid) ) {	
 		xbar[j] = xifunction[k]; j++; 
 		k++; 
 	}	
@@ -168,7 +207,7 @@ for (i=icritlow-1;i>=0;i--) {
 	j++; 
 	//} 
 	}
-while (k<n) { 	
+while (k<size_finegrid) { 	
 	xbar[j] = xifunction[k]; 
 	k++; j++; 
 }	
@@ -176,9 +215,9 @@ sizexbar = j;
 if (debug == 1) {	
 	for (j = 0; j < sizexbar; j++)
 		printf("xbar[%d] = %f\n", j, xbar[j]); 
-	}
+}
 printf("icritlow = %d, icritup = %d\n", icritlow, icritup);
-printf("sizexbar = %d, n =%d\n", sizexbar, n);
+printf("sizexbar = %d, size_finegrid (x) =%d\n", sizexbar, size_finegrid);
 chi = (double**)calloc(sizexbar,sizeof(double*)); // chi(xbar, x) indices j and i 
 chiop = (double**)calloc(sizexbar,sizeof(double*)); // chi(xbar, x) indices j and i 
 Uperp = (double**)calloc(sizexbar,sizeof(double*)); 
@@ -224,16 +263,16 @@ for (j=0;j<sizexbar;j++)  {
 //	printf("Cannot open %s\n", "fp.txt");
 //	exit(EXIT_FAILURE); }
 /* Loop below initializes all 2d arrays which are functions of xbar and x. It allocates the right amount of memory to arrays of pointers of size xbar. The result is a 2D array indexed j (size sizexbar) and i or k (size n, see above) */
-for (j=0; j < sizexbar; j++) {	
-	chi[j] = (double*)calloc(n,sizeof(double)); // array containing chi(xbar, x) indexes j and i 
-	chiop[j] = (double*)calloc(n,sizeof(double)); // array containing chi(xbar, x) indexes j and i 
-	Uperp[j] = (double*)calloc(n,sizeof(double)); // array containing Uperp for closed orbits indexes j and k
-	mu[j] = (double*)calloc(n,sizeof(double)); // array containing adiab invariant mu(xbar, Uperp), indexes j and k
-	upper[j] = (int*)calloc(n,sizeof(int)); // array containing the index of energy Uperp corresponding to chi(x)
-	vx[j] = (double**)calloc(n,sizeof(double*)); // see below
+for (j=0; j < sizexbar; j++) {
+	chi[j] = (double*)calloc(size_finegrid,sizeof(double)); // array containing chi(xbar, x) indexes j and i 
+	chiop[j] = (double*)calloc(size_finegrid,sizeof(double)); // array containing chi(xbar, x) indexes j and i 
+	Uperp[j] = (double*)calloc(size_finegrid,sizeof(double)); // array containing Uperp for closed orbits indexes j and k
+	mu[j] = (double*)calloc(size_finegrid,sizeof(double)); // array containing adiab invariant mu(xbar, Uperp), indexes j and k
+	upper[j] = (int*)calloc(size_finegrid,sizeof(int)); // array containing the index of energy Uperp corresponding to chi(x)
+	vx[j] = (double**)calloc(size_finegrid,sizeof(double*)); // see below
 	/* The loop below initializes the 3d array containing the velocity of a particle at a given orbit position xbar, with particle position x and with energy Uperp, indexed i, j and k. */
-	for (i = 0; i < n; i++) {
-		vx[j][i] = (double*)calloc(n,sizeof(double)); 
+	for (i = 0; i < size_finegrid; i++) {
+		vx[j][i] = (double*)calloc(size_finegrid,sizeof(double)); 
 	} 
 } // 3D array containing value of vx at different xbar, x and Uperp
 i=0;  // Re-set i to zero.
@@ -242,9 +281,8 @@ i=0;  // Re-set i to zero.
 for (j=0; j<sizexbar; j++) {	
 	chi[j][i] =  pow((xx[i] - xbar[j]), 2.0) + phi[i];
 }
-	// chiop[j][i] =  pow((xx[i] - xbarop[j]), 2.0) + phi[i]; }
-for (i=1; i<n; i++)
-{	
+	// chiop[j][i] =  pow((xx[i] - xbarop[j]), 2.0) + phi[i]; 
+for (i=1; i<size_finegrid; i++) {	
 	for (j=0; j<sizexbar; j++)
 	{	
 		chi[j][i] =  pow((xx[i] - xbar[j]), 2.0) + phi[i];
@@ -394,8 +432,8 @@ Because I am comparing neighbouring values of x to find a maximum, I need to con
 					} 
 				} 
 			}
-			if (i==n-1 && crossed_max[j] == 1 && crossed_min[j] == 1)
-			{	itop[j] = n-1;
+			if (i==size_finegrid-1 && crossed_max[j] == 1 && crossed_min[j] == 1) {	
+				itop[j] = size_finegrid-1;
 				if (noback == 0)
 				{	maxj = j;	
 					noback = 1; 
@@ -404,23 +442,10 @@ Because I am comparing neighbouring values of x to find a maximum, I need to con
 		} 
 	} 
 }
-	/* Below loop is just here to place a cap on the maximum value of j at which the last orbit integral needs to be computed. If not present, the code still works if the open orbit density evaluation piece of the code limits the upper limit on xbar to some value (4). However, it will spit out error messages to do with the last orbit integral failing at large values of xbar, where the top bounce point of the last orbit lies so far out that it is beyond the x domain that we are considering. */
-		//if (sswitch[j] != 0)
-		//{
-		//	if ((jmopen[i-1] == 0) && (j == sizexbar -1))
-		//	{	maxj = j;	
-		//		noback = 1; } } } } // closes all loops
-		//if (i==n-1 && sswitch[j] != 0)
-		//{	itop[j] = n-1;
-		//	if (noback == 0)
-		//	{	maxj = j;	
-		//		noback = 1; } } } } // closes all loops
-//fclose(fp); // closes file
 // OPEN ORBIT INTEGRAL
 /* Now we perform the open orbit integral. We use a change of variables which makes the integrand smooth at the top bounce point. The change of variables is to some var = sqrt(x_t - x) */
 muopen[0] = 0.0;
-for (j=0;j<maxj;j++)
-{
+for (j=0;j<maxj;j++) {
 	muopen[j+1] = mu[j][0];
 	Ucritf[j+1] = chiMax[j];
 	if (debug == 1)
@@ -477,99 +502,15 @@ for (j=0;j<maxj;j++)
 	} 
 }
 Ucritf[0] = Ucritf[1] - muopen[1]*(Ucritf[2] - Ucritf[1])/(muopen[2] - muopen[1]);
-//for (j=0;j<sizexbar;j++)
-//{	
-//	if (j != 0)
-//	{	if (j!=1)
-//		{
-//		twopimuprime[j-1] = 2.0*M_PI*( 0.5*(mu[j][0] - mu[j-1][0])/(xbar[j] - xbar[j-1]) + 0.5*(mu[j-1][0] - mu[j-2][0])/(xbar[j-1] - xbar[j-2]) );	
-//		}
-//		else
-//		{
-//		twopimuprime[0] = 2.0*M_PI*( 0.5*(mu[1][0] - mu[0][0])/(xbar[j] - xbar[j-1]) ); 
-//		}
-//		openorbit[j-1] = twopimuprime[j-1];  
-//		openorbitantycal = 4.0*M_PI*xbar[j-1];
-//		if (debug ==1)
-//		{	printf("openorbit[%d] = %f\n", j-1, openorbit[j-1]); 
-//			printf("At xbar[%d] = %f, mu is %f, openorbit is %f while analytical one is %f\n", j-1, xbar[j-1],mu[j-1][0], openorbit[j-1], openorbitantycal); } } }
 
-/* This part of the code extracts the distribution function from a file. We import the distribution function into a 2 dimensional array, F(mu,U). */
-//FILE *distfile, *Umufile;
-//if ((distfile = fopen("distfuncin.txt", "r")) == NULL)
-//{	
-//	printf("cannot open file %s\n", "distfuncin.txt");
-//	exit(-1); 
-//}
-///* Count the number of rows in the distfuncin.txt file */
-//while(fgets(line_distfile, 20000, distfile) != NULL)
-//{	
-//	nrows_distfile += 1; 
-//}
-///* Allocate the right amount of memory to the distribution function pointer */
-//FF = (double**)calloc(nrows_distfile,sizeof(double*));
-///* The number of rows is also the the size of the array in UU */
-////UU = malloc(nrows_distfile*sizeof(double));
-//cols = nrows_distfile;
-//nrows_distfile = 0; // Set number of rows counter to zero again
-//fclose(distfile); // Close file
-///* Check file exists and can be opened
-// */
-//if ((distfile = fopen("distfuncin.txt", "r")) == NULL)
-//{
-//	printf("cannot open file %s\n", "distfuncin.txt");
-//	exit(-1);
-//}
-///* While loop dedicated to reading each line of the file, extracting the data (ie the numbers in the line) and counting the columns. Once the columns are counted we allocate memory to FF and assign each number to a different column of FF (for a fixed row). The while loop then jumps to a new line and repeats the process */
-//while (fgets(line_distfile, 200000, distfile) != NULL)
-//{	//string = malloc(strlen(line_distfile)*sizeof(char));
-//	//string = line_distfile;
-//	//printf("The string is %s\n", string);
-//	//storevals = linetodata(string, strlen(string), &ncols_distfile);
-//	storevals = linetodata(line_distfile, strlen(line_distfile), &ncols_distfile);
-//	FF[nrows_distfile] = (double*)calloc(ncols_distfile,sizeof(double));
-//	mumu = (double*)calloc(ncols_distfile,sizeof(double));
-//	rows = ncols_distfile;
-//	FF[nrows_distfile] = storevals;
-//	nrows_distfile +=1; 
-//}
-//fclose(distfile);
 printf("~~~~~The second element of FF is %f~~~~~\n",FF[0][1]);
 printf("~~~~~The second element of UU is %f~~~~~\n",UU[1]);
 printf("~~~~~The fourth element of mu is %f~~~~~\n",mumu[3]);
-/* Now we extract the two 1D arrays representing the grid points on which FF (the distribution function array) is defined. */
-//if ((Umufile = fopen("Umufile.txt", "r")) == NULL)
-//{	printf("cannot open file %s\n", "Umufile.txt");
-//	exit(-1); }
-///* While loop dedicated to reading each line of the file, extracting the data (ie the numbers in the line) and assigning the values of the first line to mumu, second to UU */
-//i=0;
-//while (fgets(line_Umufile, 200000, Umufile) != NULL)
-//{	//string = malloc(strlen(line_Umufile)*sizeof(char));
-//	//string = line_Umufile;
-//	//printf("The string is %s\n", string);
-//	//storevals = linetodata(string, strlen(string), &ncols_Umufile);
-//	storevals = linetodata(line_Umufile, strlen(line_Umufile), &ncols_Umufile);
-//	//index = 1;
-//	if (i == 0)
-//	{
-//	sizemumu = ncols_Umufile;
-//	mumu = storevals;
-//	//printf("mumu[%d] is %f and number of elements is %d\n", index, mumu[index], sizemumu);
-//	}
-//	else
-//	{
-//	sizeUU = ncols_Umufile;
-//	//UU = malloc(ncols_Umufile*sizeof(double));
-//	UU = storevals;
-//	//printf("UU[%d] is %f and number of elements is %d\n", index, UU[index], sizeUU);
-//	}
-//	i += 1; }
-//fclose(Umufile);
+
 i=0;
-printf("Array filling DONE\n");
 clock_t int1 = clock(); // Finds the time of the computation so far
 double inttime  = (double)(int1 - begin) / CLOCKS_PER_SEC;
-printf("After array filling time is %f\n", inttime);
+printf("Array filling DONE: time is %f\n", inttime);
 /* DENSITY INTEGRALS 
 This part calculates the density integrals and outputs the result of the integration to a file fout and also the yz distribution function to three files one containing the distribution function the other two containing the velocity grid */
 FILE *fout; 
@@ -582,42 +523,31 @@ i=0;
 stop = 0;
 printf("sizexbar = %d\n", sizexbar);
 printf("Starting density evaluation\n");
+ic = 0;
 while (stop == 0) 
 {	
+	i = ic*zoomfactor;
 	pos = xx[i];
 	intdxbar = 0.0;
 	intdxbaropen = 0.0;
 	intdxbaropenflow = 0.0;
-	for (j=1; j<sizexbar; j++)
-	{	vxnew = 0.0;
+	for (j=1; j<sizexbar; j++) {
+		vxnew = 0.0;
 		intdUopenold = intdUopen;
-		intdUopenflowold = intdUopenflow;
-		intdUopenBohmold = intdUopenBohm;
-		intdUopenxbarold = intdUopenxbar;
-		intdUopensquareold = intdUopensquare;
+		intdUopenflowold = intdUopenflow; intdUopenBohmold = intdUopenBohm;
+		intdUopenxbarold = intdUopenxbar; intdUopensquareold = intdUopensquare;
 		intdUopen = 0.0;
-		intdUopenflow = 0.0;
-		intdUopenBohm = 0.0;
-		intdUopenxbar = 0.0;
-		intdUopensquare = 0.0;
-		if (j == jmopen[i])
-		{	oorbintgrd = oorbintgrdold = 0.0;
-			oorbintgrdflow = oorbintgrdflowold = 0.0;
-			oorbintgrdBohm = oorbintgrdBohmold = 0.0;
-			oorbintgrdxbar = oorbintgrdxbarold = 0.0;
-			oorbintgrdsquare = oorbintgrdsquareold = 0.0;
-			//if (icritlow - j < 0)
-			//{	k = 0; }
-			//else
-			//{	k = icritlow - j; }
-			//sizeU = (int) sqrt(Ucap - chi[j][k])/dvzopen;
+		intdUopenflow = 0.0; intdUopenBohm = 0.0;
+		intdUopenxbar = 0.0; intdUopensquare = 0.0;
+		if (j == jmopen[i]) {	
+			oorbintgrd = oorbintgrdold = 0.0;
+			oorbintgrdflow = oorbintgrdflowold = 0.0; oorbintgrdBohm = oorbintgrdBohmold = 0.0;
+			oorbintgrdxbar = oorbintgrdxbarold = 0.0; oorbintgrdsquare = oorbintgrdsquareold = 0.0;
 			sizeU = (int) sqrt(Ucap - chiMax[j])/dvzopen;
-			for (l=0; l < sizeU; l++)
-			{	oorbintgrdold = oorbintgrd;
-				oorbintgrdflowold = oorbintgrdflow;
-				oorbintgrdBohmold = oorbintgrdBohm;
-				oorbintgrdxbarold = oorbintgrdxbar;
-				oorbintgrdsquareold = oorbintgrdsquare;
+			for (l=0; l < sizeU; l++) {	
+				oorbintgrdold = oorbintgrd;
+				oorbintgrdflowold = oorbintgrdflow; oorbintgrdBohmold = oorbintgrdBohm;
+				oorbintgrdxbarold = oorbintgrdxbar; oorbintgrdsquareold = oorbintgrdsquare;
 				vz = dvzopen*l;
 				U = chi[j][k] + pow(vz, 2.0); // is it worth increasing accuracy?
 				if (i > icritup)
@@ -626,13 +556,6 @@ while (stop == 0)
 					Fopen = 0; 	
 				oorbintgrd = sqrt(alpha*vz*openorbit[j])*Fopen;
 				oorbintgrdflow = 0.5*alpha*vz*openorbit[j]*Fopen;
-				//oorbintgrdBohm = (1.0/vx0open - 1.0/sqrt(vx0open*vx0open + alpha*vz*openorbit[j]))*Fopen;
-				//oorbintgrdBohm = (alpha*vz*openorbit[j]/(pow(vx0open, 3.0)))*Fopen;
-				//oorbintgrdBohm = oorbintgrd/pow(vx0open, 2.0);
-				//oorbintgrdxbar = xbar[j]*(1.0/vx0open - 1.0/sqrt(vx0open*vx0open + alpha*vz*openorbit[j]))*Fopen;
-				//oorbintgrdsquare = (1.0/8.0)*(1.0/pow(vx0open, 3.0) - 1.0/pow((vx0open*vx0open + alpha*vz*openorbit[j]), 1.5))*Fopen;
-				//if (j == jmopen[i])
-				//{	oorbintgrdold = sqrt(alpha*vz*(openorbit[j-1]*(chiMax[j] - chi[j][i]) + openorbit[j]*(chiMax[j-1] - chi[j-1][i]))/(chiMax[j-1] - chi[j-1][i] + chiMax[j] - chi[j][i]))*Fopen; }
 				if (oorbintgrd != oorbintgrd)
 				{	
 					problem = 1; 
@@ -641,31 +564,36 @@ while (stop == 0)
 						printf("vx0open = %f, openorbit[%d] = %f, imaginary oorbintgrd in initial piece of integral due to negative value of openorbit?\n", vx0open, j, openorbit[j]); 
 					}
 				}
-				if (i==0) // for a flat potential, oorbintgrd can be calculated analytically
-				{	oorbintgrdantycal = sqrt(2.0*alpha*vz*M_PI*xbar[j])*(U-chiMax[j])*exp(-U)/pow(M_PI, 1.5); }
+				if (i==0) 
+					oorbintgrdantycal = sqrt(2.0*alpha*vz*M_PI*xbar[j])*(U-chiMax[j])*exp(-U)/pow(M_PI, 1.5); 
+// for a flat potential, oorbintgrd can be calculated analytically
 					//oorbintgrd = oorbintgrdantycal;
 					//printf("oorbintgrd is %f, analytical is %F\n", oorbintgrd, oorbintgrdantycal);
-				if (l!=0)
-				{	intdUopen += 2.0*dvzopen*(oorbintgrd+oorbintgrdold);
+				if (l!=0) {	
+					intdUopen += 2.0*dvzopen*(oorbintgrd+oorbintgrdold);
 					intdUopenflow += 2.0*dvzopen*(oorbintgrdflow+oorbintgrdflowold);
 					intdUopenBohm += 2.0*dvzopen*(oorbintgrdBohm+oorbintgrdBohmold);
 					intdUopenxbar += 2.0*dvzopen*(oorbintgrdxbar+oorbintgrdxbarold);
-					intdUopensquare += 2.0*dvzopen*(oorbintgrdsquare+oorbintgrdsquareold); }
-				else
-				{	intdUopen += 0.0;
+					intdUopensquare += 2.0*dvzopen*(oorbintgrdsquare+oorbintgrdsquareold); 
+				}
+				else {	
+					intdUopen += 0.0;
 					intdUopenflow += 0.0;
 					intdUopenBohm += 0.0;
 					intdUopenxbar += 2.0*dvzopen*(oorbintgrdxbar+oorbintgrdxbarold);
-					intdUopensquare += 2.0*dvzopen*(oorbintgrdsquare+oorbintgrdsquareold); } } }
-		if (j > jmopen[i]) 
-		{	oorbintgrd = oorbintgrdold = 0.0;
+					intdUopensquare += 2.0*dvzopen*(oorbintgrdsquare+oorbintgrdsquareold); 
+				} 
+			} 
+		}
+		if (j > jmopen[i]) {	
+			oorbintgrd = oorbintgrdold = 0.0;
 			oorbintgrdflow = oorbintgrdflowold = 0.0;
 			oorbintgrdBohm = oorbintgrdBohmold = 0.0;
 			oorbintgrdxbar = oorbintgrdxbarold = 0.0;
 			oorbintgrdsquare = oorbintgrdsquareold = 0.0;
 			sizeU = (int) sqrt(Ucap - chiMax[j])/dvzopen;
-			for (l=0; l < sizeU; l++)
-			{	oorbintgrdold = oorbintgrd;
+			for (l=0; l < sizeU; l++) {
+				oorbintgrdold = oorbintgrd;
 				oorbintgrdflowold = oorbintgrdflow;
 				oorbintgrdBohmold = oorbintgrdBohm;
 				oorbintgrdxbarold = oorbintgrdxbar;
@@ -673,44 +601,43 @@ while (stop == 0)
 				vz = dvzopen*l;
 				U = chiMax[j] + pow(vz, 2.0);
 				vx0open = sqrt(small + chiMax[j] - chi[j][i]);
-				if (vx0open != vx0open)
-				{		
+				if (vx0open != vx0open) {		
 					problem = 1; 
 					if (debug == 1)
-					{
 						printf("HERE imaginary vx0open, j = %d, i is %d, chi[j][i] = %f, chiMax[j] = %f\n", j, i, chi[j][i], chiMax[j]); 
-					}
 				}
 				Fopen = bilin_interp(mu[j][0], U, FF, mumu, UU, sizemumu, sizeUU, -1, -1);
 				oorbintgrd = (sqrt(vx0open*vx0open + alpha*vz*openorbit[j]) - vx0open)*Fopen;
 				oorbintgrdflow = 0.5*alpha*vz*openorbit[j]*Fopen;
 				oorbintgrdBohm = (1.0/vx0open - 1.0/sqrt(vx0open*vx0open + alpha*vz*openorbit[j]))*Fopen;
-				//oorbintgrdBohm = (alpha*vz*openorbit[j]/(pow(vx0open, 3.0)))*Fopen;
-				//oorbintgrdBohm = oorbintgrd/pow(vx0open, 2.0);
 				oorbintgrdxbar = xbar[j]*(1.0/vx0open - 1.0/sqrt(vx0open*vx0open + alpha*vz*openorbit[j]))*Fopen;
 				oorbintgrdsquare = (1.0/8.0)*(1.0/pow(vx0open, 3.0) - 1.0/pow((vx0open*vx0open + alpha*vz*openorbit[j]), 1.5))*Fopen;
-				//if (j == jmopen[i])
-				//{	oorbintgrdold = sqrt(alpha*vz*(openorbit[j-1]*(chiMax[j] - chi[j][i]) + openorbit[j]*(chiMax[j-1] - chi[j-1][i]))/(chiMax[j-1] - chi[j-1][i] + chiMax[j] - chi[j][i]))*Fopen; }
-				if (oorbintgrd != oorbintgrd)
-				{	problem = 1; 	
-					if (debug == 1)
-					{	printf("vx0open = %f, openorbit[%d] = %f, HERE imaginary oorbintgrd in initial piece of integral due to negative value of openorbit?\n", vx0open, j, openorbit[j]); } }
-				if (i==0) // for a flat potential, oorbintgrd can be calculated analytically
-				{	oorbintgrdantycal = sqrt(2.0*alpha*vz*M_PI*xbar[j])*(U-chiMax[j])*exp(-U)/pow(M_PI, 1.5); }
-					//oorbintgrd = oorbintgrdantycal;
-					//printf("oorbintgrd is %f, analytical is %F\n", oorbintgrd, oorbintgrdantycal);
-				if (l!=0)
-				{	intdUopen += 2.0*dvzopen*(oorbintgrd+oorbintgrdold);
+				if (oorbintgrd != oorbintgrd) {
+					problem = 1; 	
+					if (debug == 1) {
+						printf("vx0open = %f, openorbit[%d] = %f, HERE imaginary oorbintgrd in initial piece of integral due to negative value of openorbit?\n", vx0open, j, openorbit[j]); 
+					} 
+				}
+				if (i==0) 
+					oorbintgrdantycal = sqrt(2.0*alpha*vz*M_PI*xbar[j])*(U-chiMax[j])*exp(-U)/pow(M_PI, 1.5); 
+// for a flat potential, oorbintgrd can be calculated analytically
+				//oorbintgrd = oorbintgrdantycal;
+//printf("oorbintgrd is %f, analytical is %F\n", oorbintgrd, oorbintgrdantycal);
+				if (l!=0) {
+					intdUopen += 2.0*dvzopen*(oorbintgrd+oorbintgrdold);
 					intdUopenflow += 2.0*dvzopen*(oorbintgrdflow+oorbintgrdflowold);
 					intdUopenBohm += 2.0*dvzopen*(oorbintgrdBohm+oorbintgrdBohmold);
 					intdUopenxbar += 2.0*dvzopen*(oorbintgrdxbar+oorbintgrdxbarold);
-					intdUopensquare += 2.0*dvzopen*(oorbintgrdsquare+oorbintgrdsquareold); }
-				else
-				{	intdUopen += 0.0;
+					intdUopensquare += 2.0*dvzopen*(oorbintgrdsquare+oorbintgrdsquareold); 
+				}
+				else {
+					intdUopen += 0.0;
 					intdUopenflow += 0.0;
 					intdUopenBohm += 0.0;
 					intdUopenxbar += 2.0*dvzopen*(oorbintgrdxbar+oorbintgrdxbarold);
-					intdUopensquare += 2.0*dvzopen*(oorbintgrdsquare+oorbintgrdsquareold); } }
+					intdUopensquare += 2.0*dvzopen*(oorbintgrdsquare+oorbintgrdsquareold); 
+				} 
+			}
 			if (intdUopen != intdUopen) 
 			{	problem = 1; 
 				if (debug == 1)
@@ -719,21 +646,24 @@ while (stop == 0)
 			{	intdUopenantycal = 2.0*0.919*sqrt(2.0*alpha*xbar[j])*exp(-xbar[j]*xbar[j])/M_PI; } 
 				//printf("xbar[%d] = %f, analytical is %f, numerical is %f\n", j, xbar[j], intdUopenantycal, intdUopen); printf("vx0open is %f (should be zero)\n", vx0open); 
 			dxbar = xbar[j] - xbar[j-1];
-			if ( (j == jmopen[i]+1) && (i > icritup) )
-			{	if ( fabs(pos - xx[imax[j]]) < small )
-				{	intdxbaropen += 0.0; }
-				else
-				{	dxbar = xbar[j] - (xbar[j-1]*(chiMax[j] - chi[j][i]) - xbar[j]*(chiMax[j-1] - chi[j-1][i]))/(-chiMax[j-1] + chi[j-1][i] + chiMax[j] - chi[j][i]); } }
+			if ( (j == jmopen[i]+1) && (i > icritup) ) {
+				if ( fabs(pos - xx[imax[j]]) < small )
+					intdxbaropen += 0.0; 
+				else 
+					dxbar = xbar[j] - (xbar[j-1]*(chiMax[j] - chi[j][i]) - xbar[j]*(chiMax[j-1] - chi[j-1][i]))/(-chiMax[j-1] + chi[j-1][i] + chiMax[j] - chi[j][i]); 
+			}
 //(chi[j][k]-chi[j][i])/(2.0*(pos-xx[k])); 
 			intdxbaropen += 0.5*(intdUopen+intdUopenold)*dxbar;
 			intdxbaropenflow += 0.5*(intdUopenflow+intdUopenflowold)*dxbar;
 			intdxbaropenBohm += 0.5*(intdUopenBohm+intdUopenBohmold)*dxbar;
 			intdxbarxbar += 0.5*(intdUopenxbar+intdUopenxbarold)*dxbar;
 			intdxbarsquare += 0.5*(intdUopensquare+intdUopensquareold)*dxbar; 
-			if (intdxbaropen != intdxbaropen) 
-			{	problem = 1; 
+			if (intdxbaropen != intdxbaropen) {
+				problem = 1; 
 				if (debug == 1)
-				{	printf("HERE, j is %d\n", j); } } }
+					printf("PROBLEM HERE, j is %d\n", j); 
+			} 
+		}
 		if ( j>=jmclosed[i] )  /* We have entered the closed orbit integral */
 		{	
 			intdvxold = intdvx;
@@ -851,32 +781,34 @@ while (stop == 0)
 			} 
 		} 
 	}
-	ne[i] = exp(phi[i]/Te); 
-	niclosed[i] = intdxbar;
-	niopen[i] = intdxbaropen;
-	nitotal[i] = niopen[i] + niclosed[i];
-	if (i == 0)
-	{	Bohm = intdxbaropenBohm/nitotal[i];
-		flux0 = (intdxbaropenflow)/nitotal[i]; 
+	ne[ic] = exp(phi[i]/Te); 
+	niclosed[ic] = intdxbar;
+	niopen[ic] = intdxbaropen;
+	nitotal[ic] = niopen[ic] + niclosed[ic];
+	if (ic == 0) {
+		Bohm = intdxbaropenBohm/nitotal[ic];
+		flux0 = (intdxbaropenflow)/nitotal[ic]; 
 		printf("intdxbarsquare = %f\n", intdxbarsquare);
-		kBohmsquared = intdxbarxbar/(intdxbarsquare - 0.5*nitotal[0]); }
-	if ((nitotal[i] >= stoplimit) || (i == n-1))
-	{	
+		kBohmsquared = intdxbarxbar/(intdxbarsquare - 0.5*nitotal[0]); 
+	}
+	if ((nitotal[ic] >= stoplimit) || (ic == size_phigrid-1)) {	
+		printf("WTF?\n");
 		stop = 1;
-		*size_ngrid = i+1; 
+		*size_ngrid = ic+1; 
 	}
 	if (debug == 1)
 	{	
-		printf("%f is CLOSED orbit density at position index %d, position %f\n", niclosed[i], i, pos);
-		printf("%f is OPEN orbit density at position index %d, position %f\n", niopen[i], i, pos);
-		printf("%f is TOTAL orbit density at position index %d, position %f\n", nitotal[i], i, pos); 
-		if ( (nitotal[i] != nitotal[i]) || (nitotal[i] < small) )
+		printf("%f is CLOSED orbit density at position index %d, position %f\n", niclosed[ic], ic, pos);
+		printf("%f is OPEN orbit density at position index %d, position %f\n", niopen[ic], ic, pos);
+		printf("%f is TOTAL orbit density at position index %d, position %f\n", nitotal[ic], ic, pos); 
+		if ( (nitotal[ic] != nitotal[ic]) || (nitotal[ic] < small) )
 		{ 	
 			problem = 1; 
 		} 
 	} 
-	fprintf(fout, "%f %f %f %f\n", xx[i], nitotal[i], niclosed[i], niopen[i]);
-	i += 1; 
+	fprintf(fout, "%f %f %f %f\n", xx[ic], nitotal[ic], niclosed[ic], niopen[ic]);
+	//i += 1; 
+	ic += 1;
 } 
 fclose(fout);
 clock_t int2 = clock(); // Finds the start time of the computation
@@ -1020,7 +952,6 @@ free(jmclosed);
 free(jmopen);
 free(xifunction);
 free(xbar);
-//free(xbarop);
 
 free(chimin);
 free(chiMax);
@@ -1045,25 +976,21 @@ for (int w = 0; w < sizexbar; w++)
 	free(Uperp[w]);
 	free(mu[w]);
 	free(upper[w]);
-	for (int s = 0; s < n; s++)
+	for (int s = 0; s < size_finegrid; s++)
 	{
 		free(vx[w][s]);
 	}
 	free(vx[w]);
 }
-//for (int w = 0; w < nrows_distfile; w++)
-//{
-//	free(FF[w]);
-//}
-//free(FF);
 
-for (i=0; i<n; i++) {
+for (i=0; i<*size_ngrid; i++) {
 	//phi_grid[i] = phi[i];
 	//printf("iondens.c: phi = %f\n", phi[i]);
 	//printf("iondens.c: phi = %f\tnitotal = %f\n", phi[i], nitotal[i]);
 	n_grid[i] = nitotal[i];
 }
 free(phi);
+free(gg);
 free(phip);
 
 
