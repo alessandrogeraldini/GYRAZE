@@ -4,7 +4,7 @@ import scipy.interpolate as scintpol
 import scipy.special as scsp
 import numpy as np
 
-alpha, Te = np.loadtxt('inputfile.txt')
+alpha, Te, vcut = np.loadtxt('inputfile.txt')
 print(alpha, Te)
 Ts = 1.0 + Te
 
@@ -31,17 +31,25 @@ deltax = 0.08*np.sqrt(Ts)
 nn1 = (int) ( 2.0*np.sqrt(xcr)/deltax )
 nn2 = (int) ( (xtop - xcr)/deltax )
 red = 0.9
-v_cut = 1.52
-print(0.5*v_cut**2)
-for i in range(nn1):
-	g = i*np.sqrt(xcr)/nn1 
-	fp.write(str(g)+' '+str(red*Te*f1(g**2/np.sqrt(Te/2)))+'\n')
-	#fp.write(str(g)+' '+str((1.0 - g**2/xtop)*0.5*v_cut**2)+'\n')
 
-for i in range(nn2):
-	g = np.sqrt(xcr + i*deltax)
+nn = 60
+deltax = 0.5
+for i in range(nn):
+	g = np.sqrt(0.5+i*deltax) - np.sqrt(0.5)
+	print(g**2)
 	fp.write(str(g)+' '+str(red*Te*f1(g**2/np.sqrt(Te/2)))+'\n')
-	#fp.write(str(g)+' '+str((1.0 - g**2/xtop)*0.5*v_cut**2)+'\n')
-	#fp.write(str(g)+' '+str(0.0)+'\n')
+
+#for i in range(nn1):
+#	g = i*np.sqrt(xcr)/nn1 
+#	print(g**2)
+#	fp.write(str(g)+' '+str(red*Te*f1(g**2/np.sqrt(Te/2)))+'\n')
+#	#fp.write(str(g)+' '+str((1.0 - g**2/xtop)*0.5*v_cut**2)+'\n')
+#
+#for i in range(nn2):
+#	g = np.sqrt(xcr + i*deltax)
+#	print(g**2)
+#	fp.write(str(g)+' '+str(red*Te*f1(g**2/np.sqrt(Te/2)))+'\n')
+#	#fp.write(str(g)+' '+str((1.0 - g**2/xtop)*0.5*v_cut**2)+'\n')
+#	#fp.write(str(g)+' '+str(0.0)+'\n')
 
 fp.close()
