@@ -9,7 +9,7 @@
 #include <time.h>
 #include "mps.h"
 
-int newguess(int convergence, int problem, double Te, double alpha, double *x_grid, double* ne_grid, double *ni, double* phi_grid,int size_phigrid, int size_ngrid, double u_e, double *v_cut, int quasineutral, double **distfunc_i, double *UU, double *mumu, int sizeUU, int sizemumu) {
+int newguess(int convergence, int problem, double Te, double alpha, double *x_grid, double* ne_grid, double *ni, double* phi_grid,int size_phigrid, int size_ngrid, double u_e, double *v_cut, double *current, int quasineutral, double **distfunc_i, double *UU, double *mumu, int sizeUU, int sizemumu, double mioverme, int fix_current) {
 //DECLARATIONS
 	clock_t begin = clock(); // Finds the start time of the computation
 	int row, col=0, i, ii, j;
@@ -26,7 +26,7 @@ int newguess(int convergence, int problem, double Te, double alpha, double *x_gr
 	double sig=0.0, siglimit, siglimit1, dev, devbig;
 	double random_value;
 	double negradinf, dev_0;
-	double u_etilde, u_i, current = 0.0, mioverme = 1836.0, set_current = 1, old_v_cut;
+	double u_etilde, u_i, old_v_cut;
 	FILE *fout2, *fpotold;
 
 printf("size_phigrid = %d\nsize_ngrid = %d\n", size_phigrid, size_ngrid);
@@ -52,7 +52,7 @@ else
 {	
 	Teor1 = 1.0; 
 }
-siglimit1 = 0.03;//0.03
+siglimit1 = 0.2;//0.03
 siglimit = 0.002;//0.007
 if (Te>2.1)
 {
@@ -65,14 +65,18 @@ random_value = (double) rand()/RAND_MAX;//float in range 0 to 1
 printf("The random number between 0 and 1 is %f\n", random_value);
 if (convergence == 0)
 {	
-	weight = 0.2 + 0.4*random_value/pow(Teor1, 1.0); 
-	weight = 0.4;
+	//weight = 0.2 + 0.2*random_value/pow(Teor1, 1.0); 
+	//weight = 0.1 + 0.2*random_value/pow(Teor1, 1.0); 
+	weight = 0.2;
 }
 else
 {	
-	weight = 0.1 + 0.2*random_value/pow(Teor1, 1.0); 
-	weight = 0.4;
+	//weight = 0.1 + 0.2*random_value/pow(Teor1, 1.0); 
+	weight = 0.2;
 }
+
+if (alpha > 0.02) weight = 0.4;
+else weight = 0.2;
 
 
 row = 0;
@@ -105,7 +109,6 @@ fclose(fpotold);
 //Tevect = (double*)calloc(row,sizeof(double));
 //rewind(fpk1);
 //row=0;
-//printf("YOLO\n");
 //col = 2;
 //while (fgets(line, 20000, fpk1) != NULL) {
 //	printf("i=%d\n", row);
@@ -120,14 +123,13 @@ fclose(fpotold);
 //	row += 1;
 //}
 //fclose(fpk1); // close file
-//printf("YOLO\n");
 
 
 //printf("k1GK = %f\n", k1GK);
 
 // Note: first index of distfunc_i and distfunc_iprime is mu, second one is U
 
-distfunc_iprime = (double**)calloc(sizemumu,sizeof(double*));
+distfunc_iprime = calloc(sizemumu,sizeof(double*));
 //printf("distfunc_i[30][29] = %f and distfunc_i[29][30] =%f \n", distfunc_i[30][29], distfunc_i[29][30]);
 
 
@@ -135,7 +137,7 @@ distfunc_iprime = (double**)calloc(sizemumu,sizeof(double*));
  */
 for (i=0; i<sizemumu; i++)
 {
-	distfunc_iprime[i] = (double*)calloc(sizeUU,sizeof(double));
+	distfunc_iprime[i] = calloc(sizeUU,sizeof(double));
 	for (j=0; j < sizeUU; j++)
 	{
 		if ((j==sizeUU-1) || (i==sizemumu-1))
@@ -213,6 +215,10 @@ for (i=0; i<sizemumu; i++)
 }
 
 negradinf = (ne_grid[size_phigrid - 3] - ne_grid[size_phigrid - 1]) / (phi_grid[size_phigrid - 3] - phi_grid[size_phigrid - 1]);
+if (fabs(phi_grid[size_ngrid]) < 0.05) negradinf = 1.0;
+else negradinf = (ne[size_ngrid-2] - 1.0)/phi_grid[size_ngrid-2];
+//negradinf = (ne_grid[size_ngrid-1] - 1.0)/phi_grid[size_ngrid-1];
+negradinf = 1.0;
 printf("negradinf = %.5f\n", negradinf);
 
 //printf("Tevect = %f\n", Tevect[0]);
@@ -286,7 +292,7 @@ for (i=0; i<size_ngrid; i++)
 	if (ne_grid[i] < 0) {
 		printf("ERROR: ne_grid[i] is less than zero\n");
 	}
-	//printf("phi=%f\tne=%f\tni=%f\n", phi_grid[i], ne_grid[i], ni[i]);
+	printf("phi=%f\tne=%f\tni=%f\n", phi_grid[i], ne_grid[i], ni[i]);
 	dev = fabs(ni[i]/ne_grid[i] - 1.0);
 	if (dev > devbig)  devbig = dev; 
 	if (quasineutral == 1) sig += pow((ni[i]/ne_grid[i] - 1.0), 2.0);
@@ -309,8 +315,11 @@ for (i=0; i<size_ngrid; i++)
 		if (fabs(k1DK) < k1DKthres)
 		{
 			if (quasineutral == 1) {
+				printf("k_3/2 = %f, newphi[i] = %f\n", k32, newphi[i]);
 				CC = sqrt(20.0/k32)/pow(-0.5*newphi[i], 0.25) - x_grid[i];
+				if (fabs(newphi[i]) < 1.0e-10) CC = 0.0;
 				printf("C_3/2 = %f, newphi[i] = %f\n", CC, newphi[i]);
+				if (fabs(newphi[i]) < 1.0e-10) CC = 0.0;
 			}
 		}
 		else if (fabs(k1DK) > k1DKthres)
@@ -318,7 +327,8 @@ for (i=0; i<size_ngrid; i++)
 			printf("k1DK = %f\n, k1DKthres=%f\n", k1DK, k1DKthres);
 			printf("~~~Chodura Oversatistied~~~\n");
 			//phi1 = newphi[i]*exp(-k1GK*x_grid[i]);
-			phi1 = newphi[i] * exp(k1DK * x_grid[i]);
+			//phi1 = newphi[i] * exp(k1DK * x_grid[i]);
+			phi1 = newphi[i] * exp(x_grid[i]);
 		}
 	}
 	else  {
@@ -339,16 +349,22 @@ for (i=0; i<size_ngrid; i++)
 for (i=size_ngrid; i<size_phigrid; i++)
 {
 	if (quasineutral == 1) {
-		if (fabs(k1DK) < k1DKthres)
-		{
-			newphi[i] = -2.0*(400.0/pow(k32, 2.0))/pow(x_grid[i] + CC, 4.0);
+		if (problem == 0) {
+			if (fabs(k1DK) < k1DKthres)
+			{
+				newphi[i] = -2.0*(400.0/pow(k32, 2.0))/pow(x_grid[i] + CC, 4.0);
+			}
+			else if (fabs(k1DK) > k1DKthres)
+			{
+				//newphi[i] = phi1*exp(k1GK*x_grid[i]); // k1GK should be negative
+				//newphi[i] = phi1 * exp(-k1DK * x_grid[i]);
+				newphi[i] = phi1 * exp(-1.0 * x_grid[i]);
+			}
+			//printf("phi = %f, newphi[i] = %f\n", phi_grid[i], newphi[i]);
 		}
-		else if (fabs(k1DK) > k1DKthres)
-		{
-			//newphi[i] = phi1*exp(k1GK*x_grid[i]); // k1GK should be negative
-			newphi[i] = phi1 * exp(-k1DK * x_grid[i]);
+		else {
+			newphi[i] = 0.0;
 		}
-		//printf("phi = %f, newphi[i] = %f\n", phi_grid[i], newphi[i]);
 	}
 }
 sig /= size_ngrid;
@@ -495,37 +511,30 @@ free(phip);
 free(phipp);
 free(phipg);
 free(phippg);
-printf("YOLO\n");
 free(flux);
 free(newphi);
-//for (int w = 0;w < sizemumu;w++)
-//{
-//	free(distfunc_iprime[w]);
-//
-//}
-//free(distfunc_iprime);
-//for (int m = 0;m < sizeUU;m++)
-//{
-//	free(distfunc_i[m]);
-//
-//}
-//free(distfunc_i);
+free(ne);
+free(gg);
+
+for (i=0; i<sizemumu; i++)  free(distfunc_iprime[i]);
+free(distfunc_iprime);
 
 u_i = fluxinf/alpha;
-if (set_current == 1) {
+u_e *= sqrt(mioverme/2.0);
+if (fix_current == 1) {
 	printf("Old v_cut = %f\n", *v_cut);
 	old_v_cut = *v_cut;
 	u_etilde = u_e - sqrt(mioverme/M_PI)*0.5*exp(-0.5*old_v_cut*old_v_cut);
 	printf("u_etilde = %f\n", u_etilde);
 	printf("u_e = %f\n", u_e);
 	printf("u_i = %f\n", u_i);
-	printf("current = %f\n", current);
-	if ( (-current +u_i - u_etilde) < 0.0 ) {
+	printf("current = %f\n", *current);
+	if ( (-(*current) +u_i - u_etilde) < 0.0 ) {
 		printf("The log below will be negative\n");
 		*v_cut = old_v_cut;
 	}
 	else { 
-		*v_cut = 0.5*(*v_cut) + 0.5*sqrt(-2.0*log(2.0*(-current + u_i - u_etilde)) - log(M_PI/mioverme) );
+		*v_cut = 0.5*(*v_cut) + 0.5*sqrt(-2.0*log(2.0*(-(*current) + u_i - u_etilde)) - log(M_PI/mioverme) );
 	}
 	//if ((u_i - u_e - current)/u_i > 0.01) {
 	//	*v_cut -= 0.01;	
@@ -535,8 +544,7 @@ if (set_current == 1) {
 	if ( (*v_cut*(*v_cut)*0.5 < - phi_grid[0]) )  *v_cut = sqrt(- 2.0*phi_grid[0]);
 	printf("New v_cut = %f\n", *v_cut);
 	printf("New phi_cut = %f\n", 0.5*(*v_cut)*(*v_cut));
-	//if ( (fabs(old_v_cut - (*v_cut)) > 0.02) && (convergence == 2) ) convergence = 1;
-	if ( (fabs(current - u_i + u_e)/u_i > 0.002) && (convergence == 2) ) convergence = 1;
+	if ( (fabs(*current - u_i + u_e)/u_i > 0.002) && (convergence == 2) ) convergence = 1;
 }
 clock_t end = clock(); // finds the end time of the computation
 double jobtime  = (double)(end - begin) / CLOCKS_PER_SEC;
