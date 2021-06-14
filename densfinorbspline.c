@@ -31,17 +31,17 @@ int densfinorb(int sizevxopen, double Te, double alpha, int size_phigrid, int *s
 //inpu: double rho_over_unitgrid = for ions in the magnetic presheath this is 1.0, for electrons in the Debye sheath this can be chosen as min(1.0, rho_e/lambda_D)
 //double temp_over_unitgrid = 1.0;
 clock_t begin = clock(); // Finds the start time of the computation
-int zoomfactor = 2;
+int zoomfactor = 1;
 double phi_cut = -99999.0, n_inf=0.0; // keep phi_cut as large and negative as possible
 int reflected = 0;
 double Ucrit = 0.0, frac_reflected=0.0, frac = 0.0, vzcrit;
 double deltax;
-double *xx, *dxdf, pos, *phi, *phip, *ne, *niclosed, *niopen, *nitotal, **chi, **chiop, Telarge, stoplimit = 0.98;
+double *xx, *dxdf, pos, *phi, *phip, *ne, *niclosed, *niopen, *nitotal, **chi, **chiop, Telarge, stoplimit = 0.995;
 /* pos is x, the position (distance from the wall); phi contains the values of phi(x), extracted from a file. phip is phi prime, first derivative of phi. ne is the electron density; niclosed is the closed orbit ion density, niopen is the open orbit ion density, nitotal is the sum of the two; newphi is the new electrostatic potential guess; chi is the effective potential;*/ 
 int debug=0, stop = 0, sizexbar, problem = 0, noback = 0, maxj;
 int icrit, ind;
 /* n is the domain of the position x (the largest value of the index i, so e.g. x_grid[n] = L_2 in the paper); sizexbar is the domain of the position xbar (the largest value of the index j); */ 
-double *openorbit, openorbitantycal, **mu, *muopen, *Ucritf, *xbar, *twopimuprime, *openintegral, *xifunction;
+double *openorbit, openorbitantycal, **mu, *muopen, *Ucritf, *xbar, xbarcrit, *twopimuprime, *openintegral, *xifunction;
 /* openorbit is the integral Delta_M in the paper (an integral over the last closed orbit, representing how much U_perp - chi_M change in one full last orbit); openorbitantycal is the analytical value of openorbit for a flat potential (the first potential guess usually); mu is the array containing values of mu(xbar, Uperp). The index j is for values of xbar, k is for values of Uperp; xbar is the grid of values used in the closed orbit integral; FF contains the distribution function, read from the file distfile.txt. UU and mumu contain the values of U and mu corresponding to the function FF (which is F(mu, U)); FFprime is the numerical first derivative of F with respect to U; Many of these arrays are pointers because we don't initially know the array size, until we read the files (e.g. the file with the potential and the one with the distribution function); Note: first index of FF and FFprime is mu, second one is U; Interesting output variables; xifunction is the function of x which defines the grid of values of xbar by finding a chi whose minimum lies exactly at each grid point x */
 int *jmclosed, *jmopen,  i=0, ic=0, j=0, k=0, l=0, sizeU, size_finegrid;
 /* jmclosed represent minimum values of xbar above which we integrate open and closed orbit density integrals respectively (xbar_m,o and xbar_m in the paper); i is an index usually representing the positin x  j is an index usually representing the orbit position xbar; k is an index usually representing the energy Uperp (or velocity vx). It's always used in conjunction with j (and sometimes i); l is an index (used in for loops) usually representing the total energy (or velocity vz). It's used only in the DENSITY INTEGRALS part of the code; sizeU is the size of the integration range over U (or velocity vz). It is set later on in the code */
@@ -54,7 +54,7 @@ int *lowerlimit, *upperlimit, **upper, *itop, *imax, *imin;
 /* lowerlimit represents the lower limit of k in the integrals over Uperp (or vx). It's needed because some of the earlies energies; (which are the largest because thy are values of chi stored after the maximum is found); may be so large that they are associated with very small values of the distribution function. This avoids integrating in an empty portion of phase space; upperlimit[j] represents the largest value of k (the smallest stored energy Uperp = chi_minimum) associated with some value of j; upper[j][i] represents the value of k associated with the smallest value of vx when integrating over Uperp. Going above upperlimit[j][i] makes Uperp < chi so velocities imaginary; imax/imin[j] stores the position of the maximum/minimum of the effective potential chi (It's x_M/x_m in the paper, which depends on xbar). */
 double **Uperp, ***vx, *chiMax, *chiMpp, *chimin, oorbintgrd, oorbintgrdantycal, oorbintgrdBohm, xbarmax, intdvxopen, intdvxopenBohm=0.0, intdvxopenfluidBohm=0.0, intdxbaropenold;
 /* Uperp stores the possible values of Uperp associated with closed orbits, and so does vx; chiMax and chimin store the local maxima and minima of the effective potential maximum, oorbintgrd is the value of the integrand in the first open orbit integral (oorbintgrdantycal is the analytical result for flat potential); oorbintgrdBohm is the value of the integrand in the `Bohm' integral; intdvxopen and similars are where the integral of f_{0x} (v_x) over v_x, and its two important moments <v_x> (fluidBohm) and <1/v_x^2> (Bohm) are stored; They are a check that the extracted distribution function f_{0x} has the same moments it had when we carried out the density integral earlier; xbarmax is the maximum value of xbar in our grid*/
-double vz, U, dvz = 0.2, dvzopen = 0.1, dvx, dvxopen, Deltavx, vxopen, dxbar, intdU=0.0, intdUopen=0.0, intdUopenBohm = 0.0;
+double vz, U, dvz = 0.1, dvzopen = 0.2, dvx, dvxopen, Deltavx, vxopen, dxbar, intdU=0.0, intdUopen=0.0, intdUopenBohm = 0.0;
 	/* vz used in the density integral; U is the total energy, used in the density integral; dvz is the thickness of the vz grid used to take the integral over U (which is taken over vz in practice), dvzopen is the same for the open orbit piece; dvx is the thickness of the vx grid used to take the integral over Uperp ( which is taken over vx in practice). It must be evaluated because it depends on stored values of vx[j][i][k]; dvxopen is the thickness of the vx grid on which f_{0x} (v_x) is defined (and integrated to check consistency of its moments); dxbar is the thickness of the xbar grid; intdU is the value of the integral over U in the closed orbit density integration process; intdUopen is the same as above, for the open orbit integral; intdUopenBohm same, for Bohm integral */
 double intdUold=0.0, intdvx=0.0, intdvxold = 0.0, intdxbar=0.0, intdxbaropen=0.0, intdxbaropenBohm = 0.0, Bohm = 0.0, F, Fold=0.0, Ucap;
 	/* intdUold is a variable which stores the old intdU, so that the trapezium rule of integration can be applied (intdUold + intdU)*dvz; intdvx stores the integral over Uperp (hence over vx) in the closed orbit integral; intdxbar stores the value of the integral over xbar (which is the final result!), intdxbaropen does the same in the open orbit density integral; intdxbaropenBohm does the same for the Bohm integral; idealBohm is what the Bohm integral shoult be if Bohm condition is marginally satisfied; Bohm is the Bohm integral at the Debye sheath entrance x=0; F is the value of the distribution function evaluated in the density integrals by interpolating FF, and Fold is the `old' needed to apply the trapezium rule; Fprime is the bilinearly interpolated value of FFprime, and Fprimeold is the same at the previous grid point (needed for trapezium rule); used in INTEGRALS OF DISTRIBUTION FUNCTION AT INFINITY; Ucap is the topmost total energy integrated to */
@@ -62,7 +62,8 @@ double intdUopenflow = 0.0, intdUopenflowold = 0.0, intdxbaropenflow = 0.0, oorb
 // values of various integrals
 double oorbintgrdold=0.0, oorbintgrdBohmold=0.0, Fopen=0.0, intdUopenold=0.0, intdUopenBohmold;
 double *chiprimetop, vx0open, aa, aaold; 
-double intdUantycal=0.0, intdvxantycal=0.0, vxnew=0.0, vxold = 0.0, Uperpnew = 0.0, munew = 0.0, *xtop, intdUopenantycal=0.0;
+double intdUantycal=0.0, intdvxantycal=0.0, vxnew=0.0, vxold = 0.0, Uperpnew = 0.0, *xtop, intdUopenantycal=0.0;
+double openorbitnew, chinew, munew = 0.0;
 /* intdUantycal is the integral over U (or v_z) for a flat potential profile (phi =0) for some value of xbar and Uperp; intdvxantycal  is the integral over Uperp (or vx) for a flat potential profile for some value of xbar; vxnew is the value of vx at the 'new' grid point, used in the vx integral (taken using the trapezium rule); vxold is the value of vx at the 'old' grid point, used in the vx integral; Uperpnew is the value of Uperp (used in the closed orbit density integral); munew is the valye of mu (used in the closed orbit density integral); xtop is the top bounce point x_t of the last closed orbit; intdUopenantycal is the analytical value of the integral over U  in the open orbit density integral */
 double oorbintgrdxbar, oorbintgrdsquare, intdUopenxbar = 0.0, intdUopensquare = 0.0, intdxbarxbar=0.0, intdxbarsquare=0.0, kBohmsquared;
 /* oorbintgrdxbar is an integral over the open orbit distribution function at x=0 which is needed to evaluate a coefficient that appears when; expanding quasineutrality near x=0. It was just for playing around and at the moment plays no role in the code; similarly with all other integrals here */
@@ -85,9 +86,11 @@ if (debug == 1) {
   for (i=0; i<size_phigrid; i++) {
     gg[i] = sqrt(x_grid[i]);
     ff[i] = pow(sqrt(grid_parameter)+gg[i], 2.0) - grid_parameter;
+    //printf("ff[%d] = %f\n", i, ff[i]);
   }
   //size_finegrid = size_phigrid*zoomfactor;
   deltax = ff[1];
+  //printf("ff[%d] = %f\n", size_phigrid-1, ff[size_phigrid-1]);
   size_finegrid = (int) (zoomfactor*ff[size_phigrid-1]/deltax);
   printf("size_finegrid = %d\n", size_finegrid);
   xx = (double*)calloc(size_finegrid,sizeof(double)); // xx = x has correct size
@@ -229,17 +232,14 @@ for (i=0; i<size_finegrid; i++)
 	jmopen[i] = jmclosed[i] = 0;
 	if (i == 0)
 	{	
-		//phip[0] = (phi[1] - phi[0])/(xx[1]-xx[0]);
-		phip[0] = (phi[1] - phi[0])/(xx[1]-xx[0]) + (xx[0] - xx[1])*((phi[2] - phi[1])/(xx[2]-xx[1]) - (phi[1] - phi[0])/(xx[1]-xx[0]))/(xx[2]-xx[1]) ; 
-		//printf("phip[0] = %f\n", phip[0]);
-		//phip[0] = (phi[1] - phi[0])/(deltax*dxdf[0]/zoomfactor);
+		phip[0] = (phi[1] - phi[0])/(xx[1]-xx[0]);
+		//phip[0] = (phi[1] - phi[0])/(xx[1]-xx[0]) + (xx[0] - xx[1])*((phi[2] - phi[1])/(xx[2]-xx[1]) - (phi[1] - phi[0])/(xx[1]-xx[0]))/(xx[2]-xx[1]) ; 
 		//printf("phip[0] = %f\n", phip[0]);
 	}
 	else if (i == size_finegrid-1)
 	{	
-		phip[i] = 0.5*(phi[i] - phi[i-1])/(xx[i] - xx[i-1]); 
-		//printf("phip[%d] = %f\n", i, phip[i]);
-		//phip[i] = (0.0 - phi[i-1])/(2.0*deltax*dxdf[i]/zoomfactor);
+		//phip[i] = 0.5*(phi[i] - phi[i-1])/(xx[i] - xx[i-1]); 
+		phip[i] = phip[i-1];
 		//printf("phip[%d] = %f\n", i, phip[i]);
 	}
 		//phip[0] = phip[1] + (xx[0] - xx[1])*(phip[2] - phip[1])/(xx[2]-xx[1]); 
@@ -280,27 +280,28 @@ for (i=0; i<size_finegrid; i++)
 printf("icrit = %d\n", icrit);
 // Whole section below perhaps was overkill in xbar resolution
 ////////
-//j=0;
-//k = icrit+1; 
-// the smallest value of xbar is not calculated at the critical point, but one step ahead
-//for (i=icrit-1;i>=0;i--) {
-//	while ( (xifunction[k] < xifunction[i]) && (k<size_finegrid) ) {	
-//		xbar[j] = xifunction[k]; 
-//		j++; k++; 
-//	}	
-//	xbar[j] = xifunction[i]; 
-//	j++; 
-//}
-//while (k<size_finegrid) { 	
-//	xbar[j] = xifunction[k]; 
-//	k++; j++; 
-//}	
-////////
 j=0;
-for (k=icrit+1; k < size_finegrid; k++) {
-	xbar[j] = xifunction[k]; 
-	j++;
+k = icrit+1; 
+// the smallest value of xbar is not calculated at the critical point, but one step ahead
+for (i=icrit-1;i>=0;i--) {
+	while ( (xifunction[k] < xifunction[i]) && (k<size_finegrid) ) {	
+		xbar[j] = xifunction[k]; 
+		j++; k++; 
+	}	
+	xbar[j] = xifunction[i]; 
+	j++; 
 }
+while (k<size_finegrid) { 	
+	xbar[j] = xifunction[k]; 
+	k++; j++; 
+}	
+////////
+//j=0;
+//for (k=icrit+1; k < size_finegrid; k++) {
+//	xbar[j] = xifunction[k]; 
+//	j++;
+//}
+xbarcrit = xifunction[icrit];
 sizexbar = j;
 if (debug == 1) {
 	for (j = 0; j < sizexbar; j++)
@@ -456,21 +457,27 @@ Because I am comparing neighbouring values of x to find a maximum, I need to con
 			for (k=0;k<=upper[j][i-1]; k++) 
 			{	
 				// replaced k with upper below
-				//if (upper[j][i-1] == 0)
-				if (k == upper[j][i-1])
-				{	
+				if (upper[j][i-1] == 0) {
+				//if (k==0) {
 					vx[j][i-1][k] = sqrt((Uperp[j][k] - chi[j][i-1]));// equiv 0
+					//printf("j = %d, i-1 = %d, %f\n", j, i-1, chi[j][i-2]-chi[j][i-1]);
 					mu[j][k] += 0.0; 
+
 				}
-				else if (k== upper[j][i-1] -1) {
-					vx[j][i-1][k] = sqrt((Uperp[j][k] - chi[j][i-1]));
-					//chiprime = ;
-					mu[j][k] += (1.0/M_PI)*sqrt(chi[j][i-2]-chi[j][i-1])*(2.0/3.0)*(xx[i-1] - xx[i-2]);
-					//printf("%f \n", sqrt(chi[j][i-2]-chi[j][i-1]));
-//(1.0/M_PI)*(vx[j][i-1][k] + vx[j][i-2][k])*(xx[i-1] - xx[i-2]); 
+				else if ( k == upper[j][i-1] - 1 ) {	
+					vx[j][i-1][k] = sqrt((Uperp[j][k] - chi[j][i-1]));// equiv 0
+					mu[j][k] += (2.0/M_PI)*sqrt(chi[j][i-2]-chi[j][i-1])*(2.0/3.0)*(xx[i-1] - xx[i-2]);
+					//printf("j = %d, i-1 = %d, %f\n", j, i-1, chi[j][i-2]-chi[j][i-1]);
+					//mu[j][k] += 0.0; 
 				}
-				else
-				{	
+				//else if (k== upper[j][i-1] -1) {
+				//	vx[j][i-1][k] = sqrt((Uperp[j][k] - chi[j][i-1]));
+				//	//chiprime = ;
+				//	//printf("%f \n", sqrt(chi[j][i-2]-chi[j][i-1]));
+//(1.0/M_PI)*(vx[j][i-1][k] + vx//[j][i-2][k])*(xx[i-1] - xx[i-2]); 
+				//}
+				else {	
+					//printf("also here j = %d, i-1 = %d, %f\n", j, i-1, chi[j][i-2]-chi[j][i-1]);
 					vx[j][i-1][k] = sqrt((Uperp[j][k] - chi[j][i-1]));
 					if (debug==1) 
 					{ 
@@ -506,8 +513,9 @@ Because I am comparing neighbouring values of x to find a maximum, I need to con
 					while (Uperp[j][k] < chi[j][i-2-ind]) {
 						ind++;
 					}
-					mu[j][k] += (1.0/M_PI)*(2.0/3.0)*(xx[i-1-ind] - xx[i-2-ind])*pow(Uperp[j][k] - chi[j][i-2-ind], 1.5)/(chi[j][i-1-ind] - chi[j][i-2-ind]); 
-					//printf("YO %f: i = %d, j = %d, k = %d \nchi = %f, %f\n", (xx[i-1] - xx[i-2])*pow(Uperp[j][k] - chi[j][i-2], 1.5)/(chi[j][i-1] - chi[j][i-2]), i, j, k, chi[j][i-1], chi[j][i-2]);
+					mu[j][k] += (2.0/M_PI)*(2.0/3.0)*(xx[i-1-ind] - xx[i-2-ind])*pow(Uperp[j][k] - chi[j][i-2-ind], 1.5)/(chi[j][i-1-ind] - chi[j][i-2-ind]); 
+					//printf("YO %f and mu = %f: i = %d, j = %d, k = %d \nchi = %f, %f\n", mu[j][k], (2.0/M_PI)*(2.0/3.0)*(xx[i-1-ind] - xx[i-2-ind])*pow(Uperp[j][k] - chi[j][i-2-ind], 1.5)/(chi[j][i-1-ind] - chi[j][i-2-ind]), i, j, k, chi[j][i-1], chi[j][i-2]);
+		
 				}
 				if (mu[j][k] != mu[j][k])
 				{	if (debug == 1)
@@ -524,12 +532,17 @@ Because I am comparing neighbouring values of x to find a maximum, I need to con
 			itop[j] = i-2;
 			xtop[j] = xx[i-2] + ((chiMax[j] - chi[j][i-2])/(chi[j][i-1] - chi[j][i-2]))*(xx[i-1] - xx[i-2]);
 			chiprimetop[j] = (chi[j][i-1] - chi[j][i-2])/(xx[i-1] - xx[i-2]);
-			for (k=0; k<upper[j][i-2]; k++)
-			{
-				mu[j][k] += (1.0/M_PI)*(vx[j][i-2][k])*(xx[i-1] - xx[i-2])*(Uperp[j][k] - chi[j][i-2])/(chi[j][i-1] - chi[j][i-2]);
+			for (k=0; k<upper[j][i-2]; k++) {
+				ind = 0;
+				while (Uperp[j][0] < chi[j][i-2-ind]) {
+					ind++;
+				}
+				mu[j][k] += (2.0/M_PI)*(2.0/3.0)*(xx[i-1-ind] - xx[i-2-ind])*pow(Uperp[j][0] - chi[j][i-2-ind], 1.5)/(chi[j][i-1-ind] - chi[j][i-2-ind]); 
+				//mu[j][k] += (1.0/M_PI)*(vx[j][i-2][k])*(xx[i-1] - xx[i-2])*(Uperp[j][k] - chi[j][i-2])/(chi[j][i-1] - chi[j][i-2]);
 				if (mu[j][k] != mu[j][k])  printf("mu is NAN\n");
 			}
-			crossed_max[j] = 0; }
+			crossed_max[j] = 0; 
+		}
 		if (j!=0)
 		{	
 			//if ( ((chiMax[j-1] < chi[j-1][i-1] + TINY) && (chiMax[j] + TINY > chi[j][i-1])) ) { // || (imax[j-1] == -1 && imax[j] != -1) )
@@ -568,13 +581,16 @@ for (j=0;j<maxj;j++) {
 	if (j != 0)
 	{	
 		//twopimuprime[j-1] = 2.0*M_PI*(mu[j][0] - mu[j-1][0])/(xbar[j] - xbar[j-1]);	
-		twopimuprime[j] = M_PI*(mu[j+1][0] - mu[j][0])/(xbar[j+1] - xbar[j]) + M_PI*(mu[j][0] - mu[j-1][0])/(xbar[j] - xbar[j-1]);	
+		twopimuprime[j] = ((xbar[j] - xbar[j-1])/(xbar[j+1] - xbar[j-1])) *(mu[j+1][0] - mu[j][0])/(xbar[j+1] - xbar[j]) + ((xbar[j+1] - xbar[j])/(xbar[j+1] - xbar[j-1])) * (mu[j][0] - mu[j-1][0])/(xbar[j] - xbar[j-1]);	
+		twopimuprime[j] *= (2.0*M_PI);
 	
 	}
 	else
 	{
 		//twopimuprime[j] = 2.0*M_PI*(mu[j][0] - 0.0)/(xbar[j+1] - xbar[j]);	
-		twopimuprime[j] = M_PI*(mu[j+1][0] - mu[j][0])/(xbar[j+1] - xbar[j]);	
+		twopimuprime[j] = ((xbar[j] - xbarcrit)/(xbar[j+1] - xbarcrit)) *(mu[j+1][0] - mu[j][0])/(xbar[j+1] - xbar[j]) + ((xbar[j+1] - xbar[j])/(xbar[j+1] - xbarcrit)) * (mu[j][0] - 0.0)/(xbar[j] - xbarcrit);	
+		twopimuprime[j] *= (2.0*M_PI);
+		//twopimuprime[j] = M_PI*(mu[j+1][0] - mu[j][0])/(xbar[j+1] - xbar[j]);	
 	}
 // METHOD 2
 	//if (imax[j] != 0) {
@@ -614,10 +630,11 @@ for (j=0;j<maxj;j++) {
 	//openorbit[j] = openintegral[j];
 	openorbit[j] = twopimuprime[j];  
 	openorbitantycal = 4.0*M_PI*xbar[j];
-	if (debug ==1)
+	if (debug == 1)
 	{	
-		printf("twopimuprime[%d] = %f, openintegral[%d] = %f\n", j, twopimuprime[j], j, openintegral[j]); 
-		printf("At xbar[%d] = %f, mu is %f (should be %f if phi is flat), openorbit is %f (should be %f if phi is flat)\n", j, xbar[j], mu[j][0], Uperp[j][0], openorbit[j], openorbitantycal); 
+		//printf("twopimuprime[%d] = %f, openintegral[%d] = %f\n", j, twopimuprime[j], j, openintegral[j]); 
+		//printf("At xbar[%d] = %f, mu is %f (should be %f if phi is flat), openorbit is %f (should be %f if phi is flat)\n", j, xbar[j], mu[j][0], Uperp[j][0], openorbit[j], openorbitantycal); 
+		printf("%f %f %f %f %f\n", xbar[j], mu[j][0], Uperp[j][0], openorbit[j], openorbitantycal); 
 	} 
 }
 // temporary
@@ -662,45 +679,77 @@ while (stop == 0)
 		intdUopen = 0.0;
 		intdUopenflow = 0.0; intdUopenBohm = 0.0;
 		intdUopenxbar = 0.0; intdUopensquare = 0.0;
-		if (j == jmopen[i]) {	
+		if (j == jmopen[i]) {
 			oorbintgrd = oorbintgrdold = 0.0;
 			oorbintgrdflow = oorbintgrdflowold = 0.0; oorbintgrdBohm = oorbintgrdBohmold = 0.0;
 			oorbintgrdxbar = oorbintgrdxbarold = 0.0; oorbintgrdsquare = oorbintgrdsquareold = 0.0;
 			sizeU = (int) sqrt(Ucap - chiMax[j])/dvzopen;
+			if (j==0) {
+				munew = 0.0;
+				openorbitnew = 0.0;
+			}
+			else {
+				munew = mu[j+1][0] + ( (chiMax[j+1] - chi[j+1][i])/ (chiMax[j+1] - chi[j+1][i] + chi[j][i] - chiMax[j]) ) * (mu[j][0] - mu[j+1][0]);
+				openorbitnew = openorbit[j+1] + ( (chiMax[j+1] - chi[j+1][i])/ (chiMax[j+1] - chi[j+1][i] + chi[j][i] - chiMax[j]) ) * (openorbit[j] - openorbit[j+1]);
+			}
 			for (l=0; l < sizeU; l++) {	
 				oorbintgrdold = oorbintgrd;
 				oorbintgrdflowold = oorbintgrdflow; oorbintgrdBohmold = oorbintgrdBohm;
 				oorbintgrdxbarold = oorbintgrdxbar; oorbintgrdsquareold = oorbintgrdsquare;
 				vz = dvzopen*l;
-				U = chi[j][k] + pow(vz, 2.0); 
-				if ( (U > mu[j][0]) && (U - vz*vz + (vz-dvzopen)*(vz-dvzopen) < mu[j][0]) ) {
-					frac = (vz - sqrt(mu[j][0] - chi[j][k]))/dvzopen;
-					Fopen = bilin_interp(mu[j][0], 0.0, FF, mumu, UU, sizemumu, sizeUU, -1, -1); 
+				if (j!=0) {
+					chinew = chi[j+1][i] + ( (chiMax[j+1] - chi[j+1][i])/ (chiMax[j+1] - chi[j+1][i] + chi[j][i] - chiMax[j]) ) * (chi[j][i] - chi[j+1][i]) ;
+					vx0open = 0.0;
+				}
+				else {
+					chinew = chi[j][i];
+					if (chiMax[j] > chinew) 
+						vx0open = sqrt(chiMax[j] - chinew);
+					else vx0open = 0.0;
+				}
+				U = chinew + pow(vz, 2.0); 
+				if ( (U > munew) && (U - vz*vz + (vz-dvzopen)*(vz-dvzopen) < munew) ) {
+					frac = (vz - sqrt(munew - chinew))/dvzopen;
+					Fopen = bilin_interp(munew, 0.0, FF, mumu, UU, sizemumu, sizeUU, -1, -1); 
 					//printf("frac = %f\n", frac);
-					oorbintgrdold = sqrt(alpha*sqrt(mu[j][0] - chi[j][k])*openorbit[j])*Fopen;
-					oorbintgrdflowold = 0.5*alpha*sqrt(mu[j][0] - chi[j][k])*openorbit[j]*Fopen;
-					Fopen = bilin_interp(mu[j][0], U-mu[j][0], FF, mumu, UU, sizemumu, sizeUU, -1, -1); 
-					oorbintgrd = sqrt(alpha*vz*openorbit[j])*Fopen;
-					oorbintgrdflow = 0.5*alpha*vz*openorbit[j]*Fopen;
-					//if (oorbintgrd != oorbintgrd) 
-					//	printf("AHA\n\n\n\n\n");
+					oorbintgrdold = ( sqrt(vx0open*vx0open + alpha*sqrt(munew - chinew)*openorbitnew) - vx0open )*Fopen;
+					oorbintgrdflowold = 0.5*alpha*sqrt(munew - chinew)*openorbitnew*Fopen;
+					Fopen = bilin_interp(munew, U-munew, FF, mumu, UU, sizemumu, sizeUU, -1, -1); 
+					oorbintgrd = ( sqrt(vx0open*vx0open + alpha*vz*openorbitnew) - vx0open )*Fopen;
+					oorbintgrdflow = 0.5*alpha*vz*openorbitnew*Fopen;
 				}
 				else {
 					frac = 1.0;
-					Fopen = bilin_interp(mu[j][0], U-mu[j][0], FF, mumu, UU, sizemumu, sizeUU, -1, -1); 
-					oorbintgrd = sqrt(alpha*vz*openorbit[j])*Fopen;
-					oorbintgrdflow = 0.5*alpha*vz*openorbit[j]*Fopen;
-					//if (oorbintgrd != oorbintgrd) 
-					//	printf("AHA\n\n\n\n\n");
+					Fopen = bilin_interp(munew, U-munew, FF, mumu, UU, sizemumu, sizeUU, -1, -1); 
+					oorbintgrd = ( sqrt(vx0open*vx0open + alpha*vz*openorbitnew) - vx0open )*Fopen;
+					oorbintgrdflow = 0.5*alpha*vz*openorbitnew*Fopen;
 				}
 
 					
+				////U = chi[j][k] + pow(vz, 2.0); 
+				//if ( (U > mu[j][0]) && (U - vz*vz + (vz-dvzopen)*(vz-dvzopen) < mu[j][0]) ) {
+				//	frac = (vz - sqrt(mu[j][0] - chi[j][k]))/dvzopen;
+				//	Fopen = bilin_interp(mu[j][0], 0.0, FF, mumu, UU, sizemumu, sizeUU, -1, -1); 
+				//	//printf("frac = %f\n", frac);
+				//	oorbintgrdold = sqrt(alpha*sqrt(mu[j][0] - chi[j][k])*openorbit[j])*Fopen;
+				//	oorbintgrdflowold = 0.5*alpha*sqrt(mu[j][0] - chi[j][k])*openorbit[j]*Fopen;
+				//	Fopen = bilin_interp(mu[j][0], U-mu[j][0], FF, mumu, UU, sizemumu, sizeUU, -1, -1); 
+				//	oorbintgrd = sqrt(alpha*vz*openorbit[j])*Fopen;
+				//	oorbintgrdflow = 0.5*alpha*vz*openorbit[j]*Fopen;
+				//}
+				//else {
+				//	frac = 1.0;
+				//	Fopen = bilin_interp(mu[j][0], U-mu[j][0], FF, mumu, UU, sizemumu, sizeUU, -1, -1); 
+				//	oorbintgrd = sqrt(alpha*vz*openorbit[j])*Fopen;
+				//	oorbintgrdflow = 0.5*alpha*vz*openorbit[j]*Fopen;
+				//}
 				// is it worth increasing accuracy?
 				//if (i > icrit)
 				//	Fopen = bilin_interp(mu[j][0], U-mu[j][0], FF, mumu, UU, sizemumu, sizeUU, -1, -1); 
 				//else
 				//	Fopen = 0.0; 	
 
+				//printf("frac = %f\n", frac);
 				if (oorbintgrd != oorbintgrd)
 				{	
 					problem = 1; 
@@ -728,14 +777,25 @@ while (stop == 0)
 					intdUopenxbar += 2.0*frac*dvzopen*(oorbintgrdxbar+oorbintgrdxbarold);
 					intdUopensquare += 2.0*frac*dvzopen*(oorbintgrdsquare+oorbintgrdsquareold); 
 				} 
-			} 
-			intdxbaropen += 0.5*(intdUopen+intdUopenold)*dxbar;
-			intdxbaropenflow += 0.5*(intdUopenflow+intdUopenflowold)*dxbar;
-			intdxbaropenBohm += 0.5*(intdUopenBohm+intdUopenBohmold)*dxbar;
-			intdxbarxbar += 0.5*(intdUopenxbar+intdUopenxbarold)*dxbar;
-			intdxbarsquare += 0.5*(intdUopensquare+intdUopensquareold)*dxbar; 
+			}
+			if (j == 0) {
+				intdUopenold = 0.0;
+				dxbar = xbar[0] - xbarcrit;
+				intdxbaropen += 0.5*(intdUopen+intdUopenold)*dxbar;
+				intdxbaropenflow += 0.5*(intdUopenflow+intdUopenflowold)*dxbar;
+				intdxbaropenBohm += 0.5*(intdUopenBohm+intdUopenBohmold)*dxbar;
+				intdxbarxbar += 0.5*(intdUopenxbar+intdUopenxbarold)*dxbar;
+				intdxbarsquare += 0.5*(intdUopensquare+intdUopensquareold)*dxbar; 
+			}
+			//else {
+			//	//dxbar = (xbar[j] - xbar[j-1])*(chiMax[j] - chi[j][i])/ (chiMax[j] - chi[j][i] + chi[j-1][i] - chiMax[j-1]);// open orbit density does not need to be so accurate at this point
+			//	dxbar = 0.0;
+			//	//printf("dxbar = %f\n", dxbar);
+			//}
+			// x is already large enough for closed orbit density to dominate if jmopen is not zero
+			//printf("dxbar = %f\n\n\n\n\n", dxbar);
 		}
-		if (j > jmopen[i]) {	
+		else if (j > jmopen[i]) {	
 			oorbintgrd = oorbintgrdold = 0.0;
 			oorbintgrdflow = oorbintgrdflowold = 0.0;
 			oorbintgrdBohm = oorbintgrdBohmold = 0.0;
@@ -771,9 +831,6 @@ while (stop == 0)
 					oorbintgrdBohm = (1.0/vx0open - 1.0/sqrt(vx0open*vx0open + alpha*vz*openorbit[j]))*Fopen;
 					oorbintgrdxbar = xbar[j]*(1.0/vx0open - 1.0/sqrt(vx0open*vx0open + alpha*vz*openorbit[j]))*Fopen;
 					oorbintgrdsquare = (1.0/8.0)*(1.0/pow(vx0open, 3.0) - 1.0/pow((vx0open*vx0open + alpha*vz*openorbit[j]), 1.5))*Fopen;
-					//if (oorbintgrd != oorbintgrd) 
-					if (frac != frac) 
-						printf("AHA\n\n\n\n\n");
 
 				}
 				else {
@@ -805,12 +862,12 @@ while (stop == 0)
 // for a flat potential, oorbintgrd can be calculated analytically
 				//oorbintgrd = oorbintgrdantycal;
 //printf("oorbintgrd is %f, analytical is %F\n", oorbintgrd, oorbintgrdantycal);
-				if (l!=0) {
 					//if (oorbintgrdold < TINY ) {
-					//	intdUopen += 4.0*(2.0/3.0) *pow(dvzopen, 1.5) * sqrt(alpha*openorbit[j])*bilin_interp(mu[j][0], 0.0, FF, mumu, UU, sizemumu, sizeUU, -1, -1); 
+				//if ( (l == 1) && (vx0open < TINY) ) {
+				//	intdUopen += 4.0* (2.0/3.0) *pow(dvzopen, 1.5) * sqrt(alpha*openorbit[j])*bilin_interp(mu[j][0], 0.0, FF, mumu, UU, sizemumu, sizeUU, -1, -1); 
 ;
-					//}
-					
+				//}
+				if (l!=0) {
 					intdUopen += 2.0*frac*dvzopen*(oorbintgrd+oorbintgrdold);
 					intdUopenflow += 2.0*frac*dvzopen*(oorbintgrdflow+oorbintgrdflowold);
 					intdUopenBohm += 2.0*frac*dvzopen*(oorbintgrdBohm+oorbintgrdBohmold);
@@ -832,19 +889,23 @@ while (stop == 0)
 			}
 			if (i==0) {	
 				intdUopenantycal = 2.0*0.919*sqrt(2.0*alpha*xbar[j])*exp(-xbar[j]*xbar[j])/M_PI; 
-			if (debug == 1) { 
-				printf("xbar[%d] = %f, analytical is %f, numerical is %f\n", j, xbar[j], intdUopenantycal, intdUopen); printf("vx0open is %f (should be zero)\n", vx0open); 
-			}
+				if (debug == 1) { 
+					printf("xbar[%d] = %f, analytical is %f, numerical is %f\n", j, xbar[j], intdUopenantycal, intdUopen); printf("vx0open is %f (should be zero)\n", vx0open); 
+				}
 			} 
 			dxbar = xbar[j] - xbar[j-1];
-			if ( (j == jmopen[i]+1) && (i > icrit) ) {
-				if ( fabs(pos - xx[imax[j]]) < TINY )
-					intdxbaropen += 0.0; 
-				else { 
-					dxbar = xbar[j] - (xbar[j-1]*(chiMax[j] - chi[j][i]) - xbar[j]*(chiMax[j-1] - chi[j-1][i]))/(-chiMax[j-1] + chi[j-1][i] + chiMax[j] - chi[j][i]); 
-					if (debug == 1)
-						printf("dxbar = %f\n", dxbar);
-				}
+			if ( (j == jmopen[i]+1) &&  (j != 1) ) { //
+				//if ( fabs(pos - xx[imax[j]]) < TINY )
+				//	intdxbaropen += 0.0; 
+				//else { 
+				dxbar = (xbar[j] - xbar[j-1])*(chiMax[j] - chi[j][i])/ (chiMax[j] - chi[j][i] + chi[j-1][i] - chiMax[j-1]);// open orbit density does not need to be so accurate at this point
+				//printf("intdUopen = %f\t old = %f\n", intdUopen, intdUopenold);
+				//printf("intdUopenold = %f\n", intdUopenold);
+				//intdUopenold = intdUopen + ( (chiMax[j] - chi[j][i])/ (chiMax[j] - chi[j][i] + chi[j-1][i] - chiMax[j-1]) ) * (intdUopenold - intdUopen);// open orbit density does not need to be so accurate at this point
+				
+				if (debug == 1)
+					printf("dxbar = %f\n", dxbar);
+				//}
 			}
 //(chi[j][k]-chi[j][i])/(2.0*(pos-xx[k])); 
 			intdxbaropen += 0.5*(intdUopen+intdUopenold)*dxbar;
@@ -953,14 +1014,14 @@ while (stop == 0)
 					//intdU = intdUantycal;
 					if (debug == 1) 	
 						printf("Analytical intdU is %f, numerical one is %f\n", intdUantycal, intdU);
-					if (k==lowerlimit[j])
-					{	intdvx += 0.0; }
-					else
-					{	
+					if (k==lowerlimit[j]) {	
+						intdvx += 0.0; 
+					}
+					else {	
 						intdvx += 4.0*0.5*dvx*(intdU+intdUold);
 					}
-					if (intdvx != intdvx)
-					{	problem = 1; 
+					if (intdvx != intdvx) {	
+						problem = 1; 
 						if (debug ==1)
 							printf("intdvx is NAN, j=%d, i=%d\n", j, i); 
 					} 
@@ -974,16 +1035,19 @@ while (stop == 0)
 				if (j==jmclosed[i]+1 && i!=0)
 				{
 					//dxbar = (xx[imax[j]] - xx[imax[j]])*(xbar[j] - xbar[j-1])/(xx[imax[j]] - pos);
-				//	dxbar = (chiMax[j]-chi[j][i])/(2.0*(pos-xx[imax[j]]));
-					if (i==imax[j])
-					{	dxbar = xbar[j] - xbar[j-1]; }
-					else
-					{	dxbar = xbar[j] - (xbar[j-1]*(chiMax[j] - chi[j][i]) - xbar[j]*(chiMax[j-1] - chi[j-1][i]))/(-chiMax[j-1] + chi[j-1][i] + chiMax[j] - chi[j][i]); }
+					//dxbar = (chiMax[j]-chi[j][i])/(2.0*(pos-xx[imax[j]]));
+					if (i==imax[j]) {	
+						dxbar = xbar[j] - xbar[j-1]; 
+						printf("HELLO?\n");
+					}
+					else {	
+						//dxbar = xbar[j] - (xbar[j-1]*(chiMax[j] - chi[j][i]) - xbar[j]*(chiMax[j-1] - chi[j-1][i]))/(-chiMax[j-1] + chi[j-1][i] + chiMax[j] - chi[j][i]); 
+						dxbar = (xbar[j] - xbar[j-1])*(chiMax[j] - chi[j][i])/ (chiMax[j] - chi[j][i] + chi[j-1][i] - chiMax[j-1]);// open orbit density does not need to be so accurate at this point
+					}
 					intdxbar += 0.5*(intdvx+intdvxold)*dxbar;
 					if (intdxbar != intdxbar) {	
 						problem = 1; 
-						if (debug == 1)
-						{	
+						if (debug == 1) {	
 							printf("intdxbar is NAN, j=%d, i=%d\n", j, i);  
 						} 
 					} 
@@ -1016,26 +1080,31 @@ while (stop == 0)
 		printf("intdxbarsquare = %f\tintdxbarxbar = %f\n", intdxbarsquare, intdxbarxbar);
 		kBohmsquared = intdxbarxbar/(intdxbarsquare - 0.5*nitotal[0]); 
 	}
-	if ( (charge > 0.0) && ((nitotal[ic] >= stoplimit) || (ic == size_phigrid-1)) ) {	
+	if ( (*size_ngrid == 0) && ((nitotal[ic] >= stoplimit) || (ic == size_phigrid-1)) ) {	
 		stop = 1;
 		*size_ngrid = ic; 
 		printf("in densfinorb.c: stopping for positive ion density");
 	}
-	if ( (ic != 0) && (charge < 0.0) ) {
-		if ( (nitotal[ic] > n_inf ) ) {// || (ic == size_phigrid-1) ) 
-			//stop = 1;
-			n_inf = nitotal[ic];
-			*size_ngrid = ic+1; 
-			//stop = 1;
-			//printf("in densfinorb.c: stopping for electron density with n_inf = %f\n", n_inf);
-		}
-		if (ic == size_phigrid-1 - 20) {
-			stop = 1;
-			//n_inf = nitotal[ic-1];
-		}
+	else if ( (*size_ngrid != 0) && (ic > *size_ngrid - 1) ) {
+		stop = 1;
 	}
+	//if ( (ic != 0) && (charge < 0.0) ) {
+	//	if ( (nitotal[ic] > n_inf ) ) {// || (ic == size_phigrid-1) ) 
+	//	//if ( (nitotal[ic] < nitotal[ic-1]) && (nitotal[ic-1] > nitotal[ic-2]) ) {// || (ic == size_phigrid-1) ) 
+	//		//stop = 1;
+	//		n_inf = nitotal[ic];
+	//		*size_ngrid = ic+1; 
+	//		//stop = 1;
+	//		//printf("in densfinorb.c: stopping for electron density with n_inf = %f\n", n_inf);
+	//	}
+	//	if (ic == size_phigrid-1 - 20) {
+	//		stop = 1;
+	//		//n_inf = nitotal[ic-1];
+	//	}
+	//}
 	if (debug == 1)
 	{	
+		printf("for charge = %f\n", charge);
 		printf("%f, %f, %f is TOTAL, CLOSED and OPEN orbit density at position index %d, position %f\n", nitotal[ic], niclosed[ic], niopen[ic], ic, pos);
 		if ( (nitotal[ic] != nitotal[ic]) || (nitotal[ic] < TINY) )
 		{ 	
@@ -1047,12 +1116,12 @@ while (stop == 0)
 	//i += 1; 
 	ic += 1;
 } 
-if (charge < 0.0) {
-	printf("ninf = %f\n", n_inf);
-	//for (ic = 0; ic < *size_ngrid; ic++) {
-	//	nitotal[ic] /= n_inf;
-	//}
-}
+//if (charge < 0.0) {
+//	printf("ninf = %f\n", n_inf);
+//	//for (ic = 0; ic < *size_ngrid; ic++) {
+//	//	nitotal[ic] /= n_inf;
+//	//}
+//}
 printf("size_ngrid = %d\n", *size_ngrid);
 fclose(fout);
 clock_t int2 = clock(); // Finds the start time of the computation
@@ -1198,7 +1267,7 @@ else if (sizevxopen < 0) {
 	}
 	printf("muopen Ucritf\n");
 	for (j=0;j<(-sizevxopen);j++) {
-		if (debug == 0) {
+		if (debug == 1) {
 			printf("%f %f\n", muopen[j], Ucritf[j]); 
 		}
 		//fprintf(output, "%f %f\n", vxopen, intdxbaropen/nitotal[0]);
@@ -1272,8 +1341,8 @@ free(nitotal);//
 free(Ucritf);//
 free(muopen);//
 free(kdrop);//
-    gsl_spline_free (spline);
-    gsl_interp_accel_free (acc);
+gsl_spline_free (spline);
+gsl_interp_accel_free (acc);
 
 clock_t end = clock(); // finds the end time of the computation
 double jobtime  = (double)(end - begin) / CLOCKS_PER_SEC;
