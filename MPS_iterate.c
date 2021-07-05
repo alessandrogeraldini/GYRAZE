@@ -8,11 +8,11 @@
 #include <gsl/gsl_linalg.h>
 #include "mps.h"
 #define INITIATE_GRID 1
-#define INITIAL_GRID_PARAMETER 0.1
-#define GRID_SPACING 0.1
+#define INITIAL_GRID_PARAMETER 1.0
+#define GRID_SPACING 0.2
 #define TINY 1e-8
-#define test 1
-#define MAX_IT 10
+#define TEST_EL 0
+#define MAX_IT 1000
 
 void make_phigrid(double *x_grid, double *phi_grid, int size_phigrid, double grid_parameter, double deltax, int initial, double phi_jump, double len_scale) {
 	int i;
@@ -68,6 +68,10 @@ void make_phigrid(double *x_grid, double *phi_grid, int size_phigrid, double gri
 			ff[i] = xi;
 			new_x[i] = pow( pow(grid_parameter+xi, 0.5) - sqrt(grid_parameter), 2.0);
 			g = sqrt(new_x[i]);
+			//if (new_x[i] < len_scale) {
+			//	new_phi[i] = phi_jump*(1.0 - new_x[i]/len_scale); //pow(len_scale, 2.0)/pow(new_x[i] + len_scale, 2.0);
+			//}	
+			//else new_phi[i] = 0.0;
 			new_phi[i] = phi_jump*pow(len_scale, 2.0)/pow(new_x[i] + len_scale, 2.0);
 			fprintf(fp, "%f %f\n", g, new_phi[i]);
 		}
@@ -124,13 +128,14 @@ double mucut(double beta, double vcut) {
 
 // The main function of MAGSHEATH
 int main() {
+	int zoomfactor = 2, zoomfactor_DS;
 	int i; //, j, s;
-	double error_current = 0.01;
+	double error_current = 0.005;
 	double ioncharge= 1.0, *TioverTe;
 	double **dist_i_GK, *mu_i, *U_i, zero = 0.0;
 	double v_max, **dist_e_DK, **dist_e_GK, *vpar_e, *mu_e, *U_e_DS;
 	double *fx_i_DS, *vx_i_DS, **F_i_DS;
-	double dvpar = 0.2, Uminmu_MPE;
+	double dvpar = 0.2/sqrt(2.0), Uminmu_MPE;
 	int size_mu_i, size_U_i, size_mu_e, size_vpar_e, number_species;
 	int nrows_distfile = 0, ncols=0, fix_current, ind;
 	char line_million[1000000];
@@ -208,7 +213,7 @@ int main() {
 			if (fix_current != 0) {
 				target_current = current = *storevals; 
 				//v_cut = sqrt(log(mioverme/(2.0*M_PI))); //v_max*0.5; // some substantial fraction of v_max
-				v_cut = 2.5; // set to a reasonable value
+				v_cut = 4.1; // set to a reasonable value
 				// we will set v_cut to some value later
 			}
 			else {
@@ -224,9 +229,13 @@ int main() {
 	// initial iteration assumes flat potential profile in magnetic presheath
 	// therefore, the parameter v_cutDS is equal to v_cut
 	v_cutDS = v_cut;
-	if (rhoeoverlambdaD_ref > 1.0) deltaxDS = 0.1/rhoeoverlambdaD_ref;
-	else deltaxDS = 0.1;
-	system_size = 6.0*sqrt(Te+1.0);
+	//if (rhoeoverlambdaD_ref > 1.0) deltaxDS = GRID_SPACING/(rhoeoverlambdaD_ref);
+	//else deltaxDS = GRID_SPACING;
+	if (rhoeoverlambdaD_ref < 1.0) deltaxDS = GRID_SPACING/(rhoeoverlambdaD_ref);
+	else deltaxDS = GRID_SPACING;
+	printf("deltaxDS = %f\n\n\n", deltaxDS);
+	if (Te < 1.0) system_size = 10.0;
+	else system_size = 8.0*sqrt(Te);
 	i=0;
 	printf("INPUT PARAMETERS:\n\tmagnetic field angle = α = %f deg (%f rad)\n\telectron gyroradius over Debye length (reference value at MP entrance) = ρ_e/λ_D = %f\n\tnumber of species = %d\n", alpha_deg, alpha, rhoeoverlambdaD_ref, number_species);
 	fprintf(fout, "INPUT PARAMETERS:\n\tmagnetic field angle = α = %f deg (%f rad)\n\telectron gyroradius over Debye length (reference value at MP entrance) = ρ_e/λ_D = %f\n\tnumber of species = %d\n", alpha_deg, alpha, rhoeoverlambdaD_ref, number_species);
@@ -252,8 +261,14 @@ int main() {
 	printf("magnetic presheath size in simulation (in ion gyroradii) = %f\n", system_size);
 	fprintf(fout, "magnetic presheath size in simulation (in ion gyroradii) = %f\n", system_size);
 	size_phigrid = (int) ( ( pow(sqrt(grid_parameter) + sqrt(system_size), 2.0) - grid_parameter ) / deltax );
-	size_phiDSgrid = (int) ( system_size*(1.0+1.0/rhoeoverlambdaD_ref)/deltaxDS );
-	size_neDSgrid = (int) ( ( system_size*(1.0+1.0/rhoeoverlambdaD_ref) - 5.0)/deltaxDS );
+	size_phiDSgrid = (int) ( system_size*1.0*(1.0+1.0/rhoeoverlambdaD_ref)/deltaxDS );
+	//size_phiDSgrid = (int) ( system_size/deltaxDS );
+	printf("size phigrid = %d\n", size_phiDSgrid);
+	//size_neDSgrid = (int) ( ( system_size*(1.0+1.0/rhoeoverlambdaD_ref) - 5.0)/deltaxDS );
+	//size_ngrid = (int) ( ( pow(sqrt(grid_parameter) + sqrt(system_size - 5.0), 2.0) - grid_parameter ) / deltax );
+	//size_ngrid = (int) ( ( system_size - 7.0)/deltaxDS );
+	if (rhoeoverlambdaD_ref < 1.0) zoomfactor_DS = zoomfactor* (int) (1.0+1.0/rhoeoverlambdaD_ref);
+	else zoomfactor_DS = zoomfactor;
 	 
 	printf("size of coarse potential grid in Debye sheath = %d\n", size_phiDSgrid);
 	fprintf(fout, "size of coarse potential grid in Debye sheath = %d\n", size_phiDSgrid);
@@ -392,14 +407,55 @@ int main() {
 	if (MAX_IT == 0)
 	{	
 		make_phigrid(x_grid, phi_grid, size_phigrid, grid_parameter, deltax, 0, 0.0, 1.0);
-		problem = densfinorb(sizevxopen, Te, alpha, size_phigrid, &size_ngrid, ne_grid, x_grid, phi_grid, ioncharge, dist_i_GK, mu_i, U_i, size_mu_i, size_U_i, grid_parameter, vx_i_DS, fx_i_DS, &flux_i);
+		//size_ngrid = (int) ( ( pow(sqrt(grid_parameter) + sqrt(system_size - 5.0), 2.0) - grid_parameter ) / deltax );
+		problem = densfinorb(sizevxopen, Te, alpha, size_phigrid, &size_ngrid, ne_grid, x_grid, phi_grid, ioncharge, dist_i_GK, mu_i, U_i, size_mu_i, size_U_i, grid_parameter, vx_i_DS, fx_i_DS, &flux_i, zoomfactor);
+	}
+
+	if (TEST_EL==1) {
+		printf("size_phiDSgrid = %d\n", size_phiDSgrid);
+		F_i_DS[0] = malloc(sizevxopen*sizeof(double));
+		make_phigrid(x_DSgrid, phi_DSgrid, size_phiDSgrid, zero, deltaxDS, 0, -3.02, 0.001);
+		make_phigrid(x_grid, phi_grid, size_phigrid, grid_parameter, deltax, 0, 0.0, 1.0);
+		//phi_DSgrid[0] = -5.0;
+		printf("in while loop for combined DS+MP iteration\n");
+		printf("v_cutDS = %f\n", v_cutDS);
+		printf("now evaluate electron density in MPS\n");
+		v_cutDS = sqrt(v_cut*v_cut + 2.0*phi_grid[0]);
+		for (i=0; i< size_cut+1; i++) {
+			vpar_cut_lookup[i] = v_cutDS;
+			mue_cut_lookup[i] = i*(mu_e[size_mu_e-1]+TINY)/size_cut;
+			//printf("%f %f\n", vpar_cut_lookup[i], mue_cut_lookup[i]);
+		}
+		printf("v_cutDS = %f\n", v_cutDS);
+		makelookup(-1.0, phi_grid, ne_grid, size_phigrid, &flux_e, dist_e_DK, vpar_e, mu_e, size_vpar_e, size_mu_e, mue_cut_lookup, vpar_cut_lookup, size_cut);
+		//v_cutDS = sqrt(v_cut*v_cut + 2.0*phi_grid[0]);
+
+		printf("now evaluate ion density in MPS\n");
+		//size_ngrid = 0;
+		//size_ngrid = (int) ( ( pow(sqrt(grid_parameter) + sqrt(system_size - 5.0), 2.0) - grid_parameter ) / deltax );
+		problem = densfinorb(sizevxopen, Te, alpha, size_phigrid, &size_ngrid, ni_grid, x_grid, phi_grid, ioncharge, dist_i_GK, mu_i, U_i, size_mu_i, size_U_i, grid_parameter, vx_i_DS, fx_i_DS, &flux_i, zoomfactor); 
+		for (ncols=0; ncols<size_mu_e; ncols+=1) {
+			for (ind=0; ind<size_vpar_e; ind+=1) {
+				U_e_DS[ind] = ind*dvpar*ind*dvpar;
+				Uminmu_MPE = sqrt(2.0*U_e_DS[ind] - 2.0*phi_grid[0]);
+				dist_e_GK[ncols][ind] = 0.5*bilin_interp(mu_e[ncols], Uminmu_MPE, dist_e_DK, mu_e, vpar_e, size_mu_e, size_vpar_e, -1, -1)/ne_grid[0];
+				//printf("%f ", dist_e_GK[ncols][ind]);
+			}
+			//printf("\n");
+		}
+		printf("size grid = %d\n", size_phiDSgrid);
+		//size_neDSgrid = (int) ( ( system_size*(1.0+1.0/rhoeoverlambdaD_ref) -5.0)/deltaxDS );
+		printf("size_neDSgrid = %d\n", size_neDSgrid);
+		problem_el = densfinorb(-size_cut-1, 1.0, alpha, size_phiDSgrid, &size_neDSgrid, ne_DSgrid, x_DSgrid, phi_DSgrid, -1.0, dist_e_GK, mu_e, U_e_DS, size_mu_e, size_vpar_e, 0.0, mue_cut_lookup, vpar_cut_lookup, &flux_eDS, 1); 
+
+		exit(0);
 	}
 
 
 	/*
 	ITERATE MAGNETIC PRESHEATH AND DEBYE SHEATH POTENTIAL TO FIND SOLUTION
 	*/
-	if ( (rhoeoverlambdaD_ref < 0.2) || (rhoeoverlambdaD_ref > 2.0) ) {
+	if ( (rhoeoverlambdaD_ref < 0.1) || (rhoeoverlambdaD_ref > 2.0) ) {
 		/*
 		A SIMPLIFIED ELECTRON MODEL IS USED TO CALCULATE THE DEBYE SHEATH POTENTIAL DROP
 		*/
@@ -423,8 +479,9 @@ int main() {
 			printf("\t(phi_DSE, phi_wall) = (%f, %f)\n", phi_grid[0], -0.5*v_cut*v_cut);
 			fprintf(fout, "\t(phi_DSE, phi_wall) = (%f, %f)\n", phi_grid[0], -0.5*v_cut*v_cut);
 			printf("ENTER ION DENSITY EVALUATION IN MPS\n");
-			size_ngrid = 0;
-			problem = densfinorb(0, Te, alpha, size_phigrid, &size_ngrid, ni_grid, x_grid, phi_grid, ioncharge, dist_i_GK, mu_i, U_i, size_mu_i, size_U_i, grid_parameter, vx_i_DS, fx_i_DS, &flux_i); 
+			//size_ngrid = 0;
+			//size_ngrid = (int) ( ( pow(sqrt(grid_parameter) + sqrt(system_size - 7.0), 2.0) - grid_parameter ) / deltax );
+			problem = densfinorb(0, Te, alpha, size_phigrid, &size_ngrid, ni_grid, x_grid, phi_grid, ioncharge, dist_i_GK, mu_i, U_i, size_mu_i, size_U_i, grid_parameter, vx_i_DS, fx_i_DS, &flux_i, zoomfactor); 
 			//printf("densfinorb module ran in %f seconds\n", jobtime);
 			printf("size of ion density grid = %d\n", size_ngrid);
 			fprintf(fout, "size of ion density grid = %d\n", size_ngrid);
@@ -452,7 +509,7 @@ int main() {
 				}
 			}
 			makelookup(-1.0, phi_grid, ne_grid, size_phigrid, &flux_e, dist_e_DK, vpar_e, mu_e, size_vpar_e, size_mu_e, mue_cut_lookup, vpar_cut_lookup, size_cut);
-			newguess(&convergence, problem, Te, alpha, x_grid, ne_grid, ni_grid, phi_grid, size_phigrid, size_ngrid, 0.0, dist_i_GK, U_i, mu_i, size_U_i, size_mu_i, 0.0);//, p, m);
+			newguess(&convergence, problem, Te, alpha, x_grid, ne_grid, ni_grid, phi_grid, size_phigrid, &size_ngrid, 0.0, dist_i_GK, U_i, mu_i, size_U_i, size_mu_i, 0.0);//, p, m);
 			current = flux_i - flux_e*sqrt(mioverme/2.0);
 			if ( (fix_current == 1) && (fabs(current - target_current) > error_current) ) {
 				newvcut(&v_cut, v_cutDS, mioverme, flux_i, flux_e*sqrt(mioverme/2.0), target_current, &convergence);
@@ -463,8 +520,9 @@ int main() {
 			if (convergence == 2)
 			{
 				printf("ENTER ION DENSITY EVALUATION IN MPS\n");
-				size_ngrid = 0;
-				densfinorb(sizevxopen, Te, alpha, size_phigrid, &size_ngrid, ni_grid, x_grid, phi_grid, ioncharge, dist_i_GK, mu_i, U_i, size_mu_i, size_U_i, grid_parameter, vx_i_DS, fx_i_DS, &flux_i); 
+				//size_ngrid = 0;
+				//size_ngrid = (int) ( ( pow(sqrt(grid_parameter) + sqrt(system_size - 7.0), 2.0) - grid_parameter ) / deltax );
+				densfinorb(sizevxopen, Te, alpha, size_phigrid, &size_ngrid, ni_grid, x_grid, phi_grid, ioncharge, dist_i_GK, mu_i, U_i, size_mu_i, size_U_i, grid_parameter, vx_i_DS, fx_i_DS, &flux_i, zoomfactor); 
 				//The argument of densfinorb set to one makes the module compute the ion distribution function at x=0
 				clock_t end_it = clock(); // finds end time of last iteration
 				tot_time = (double) (end_it - begin_it) / CLOCKS_PER_SEC;
@@ -480,7 +538,8 @@ int main() {
 		THE FULL DEBYE SHEATH SOLUTION IS CALCULATED WITH FINITE (DISTORTED) ELECTRON GYROORBITS
 		*/
 		F_i_DS[0] = malloc(sizevxopen*sizeof(double));
-		make_phigrid(x_DSgrid, phi_DSgrid, size_phiDSgrid, zero, deltaxDS, 0, -phi_grid[0] - 0.5*v_cut*v_cut, 0.6+0.6/(rhoeoverlambdaD_ref));
+		//make_phigrid(x_DSgrid, phi_DSgrid, size_phiDSgrid, zero, deltaxDS, 0, -phi_grid[0] - 0.5*v_cut*v_cut, 0.2+0.2/(rhoeoverlambdaD_ref));
+		make_phigrid(x_DSgrid, phi_DSgrid, size_phiDSgrid, zero, deltaxDS, 0, -phi_grid[0] - 0.5*v_cut*v_cut, 0.2+0.2/(rhoeoverlambdaD_ref));
 		while ( (convergence != 2) || (convergence_DS != 2) ) {
 			if (problem == 0) {
 				make_phigrid(x_grid, phi_grid, size_phigrid, grid_parameter, deltax, N, 0.0, 1.0);
@@ -504,19 +563,28 @@ int main() {
 			//v_cutDS = sqrt(v_cut*v_cut + 2.0*phi_grid[0]);
 
 			printf("now evaluate ion density in MPS\n");
-			size_ngrid = 0;
-			problem = densfinorb(sizevxopen, Te, alpha, size_phigrid, &size_ngrid, ni_grid, x_grid, phi_grid, ioncharge, dist_i_GK, mu_i, U_i, size_mu_i, size_U_i, grid_parameter, vx_i_DS, fx_i_DS, &flux_i); 
+			//size_ngrid = 0;
+			//size_ngrid = (int) ( ( pow(sqrt(grid_parameter) + sqrt(system_size - 5.0), 2.0) - grid_parameter ) / deltax );
+			problem = densfinorb(sizevxopen, Te, alpha, size_phigrid, &size_ngrid, ni_grid, x_grid, phi_grid, ioncharge, dist_i_GK, mu_i, U_i, size_mu_i, size_U_i, grid_parameter, vx_i_DS, fx_i_DS, &flux_i, zoomfactor); 
 			for (ncols=0; ncols<size_mu_e; ncols+=1) {
 				for (ind=0; ind<size_vpar_e; ind+=1) {
 					U_e_DS[ind] = ind*dvpar*ind*dvpar;
 					Uminmu_MPE = sqrt(2.0*U_e_DS[ind] - 2.0*phi_grid[0]);
 					dist_e_GK[ncols][ind] = 0.5*bilin_interp(mu_e[ncols], Uminmu_MPE, dist_e_DK, mu_e, vpar_e, size_mu_e, size_vpar_e, -1, -1)/ne_grid[0];
+					//printf("%f ", dist_e_GK[ncols][ind]);
 				}
+				//printf("\n");
 			}
 			flux_eDS = -100000.0;
 			printf("size_phiDSgrid = %d ????\n", size_phiDSgrid);
 			printf("1st electron density evaluation in sheath\n");
-			problem_el = densfinorb(-size_cut-1, 1.0, alpha, size_phiDSgrid, &size_neDSgrid, ne_DSgrid, x_DSgrid, phi_DSgrid, -1.0, dist_e_GK, mu_e, U_e_DS, size_mu_e, size_vpar_e, 0.0, mue_cut_lookup, vpar_cut_lookup, &flux_eDS); 
+			//i=0;
+			//while (phi_DSgrid[i]/phi_DSgrid[0] < 0.05) {
+			//	i+=1;
+			//}
+			//size_neDSgrid = i;
+			//size_neDSgrid = (int) ( ( system_size*(1.0+1.0/rhoeoverlambdaD_ref) -5.0)/deltaxDS );
+			problem_el = densfinorb(-size_cut-1, 1.0, alpha, size_phiDSgrid, &size_neDSgrid, ne_DSgrid, x_DSgrid, phi_DSgrid, -1.0, dist_e_GK, mu_e, U_e_DS, size_mu_e, size_vpar_e, 0.0, mue_cut_lookup, vpar_cut_lookup, &flux_eDS, zoomfactor_DS); 
 			//clock_t gsl_t = clock(); 
 			//m = gsl_matrix_alloc (size_neDSgrid-2, size_neDSgrid-2);
 			//p = gsl_permutation_alloc (size_neDSgrid-2);
@@ -536,7 +604,6 @@ int main() {
 			//printf("time for LU decomp is %f\n",  (double) (gsl_t_end - gsl_t) / CLOCKS_PER_SEC);
 			printf("size_neDSgrid = %d\n", size_neDSgrid);
 			printf("flux_eDS = (%f, %f)\tflux_i = %f\n", flux_eDS*ne_grid[0]*sqrt(2.0*mioverme), flux_e*sqrt(mioverme), flux_i);
-			printf("electron density at infinity in sheath is ne_DSgrid[%d] = %f\n", size_neDSgrid-1, ne_DSgrid[size_neDSgrid-1]);
 			printf("phi_DSE (%f) - phi_wall (%f) = %f\n", phi_grid[0], 0.5*v_cut*v_cut, phi_grid[0] +0.5*v_cut*v_cut);
 			if ( (factor_small_grid_parameter*(phi_grid[0] + 0.5*v_cut*v_cut) < grid_parameter) && (phi_grid[0] + 0.5*v_cut*v_cut > 1.0e-13 ) )   {
 				grid_parameter = factor_small_grid_parameter*(phi_grid[0] + 0.5*v_cut*v_cut);
@@ -554,7 +621,7 @@ int main() {
 			printf("size of ion density grid = %d\n", size_ngrid);
 			fprintf(fout, "size of ion density grid = %d\n", size_ngrid);
 			printf("now evaluate the new potential guess in the MPS\n");
-			newguess(&convergence, problem, Te, alpha, x_grid, ne_grid, ni_grid, phi_grid, size_phigrid, size_ngrid, 0.0, dist_i_GK, U_i, mu_i, size_U_i, size_mu_i, 0.0);// p, m);
+			newguess(&convergence, problem, Te, alpha, x_grid, ne_grid, ni_grid, phi_grid, size_phigrid, &size_ngrid, 0.0, dist_i_GK, U_i, mu_i, size_U_i, size_mu_i, 0.0);// p, m);
 			flux_e = flux_eDS*ne_grid[0]*sqrt(2.0);
 			current = flux_i - flux_e*sqrt(mioverme/2.0);
 			if ( (fix_current == 1) && (fabs(current - target_current) > 0.01) ) {
@@ -577,7 +644,7 @@ int main() {
 				v_cut = sqrt(-2.0*phi_grid[0] + 0.01);
 				v_cutDS = sqrt(0.01);
 			}
-			newguess(&convergence_DS, problem, Te, alpha, x_DSgrid, ne_DSgrid, ni_DSgrid, phi_DSgrid, size_phiDSgrid, size_neDSgrid, 1.0/(rhoeoverlambdaD_ref*rhoeoverlambdaD_ref), dist_i_GK, U_i, mu_i, size_U_i, size_mu_i, sqrt(2.0*phi_grid[0] + v_cut*v_cut));//, p, m);
+			newguess(&convergence_DS, problem, Te, alpha, x_DSgrid, ne_DSgrid, ni_DSgrid, phi_DSgrid, size_phiDSgrid, &size_neDSgrid, 1.0/(rhoeoverlambdaD_ref*rhoeoverlambdaD_ref), dist_i_GK, U_i, mu_i, size_U_i, size_mu_i, sqrt(2.0*phi_grid[0] + v_cut*v_cut));//, p, m);
 			printf("N iterations including DS = %d\n", N_DS);
 			rescale_array(phi_DSgrid, size_phiDSgrid, - phi_grid[0] - 0.5*v_cut*v_cut);
 			printf("\t(phi_DSE, phi_wall) = (%f, %f)\n\tcurrent = %f\n", phi_grid[0], -0.5*v_cut*v_cut, current);
