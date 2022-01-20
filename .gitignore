@@ -12,7 +12,6 @@ dist_gen
 dist_gen.o
 dist_parameters.txt
 distfuncin.txt
-inputfile.txt
 iondens.o
 k1gyrokinetic.txt
 linetodata.o

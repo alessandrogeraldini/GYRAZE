@@ -1,1 +1,0 @@
-int newguess(int convergence, int problem, double* ne_grid, double* phi_grid,int p_size,double* ne_new_grid, double * phi_new_grid, double* ne_cut_grid, double* phi_cut_grid, int cut_points,int *use_new, double u_e, double *v_cut);

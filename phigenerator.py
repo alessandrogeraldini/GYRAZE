@@ -3,8 +3,9 @@ import scipy.integrate as scint
 import scipy.interpolate as scintpol
 import scipy.special as scsp
 import numpy as np
+grid_parameter = 0.01
 
-alpha, Te, vcut = np.loadtxt('inputfile.txt')
+alpha, Te, vcut, mioverme, fix_curr = np.loadtxt('inputfile.txt')
 print(alpha, Te)
 Ts = 1.0 + Te
 
@@ -30,12 +31,12 @@ xcr=1.0*np.sqrt(Ts)
 deltax = 0.08*np.sqrt(Ts)
 nn1 = (int) ( 2.0*np.sqrt(xcr)/deltax )
 nn2 = (int) ( (xtop - xcr)/deltax )
-red = 0.9
+red = 0.2
 
-nn = 60
+nn = 100
 deltax = 0.5
 for i in range(nn):
-	g = np.sqrt(0.5+i*deltax) - np.sqrt(0.5)
+	g = np.sqrt(grid_parameter+i*deltax) - np.sqrt(grid_parameter)
 	print(g**2)
 	fp.write(str(g)+' '+str(red*Te*f1(g**2/np.sqrt(Te/2)))+'\n')
 
