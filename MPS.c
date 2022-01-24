@@ -10,7 +10,20 @@
 #include <gsl/gsl_linalg.h>
 #include <sys/stat.h>
 #include "mps.h"
-#include "simparams.h"
+//#include "simparams.h"
+#define STOP_MP 0.95
+#define STOP_DS 0.95
+#define INITIAL_GRID_PARAMETER 1.5
+#define TEST_EL 0
+#define MAX_IT 200
+// number of maximum iterations set to some large number but iterations should converge in about 20-100. If they don't, then there is a problem
+#define SYS_SIZ 20.0
+#define ZOOM_DS 1
+#define ZOOM_MP 3
+#define GRIDSIZE_DS 0.1
+#define GRIDSIZE_MP 0.3
+#define WEIGHT 0.4
+#define CAUTIOUSWEIGHT 0.1
 
 const char *strqty[7] = {"alpha=","gamma=","nspec=","Ti:Te=","mi:me=","jwall=","pwall="};
 const int lenstrqty = 7;
@@ -130,7 +143,7 @@ double **dist_e_DK, **dist_e_GK, *vpar_e, *mu_e, *U_e_DS, *mu_e_DS;
 double *fx_i_DS, *vx_i_DS, **F_i_DS;
 double dvpar = 0.2/sqrt(2.0), Uminmu_MPE;
 char line_million[1000000], dirname[200];
-//nrows_distfile counts the number of rows in the input file with the distribution function; ncols_distfile does the same for columns; ncols_Umufile  finds the number of columns for both rows or Umufile.txt. The first rows contains values of U, the second of mu. The columns are the possible values; sizeUU and sizemumu stores the final number of columns */
+//nrows_distfile counts the number of rows in the input file with the distribution function; ncols_distfile does the same for columns; sizeUU and sizemumu stores the final number of columns */
 int convergence = 0, convergence_DS = 0, convergence_j = 0;
 /* convergence = 0 tells newguess.c to set smoothing for the next iteration, convergence = 1 tells it to not smooth, and convergence = 2 means that the convergence criterion has been satisfied and the iteration is finished */
 int N=0, N_DS=0;
@@ -164,6 +177,7 @@ grid_parameter = INITIAL_GRID_PARAMETER;
 // set the grid spacing
 deltax = GRIDSIZE_MP;
 
+mkdir("OUTPUT", S_IRWXU);
 FILE *fout = fopen("OUTPUT/output_MAGSHEATH.txt", "w");
 if (fout == NULL) {
 	printf("Problem opening output file for writing\n");
@@ -308,41 +322,41 @@ ni_DSgrid = malloc(size_phiDSgrid*sizeof(double));
 EXTRACT ION DISTRIBUTION FUNCTION
 import the distribution function into a 2 dimensional array, F(mu,U)
 */
-FILE *distfile, *Umufile;
-if ((distfile = fopen("distfuncin.txt", "r")) == NULL)
+FILE *file;
+if ((file = fopen("Fi_mpe.txt", "r")) == NULL)
 {	
-	printf("cannot open file %s\n", "distfuncin.txt");
-	fprintf(fout, "cannot open file %s\n", "distfuncin.txt");
+	printf("cannot open file %s\n", "Fi_mpe.txt");
+	fprintf(fout, "cannot open file %s\n", "Fi_mpe.txt");
 	exit(-1); 
 }
 /* Count the number of rows in the distfuncin.txt file */
-while(fgets(line_million, 1000000, distfile) != NULL) {	
+while(fgets(line_million, 1000000, file) != NULL) {	
 	nrows_distfile += 1; 
 }
 // Allocate the right amount of memory to the distribution function pointer
 dist_i_GK = (double**) calloc(nrows_distfile,sizeof(double*));
 // The number of rows is also the the size of the array in U_i 
 nrows_distfile = 0; // Set number of rows counter to zero again
-rewind(distfile); // rewind file
+rewind(file); // rewind file
 // Read each line of file, extract the data (ie the numbers in the line) and count the columns
 // Once columns are counted, allocate memory to dist_i_GK and assign each number to a different column of dist_i_GK (for a fixed row)
-while (fgets(line_million, 1000000, distfile) != NULL) {
+while (fgets(line_million, 1000000, file) != NULL) {
 	storevals = linetodata(line_million, strlen(line_million), &ncols);
 	dist_i_GK[nrows_distfile] = storevals;
 	nrows_distfile +=1; 
 }
-fclose(distfile);
+fclose(file);
 //printf("~~~~~The second element of dist_i_GK is %f~~~~~\n",dist_i_GK[0][1]);
 // Extract two 1D arrays representing the grid points on which dist_i_GK is defined
 // first open file and check for error
-if ((Umufile = fopen("Umufile.txt", "r")) == NULL) {	
-	printf("cannot open file %s\n", "distfuncin.txt");
-	fprintf(fout, "cannot open file %s\n", "Umufile.txt");
+if ((file = fopen("Fi_mpe_args.txt", "r")) == NULL) {	
+	printf("cannot open file %s\n", "Fi_mpe_args.txt");
+	fprintf(fout, "cannot open file %s\n", "Fi_mpe_args.txt");
 	exit(-1); 
 }
 // Read each line of file, extract the data and assign the values of the first line to mu_i, second to U_i
 i=0;
-while (fgets(line_million, 1000000, Umufile) != NULL) {	
+while (fgets(line_million, 1000000, file) != NULL) {	
 	storevals = linetodata(line_million, strlen(line_million), &ncols);
 	if (i == 0) {
 		size_mu_i = ncols;
@@ -354,29 +368,29 @@ while (fgets(line_million, 1000000, Umufile) != NULL) {
 	}
 	i += 1; 
 }
-fclose(Umufile);
+fclose(file);
 
 /*
 EXTRACT ELECTRON DISTRIBUTION FUNCTION
 Import the distribution function into a 2 dimensional array, F(mu,vpar). 
 */
-distfile = fopen("dist_file.txt", "r");
-if (distfile == NULL)
+file = fopen("Fe_mpe.txt", "r");
+if (file == NULL)
 {	
-	printf("Cannot open file %s\n", "dist_file.txt");
-	fprintf(fout, "Cannot open file %s\n", "dist_file.txt");
+	printf("Cannot open file Fe_mpe.txt");
+	fprintf(fout, "Cannot open file Fe_mpe.txt");
 	exit(-1); 
 }
 /* Count the number of rows in the distfuncin.txt file */
-while(fgets(line_million, 1000000, distfile) != NULL) {	
+while(fgets(line_million, 1000000, file) != NULL) {	
 	nrows_distfile += 1; 
 }
 /* Allocate the right amount of memory to the distribution function pointer */
 dist_e_DK = (double**) calloc(nrows_distfile,sizeof(double*));
 dist_e_GK = (double**) calloc(nrows_distfile,sizeof(double*));
 nrows_distfile = 0; // Set number of rows counter to zero again
-rewind(distfile); // rewind to first line of file
-while (fgets(line_million, 1000000, distfile) != NULL) {
+rewind(file); // rewind to first line of file
+while (fgets(line_million, 1000000, file) != NULL) {
 	// assign each number to a different column of dist_e_DK (for a fixed row)
 	dist_e_DK[nrows_distfile] = linetodata(line_million, strlen(line_million), &ncols);
 	// allocate memory to dist_e_GK which might be used to solve Debye sheath
@@ -386,19 +400,19 @@ while (fgets(line_million, 1000000, distfile) != NULL) {
 	nrows_distfile +=1; 
 	// jump to a new line and repeat the process
 }
-fclose(distfile);
+fclose(file);
 //printf("~~~~~The second element of dist_e_DK is %f~~~~~\n",dist_e_DK[0][1]);
 // Extract the two 1D arrays representing the grid points on which dist_i_GK is defined
 // first open file and check for error
-if ((Umufile = fopen("dist_file_arguments.txt", "r")) == NULL) {	
-	printf("cannot open file %s\n", "dist_file_arguments.txt");
-	fprintf(fout, "Cannot open file %s\n", "dist_file_arguments.txt");
+if ((file = fopen("Fe_mpe_args.txt", "r")) == NULL) {	
+	printf("cannot open file Fe_mpe_args.txt");
+	fprintf(fout, "Cannot open file Fe_mpe_args.txt");
 	exit(-1); 
 }
 // Read each line of the file, extract the data (ie numbers in a line) 
 // Assign values of first line to mu_e, second to vpar_e
 i=0;
-while (fgets(line_million, 1000000, Umufile) != NULL) {	
+while (fgets(line_million, 1000000, file) != NULL) {	
 	storevals = linetodata(line_million, strlen(line_million), &ncols);
 	if (i == 0) {
 		size_mu_e = ncols;
@@ -411,7 +425,7 @@ while (fgets(line_million, 1000000, Umufile) != NULL) {
 	i += 1; 
 }
 printf("size_mu_e = %d\nsize_vpar_e=%d\n", size_mu_e, size_vpar_e);
-fclose(Umufile);
+fclose(file);
 F_i_DS = calloc(1,sizeof(double*));
 sizevxopen = (int) 100*sqrt((1.0+Te)*(1.0+1.0/Te));
 vx_i_DS = malloc(sizevxopen*sizeof(double));
@@ -479,13 +493,14 @@ if (TEST_EL==1) {
 N=0;
 //ITERATE MAGNETIC PRESHEATH AND DEBYE SHEATH POTENTIAL TO FIND SOLUTION
 //if ( (gamma_ref > 2.0) || (gamma_ref < 0.5) ) {
+//if ( (gamma_ref > 10.0) && (gamma_ref < 0.1) ) 
 // SIMPLIFIED ELECTRON MODEL USED TO CALCULATE DEBYE SHEATH POTENTIAL DROP
 	while ( ( (convergence <= 1) || ( convergence_j <= 1 && fix_current == 1 ) ) && (N<MAX_IT) ) {
 		printf("ITERATION # = %d\n", N);
 		fprintf(fout, "ITERATION # = %d\n", N);
 		current = target_current;
 
-		if ( (factor_small_grid_parameter*(phi_grid[0] + 0.5*v_cut*v_cut) < grid_parameter) )  {// && (phi_grid[0] + 0.5*v_cut*v_cut >1.0e-13 ) )   {
+		if ( (factor_small_grid_parameter*(phi_grid[0] + 0.5*v_cut*v_cut) < grid_parameter) )  {// && (phi_grid[0] + 0.5*v_cut*v_cut >1.0e-13 ) )   
 		//	grid_parameter = 0.5;
 			grid_parameter = factor_small_grid_parameter*(phi_grid[0] + 0.5*v_cut*v_cut);
 			weight = CAUTIOUSWEIGHT;
