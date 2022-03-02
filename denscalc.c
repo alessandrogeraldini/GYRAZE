@@ -44,7 +44,7 @@ denszeroorb (previously makelookup) calculates the density integral of a species
    set size_mu = 0 while size_cut, size_vpar and mue_cut_lookup are redundant (can set to zero/NULL)
 */
 
-void denszeroorb(double charge, double *phi_real, double *n_grid, int p_size, double *Phi_point, double **distfunc, double *vpar, double *mu, int size_vpar, int size_mu, double *mue_cut_lookup, double *vpar_cut_lookup, int size_cut) {
+void denszeroorb(double charge, double *phi_real, double *n_grid, int p_size, double *Phi_point, double **distfunc, double *vpar, double *mu, int size_vpar, int size_mu, double *mue_cut_lookup, double *vpar_cut_lookup, int size_cut) {// double power) {
 //defining des variables
 int count = 0;
 int vi, vi_1, p, len_F; //vi is a counting variable that will be saved for sums over velocity space, vi_1 is a special value in velocity space devoted to the first point, p is a counting variable that will be saved for counting over phi space, len_F saves the number of entries in the distribution;
@@ -1284,6 +1284,7 @@ if (zoomfactor != 1) {
 
 	//gsl_spline_init (spline, gg, phi_grid, size_phigrid);
 	gsl_spline_init (spline, ff, phi_grid, size_phigrid);
+	//gsl_spline_init (spline, phi_grid, x_grid, size_phigrid);
 	//gsl_spline_init (spline, x_grid, phi_grid, size_phigrid);
 
 	fp = fopen("OUTPUT/phispline.txt", "w");
@@ -1292,14 +1293,16 @@ if (zoomfactor != 1) {
 	for (i = 0; i < size_finegrid; i += 1)
 	{
 		xi = i*deltax/zoomfactor;
+		//printf("i=%d/%d\n", i, size_finegrid);
+		//deltax = phi_grid[(i+1)/zoomfactor] - phi_grid[i%zoomfactor];
+		phi[i] = phi_grid[i/zoomfactor] + (i%zoomfactor)*deltax/zoomfactor;
 		if (i == 0) xi += TINY;
 		//if (i == size_finegrid-1) xi -= TINY;
 		xx[i] = pow( pow(grid_parameter+xi, 0.5) - sqrt(grid_parameter), 2.0);
-		//printf("xx = %f\n", xx[i]);
-		//printf("gg = %f %f\n", xi, gg[i/zoomfactor]);
-		//printf("phi = %f\n", phi[i/zoomfactor]);
 		phi[i] = gsl_spline_eval (spline, xi, acc);
-		fprintf(fp, "%f %f\n", pow(grid_parameter+xi, 0.5) - sqrt(grid_parameter), phi[i]);
+		//xx[i] = gsl_spline_eval (spline, phi[i], acc);
+		//fprintf(fp, "%f %f\n", pow(grid_parameter+xi, 0.5) - sqrt(grid_parameter), phi[i]);
+		fprintf(fp, "%f %f\n", xx[i], phi[i]);
 		phi[i] *= charge;
 		//xx[i] = xi*xi/rho_over_unitgrid;
 	}
@@ -1315,23 +1318,25 @@ else {
 	fp = fopen("OUTPUT/phispline.txt", "w");
 	if (fp == NULL) printf("Error: phispline not created\n");
 	//printf ("%f\n", gg[size_phigrid-1]);
-	for (i = 0; i < size_finegrid; i += 1)
-	{
-	xi = i*deltax/zoomfactor;
-	//if (i == 0) xi += TINY;
-	//if (i == size_finegrid-1) xi -= TINY;
-	xx[i] = pow( pow(grid_parameter+xi, 0.5) - sqrt(grid_parameter), 2.0);
-	//printf("xx = %f\n", xx[i]);
-	//printf("gg = %f %f\n", xi, gg[i/zoomfactor]);
-	//printf("phi = %f\n", phi[i/zoomfactor]);
-	phi[i] = phi_grid[i];
-	fprintf(fp, "%f %f\n", pow(grid_parameter+xi, 0.5) - sqrt(grid_parameter), phi[i]);
-	phi[i] *= charge;
-	//xx[i] = xi*xi/rho_over_unitgrid;
+	for (i = 0; i < size_finegrid; i += 1) {
+		xi = i*deltax/zoomfactor;
+		//if (i == 0) xi += TINY;
+		//if (i == size_finegrid-1) xi -= TINY;
+		//xx[i] = pow( pow(grid_parameter+xi, 0.5) - sqrt(grid_parameter), 2.0);
+		xx[i] = x_grid[i];
+		//printf("xx = %f\n", xx[i]);
+		//printf("gg = %f %f\n", xi, gg[i/zoomfactor]);
+		//printf("phi = %f\n", phi[i/zoomfactor]);
+		phi[i] = phi_grid[i];
+		//fprintf(fp, "%f %f\n", pow(grid_parameter+xi, 0.5) - sqrt(grid_parameter), phi[i]);
+		fprintf(fp, "%f %f\n", xx[i], phi[i]);
+		phi[i] *= charge;
+		//xx[i] = xi*xi/rho_over_unitgrid;
 	}
 	fclose(fp);
 }
 
+printf("phi[0] = %f\n", phi[0]);
 
 
 // Introduce a number that equals Te when Te > 1 and 1 when Te<1. When Te is large, this number increases the number of grid points in tot. energy U to account for the fact that vz ~ vB > v_t,i when the electron temperature is large. Moreover, |v| ~ vB > v_t,i at the Debye sheath entrance, and so the number of grid points in xbar must also be increased.
@@ -1641,7 +1646,7 @@ Because I am comparing neighbouring values of x to find a maximum, I need to con
 		{
 			Uperp[j][i-1-imax[j]+kdrop[j]] = chi[j][i-1];
 			if (Uperp[j][i-1-imax[j]+kdrop[j]] < 24.0*Telarge && Uperp[j][i-2-imax[j]+kdrop[j]] > 24.0*Telarge)
-				lowerlimit[j] = i-1-imax[j]+kdrop[j]; 
+			lowerlimit[j] = i-1-imax[j]+kdrop[j]; 
 			mu[j][i-1-imax[j]+kdrop[j]] = 0.0;
 			//printf("kdrop[j] = %d\n", kdrop[j]);
 			upper[j][i-1] = i-1-imax[j]+kdrop[j];
@@ -1662,16 +1667,16 @@ Because I am comparing neighbouring values of x to find a maximum, I need to con
 				}
 				else if (k == imin[j] - imax[j] - 1) {
 					vx[j][i-1][k] = sqrt((Uperp[j][k] - chi[j][i-1]));// equiv 0
-					//mu[j][k] += (1.0/M_PI)*sqrt(0.5*chimpp[j])*pow(xx[imin[j]-1] - xx[imin[j]], 2.0);
+					mu[j][k] += (1.0/M_PI)*sqrt(0.5*chimpp[j])*pow(xx[imin[j]-1] - xx[imin[j]], 2.0);
 					// should uncomment above and comment below (spurious)
-					mu[j][k] += (2.0/M_PI)*sqrt(chi[j][i-2]-chi[j][i-1])*(2.0/3.0)*(xx[i-1] - xx[i-2]);
+					//mu[j][k] += (2.0/M_PI)*sqrt(chi[j][i-2]-chi[j][i-1])*(2.0/3.0)*(xx[i-1] - xx[i-2]);
 					
 				}
 				else if ( k == upper[j][i-1] - 1 ) {	
 					vx[j][i-1][k] = sqrt((Uperp[j][k] - chi[j][i-1]));// equiv 0
 					mu[j][k] += (2.0/M_PI)*sqrt(chi[j][i-2]-chi[j][i-1])*(2.0/3.0)*(xx[i-1] - xx[i-2]);
 				}
-				else {	
+				else {
 					vx[j][i-1][k] = sqrt((Uperp[j][k] - chi[j][i-1]));
 					mu[j][k] += (1.0/M_PI)*(vx[j][i-1][k] + vx[j][i-2][k])*(xx[i-1] - xx[i-2]); 
 				}
@@ -1764,6 +1769,7 @@ Because I am comparing neighbouring values of x to find a maximum, I need to con
 	} 
 }	
 
+
 //printf("xbar[maxj=%d] = %f\n", maxj, xbar[maxj]);	
 // OPEN ORBIT INTEGRAL
 /* Now we perform the open orbit integral. We use a change of variables which makes the integrand smooth at the top bounce point. The change of variables is to some var = sqrt(x_t - x) */
@@ -1775,14 +1781,15 @@ for (j=0;j<maxj;j++) {
 	mu[j][upperlimit[j]-1] = pow(xx[imin[j]] - xx[imin[j]-1], 2.0)*pow(0.5*chimpp[j], 0.5);
 	k=0;
 	if (charge < 0.0) {
-	while (fabs(phi[0]) < 0.2 && k < upperlimit[j]) {
+	while (fabs(phi[0]) < 0.3 && k < upperlimit[j]) {
 		mu[j][upperlimit[j]-k] = pow(xx[imin[j]] - xx[imin[j]-k], 2.0)*pow(0.5*chimpp[j], 0.5);
 		k++;
 	}
 	}
 	//if (j == 20) {
 	//	for (k=0; k<upperlimit[j]+1; k++)
-	//		printf("mu[%d][%d] = %f\t Uperp[%d][%d] = %f\n", j, k, mu[j][k], j, k, Uperp[j][k] - phi[j]); 
+	//		printf("mu[%d][%d] = %f\t Uperp[%d][%d] = %f\n", j, k, mu[j][k], j, k, Uperp[j][k]); 
+	//		//printf("mu[%d][%d] = %f\t Uperp[%d][%d] = %f\n", j, k, mu[j][k], j, k, Uperp[j][k] - phi[j]); 
 	//}
 	//printf("mu[%d][%d] = %f (should be %f near infinity)\n", j, upperlimit[j]-1, mu[j][upperlimit[j]-1], Uperp[j][upperlimit[j]-1]);
 	//printf("imin = %d\n", imin[j]);
@@ -2521,7 +2528,7 @@ while (stop == 0) {
 		printf("WARNING in densfinorb.c: stopping for positive density\n");
 
 	}
-	if (DEBUG == 1) {	
+	if (DEBUG == 0) {	
 		printf("for charge = %f\n", charge);
 		printf("%f, %f, %f is TOTAL, CLOSED and OPEN orbit density at position index %d, position %f, potential %f\n", nitotal[ic], niclosed[ic], niopen[ic], ic, pos, phi_grid[ic]);
 		if ( (nitotal[ic] != nitotal[ic]) || (nitotal[ic] < TINY) ) { 	

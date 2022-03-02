@@ -1,4 +1,3 @@
-
 // LAST SUBSTANTIAL MODIFICATION MADE 16 JAN 2022
 /* This code calculates the next electrostatic potential guess in the iteration to obtain the self-consistent magnetic presheath electrostatic potential profile */
 
@@ -11,7 +10,6 @@
 #include <gsl/gsl_spline.h>
 #include <gsl/gsl_errno.h>
 #include <gsl/gsl_linalg.h>
-#define WEIGHT 0.2
 
 void newvcut(double *v_cut, double v_cutDS, double mioverme, double u_i, double u_e, double current, double error_current, int *convergence, double weight) {
 	double old_v_cut = *v_cut, u_etilde;
@@ -25,7 +23,8 @@ void newvcut(double *v_cut, double v_cutDS, double mioverme, double u_i, double 
 			*v_cut = old_v_cut;
 		}
 		else { 
-			*v_cut = (1.0-weight)*(*v_cut) + weight*sqrt(-2.0*log(2.0*(-current + u_i - u_etilde)) - log(M_PI/mioverme) );
+			//*v_cut = (1.0-weight)*(old_v_cut) + weight*sqrt(-2.0*log(2.0*(-current + u_i - u_etilde)) - log(M_PI/mioverme) );
+			*v_cut = sqrt(2.0*( (1.0-weight)*0.5*old_v_cut*old_v_cut + weight* ( 0.5*old_v_cut*old_v_cut + (current - u_i + u_e)/( sqrt(mioverme)*0.5*exp(-0.5*old_v_cut*old_v_cut) ) ) ) );
 		}
 		if ( (*v_cut*(*v_cut)*0.5 < 0.5*v_cutDS*v_cutDS ) )  {
 			printf("WARNING: v_cutDS is larger than v_cut\n");
@@ -37,7 +36,7 @@ void newvcut(double *v_cut, double v_cutDS, double mioverme, double u_i, double 
 	else *convergence += 1;
 }
 
-void newguess(int *convergence, double Te, double *x_grid, double* ne_grid, double *ni, double* phi_grid,int size_phigrid, int *psize_ngrid, double invgammasq, double v_cutDS, double pfac, double weight) {
+void newguess(int *convergence, double Te, double *x_grid, double* ne_grid, double *ni_grid, double* phi_grid,int size_phigrid, int *psize_ngrid, double invgammasq, double v_cutDS, double pfac, double weight) {
 	
 clock_t begin = clock(); 
 int size_ngrid = *psize_ngrid;
@@ -51,7 +50,7 @@ double phi0, phip0, CC, pdec, deltaxsq;
 pdec = 2.0/(1.0-pfac);
 printf("decay power is %f\n", pdec);
 
-Bohmshouldbe = 2.0*Te*(ne_grid[1] - ne_grid[0])/((phi_grid[1] - phi_grid[0])*ni[0]);
+Bohmshouldbe = 2.0*Te*(ne_grid[1] - ne_grid[0])/((phi_grid[1] - phi_grid[0])*ni_grid[0]);
 printf("Bohm integral should be %f\n", Bohmshouldbe);
 
 /* Below we initialize all arrays that contain functions of position x with the correct size n */
@@ -60,9 +59,10 @@ phip = (double*)calloc(  size_phigrid,sizeof(double)); // phi now has correct si
 phipp = (double*)calloc( size_phigrid,sizeof(double)); // phi now has correct size
 newphi = (double*)calloc(size_phigrid,sizeof(double)); // same as above 
 
-reslimit = 0.001;
+//if (invgammasq < TINY) reslimit = 0.0005;
+reslimit = 0.002;
 
-if (invgammasq > TINY) reslimit *= invgammasq;
+//if (invgammasq > TINY) reslimit *= invgammasq;
 
 printf("weight = %f\n", weight);
 
@@ -108,13 +108,13 @@ dev_0 = 0.0;
 //}
 for (i=size_ngrid-1; i>=0; i--)  {
 	//if (i==size_ngrid-1)	printf("x phi phipp phipp/gammasq ne ni err \n");
-	//printf(fout, "%f %f %f %f %f %f %f\n", invgammasq, x_grid[i], phi_grid[i], phipp[i], ne_grid[i], ni[i], (-ne_grid[i] + phipp[i]*invgammasq)/ni[i] + 1.0);
-	//fprintf(fout, "%f %f %f %f %f %f %f\n", invgammasq, x_grid[i], phi_grid[i], phipp[i], ne_grid[i], ni[i], (-ne_grid[i] + phipp[i]*invgammasq)/ni[i] + 1.0);
+	//printf(fout, "%f %f %f %f %f %f %f\n", invgammasq, x_grid[i], phi_grid[i], phipp[i], ne_grid[i], ni_grid[i], (-ne_grid[i] + phipp[i]*invgammasq)/ni_grid[i] + 1.0);
+	//fprintf(fout, "%f %f %f %f %f %f %f\n", invgammasq, x_grid[i], phi_grid[i], phipp[i], ne_grid[i], ni_grid[i], (-ne_grid[i] + phipp[i]*invgammasq)/ni_grid[i] + 1.0);
 	if ( (i!=0) && (i!=size_ngrid-1) ) {
-		dev = fabs((-ne_grid[i] + phipp[i]*invgammasq)/ni[i] + 1.0);
-		res += fabs((-ne_grid[i] + phipp[i]*invgammasq)/ni[i] + 1.0);
+		dev = fabs((-ne_grid[i] + phipp[i]*invgammasq)/ni_grid[i] + 1.0);
+		res += fabs((-ne_grid[i] + phipp[i]*invgammasq)/ni_grid[i] + 1.0);
 		if (dev > devbig)  devbig = dev; 
-		if (i==1) dev_0 = fabs((-ne_grid[i] + phipp[i]*invgammasq)/ni[i] + 1.0);
+		if (i==1) dev_0 = fabs((-ne_grid[i] + phipp[i]*invgammasq)/ni_grid[i] + 1.0);
 	}
 }
 //fclose(fout);
@@ -124,11 +124,8 @@ res /= (size_ngrid-2);
 deltaxsq = x_grid[1]*x_grid[1];
 
 if ( invgammasq > TINY ) {
-	phi0 = (ne_grid[size_ngrid-1] - ni[size_ngrid-1])/(pow(phi_grid[size_ngrid-1], pfac));
+	phi0 = (ne_grid[size_ngrid-1] - ni_grid[size_ngrid-1])/(pow(phi_grid[size_ngrid-1], pfac));
 	
-
-	//printf("phi0 = %f\nphipp[%d] = %f\n", phi0, size_ngrid-1, (ne_grid[size_ngrid-1] - ni[size_ngrid-1]));
-
 	gsl_vector *newphi_gsl = gsl_vector_alloc (size_phigrid-2);
 	gsl_matrix * m = gsl_matrix_alloc (size_phigrid-2, size_phigrid-2);
 
@@ -146,7 +143,7 @@ if ( invgammasq > TINY ) {
 	phipp_red = malloc((size_phigrid-2)*sizeof(double));
 	for (i=0;i<size_phigrid-2; i++) {
 		if (i< size_ngrid-2)
-			phipp_red[i] = (ne_grid[i+1] - ni[i+1]) - phi_grid[i+1]* exp(phi_grid[i+1]/Te);
+			phipp_red[i] = (ne_grid[i+1] - ni_grid[i+1]) - phi_grid[i+1]* exp(phi_grid[i+1]/Te);
 		else phipp_red[i] = phi0*pow(phi_grid[i+1], pfac) - phi_grid[i+1]* exp(phi_grid[i+1]/Te);
 	}
 	phiW_impose = (-0.5*v_cutDS*v_cutDS); 
@@ -174,22 +171,22 @@ if ( invgammasq > TINY ) {
 
 	newphi[0] = - 0.5*v_cutDS*v_cutDS;
 	printf("%f\n", newphi[0]);
-	for (i=0; i<size_ngrid-2; i++) {
+	for (i=0; i<size_ngrid; i++) {
 		temp = gsl_vector_get(newphi_gsl, i);
 		newphi[i+1] = temp;
 		printf("%f\n", newphi[i+1]);
 	}
-	phip0 = (newphi[size_ngrid-2] - newphi[size_ngrid-3])/(x_grid[size_ngrid-2] - x_grid[size_ngrid-3]);
-	CC = pdec*newphi[size_ngrid-2]/phip0 - x_grid[size_ngrid-2];
-	if (CC < 0.0) CC = 0.0;
-	phi0 =  newphi[size_ngrid-2] /pow(x_grid[size_ngrid-2]+CC, pdec) ;
+	phip0 = (newphi[size_ngrid-1] - newphi[size_ngrid-2])/(x_grid[size_ngrid-1] - x_grid[size_ngrid-2]);
+	CC = pdec*newphi[size_ngrid-1]/phip0 - x_grid[size_ngrid-1];
+	if (CC < -x_grid[size_ngrid-1]) CC = 0.0;
+	phi0 =  newphi[size_ngrid-1] /pow(x_grid[size_ngrid-1]+CC, pdec) ;
 	printf("CC = %f and phi0 = %f\n", CC, phi0);
-	for (i=size_ngrid-1; i<size_phigrid; i++) {
+	for (i=size_ngrid; i<size_phigrid; i++) {
 		newphi[i] = phi0*pow(x_grid[i]+CC, pdec);
 		printf("%f\n", newphi[i]);
 	}
 
-	//phi0 = (ne_grid[size_ngrid-1] - ni[size_ngrid-1])/pow(phi_grid[size_ngrid-1], pfac);
+	//phi0 = (ne_grid[size_ngrid-1] - ni_grid[size_ngrid-1])/pow(phi_grid[size_ngrid-1], pfac);
 	//CC = 0.0;
 	//newphi[size_phigrid-1] = phi0*pow(x_grid[size_phigrid-1] + CC, pdec);
 
@@ -203,15 +200,15 @@ if ( invgammasq > TINY ) {
 else {
 	for (i=0; i< size_phigrid; i++) {
 		if (i< size_ngrid-1)
-			//newphi[i] = Te * log( ni[i] - ne_grid[i] + exp(phi_grid[i]/Te)); // + phi_grid[i];
-			//newphi[i] = phi_grid[i] + 1.0*Te* ( ni[i] - ne_grid[i] ); // + exp(phi_grid[i]/Te)); // + phi_grid[i];
-			newphi[i] = Te * ( ni[i] - ne_grid[i] )*exp(-phi_grid[i]/Te) + phi_grid[i];
-			//newphi[i] = (1.0/ne_grid[i])*Te * ( ni[i] - ne_grid[i] ) + phi_grid[i];
+			//newphi[i] = Te * log( ni_grid[i] - ne_grid[i] + exp(phi_grid[i]/Te)); // + phi_grid[i];
+			//newphi[i] = phi_grid[i] + 1.0*Te* ( ni_grid[i] - ne_grid[i] ); // + exp(phi_grid[i]/Te)); // + phi_grid[i];
+			newphi[i] = Te * ( ni_grid[i] - ne_grid[i] )*exp(-phi_grid[i]/Te) + phi_grid[i];
+			//newphi[i] = (1.0/ne_grid[i])*Te * ( ni_grid[i] - ne_grid[i] ) + phi_grid[i];
 		else if (i== size_ngrid-1) {
-			//newphi[i] = Te * log( ni[i] - ne_grid[i] + exp(phi_grid[i]/Te)); // + phi_grid[i];
-			//newphi[i] = phi_grid[i] + 1.0*Te* ( ni[i] - ne_grid[i] ); // + exp(phi_grid[i]/Te)); // + phi_grid[i];
-			newphi[i] = Te * ( ni[i] - ne_grid[i] )*exp(-phi_grid[i]/Te) + phi_grid[i];
-			//newphi[i] = (1.0/ne_grid[i])*Te * ( ni[i] - ne_grid[i] ) + phi_grid[i];
+			//newphi[i] = Te * log( ni_grid[i] - ne_grid[i] + exp(phi_grid[i]/Te)); // + phi_grid[i];
+			//newphi[i] = phi_grid[i] + 1.0*Te* ( ni_grid[i] - ne_grid[i] ); // + exp(phi_grid[i]/Te)); // + phi_grid[i];
+			newphi[i] = Te * ( ni_grid[i] - ne_grid[i] )*exp(-phi_grid[i]/Te) + phi_grid[i];
+			//newphi[i] = (1.0/ne_grid[i])*Te * ( ni_grid[i] - ne_grid[i] ) + phi_grid[i];
 			phip0 = (newphi[i] - newphi[i-2])/(x_grid[i] - x_grid[i-2]);
 			CC = pdec*newphi[i-1]/phip0 - x_grid[i-1];
 			//CC = 0.0;
@@ -228,8 +225,8 @@ else {
 
 printf("res = %f, devbig = %f, dev_0 = %f\n", res, devbig, dev_0);
 
-printf("conditions %d %d %d\n", (res < reslimit), devbig < 5.0*reslimit, dev_0 < 5.0*reslimit);
-if (res < reslimit) { // && devbig < 5.0*reslimit && dev_0 < 5.0*reslimit)  {
+printf("conditions %d %d %d\n", res < reslimit, devbig < 5.0*reslimit, dev_0 < 5.0*reslimit);
+if ( res < reslimit && devbig < 5.0*reslimit && dev_0 < 5.0*reslimit )  {
 	*convergence += 1 ;
 }
 else {

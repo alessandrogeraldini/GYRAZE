@@ -11,9 +11,9 @@
 #include <sys/stat.h>
 #include "mps.h"
 //#include "simparams.h"
-#define STOP_MP 0.95
-#define STOP_DS 0.95
-#define INITIAL_GRID_PARAMETER 1.5
+#define STOP_MP 0.99
+#define STOP_DS 0.99
+#define INITIAL_GRID_PARAMETER 1.0
 #define TEST_EL 0
 #define MAX_IT 200
 // number of maximum iterations set to some large number but iterations should converge in about 20-100. If they don't, then there is a problem
@@ -28,9 +28,72 @@
 const char *strqty[7] = {"alpha=","gamma=","nspec=","Ti:Te=","mi:me=","jwall=","pwall="};
 const int lenstrqty = 7;
 
+void remake_MPgrid(double *x_grid, double *phi_grid, int *psize_phigrid, double delta) {
+	int i, phithenx=1, size_phigrid = *psize_phigrid;
+	double xi, *new_phi, *new_x;
+	//FILE *fp;
+	new_phi = malloc(size_phigrid*sizeof(double));
+	new_x = malloc(size_phigrid*sizeof(double));
+	//fp = fopen("OUTPUT/phidata.txt", "w");
+	//if (fp == NULL) {
+	//	printf("Error opening new phidata.txt file\n");
+	//	exit(EXIT_FAILURE);
+	//}
+	printf("in remake_MPgrid: size_phigrid = %d\n", size_phigrid);
+	gsl_interp_accel *acc
+	= gsl_interp_accel_alloc ();
+	gsl_spline *spline
+	= gsl_spline_alloc (gsl_interp_cspline, size_phigrid);
+
+	gsl_spline_init (spline, phi_grid, x_grid, size_phigrid);
+
+	new_phi[0] = phi_grid[0];
+	new_x[0] = x_grid[0];
+	//for (i=1; i < size_phigrid; i++) {
+	i=1;
+	while (new_x[i-1] < x_grid[size_phigrid-1] - delta) {
+		if (phithenx == 1) {
+			xi = i*delta;
+			new_phi[i] = new_phi[i-1] + delta;
+			new_x[i] = gsl_spline_eval (spline, new_phi[i], acc);
+		}
+		if ( (phithenx == 0) || (new_x[i] - new_x[i-1] > delta) ) {
+			new_x[i] = new_x[i-1] + delta;
+			if (phithenx == 1)  {
+				gsl_spline_free (spline);
+				gsl_interp_accel_free (acc);
+
+				gsl_interp_accel *acc
+				= gsl_interp_accel_alloc ();
+				gsl_spline *spline
+				= gsl_spline_alloc (gsl_interp_cspline, size_phigrid);
+				gsl_spline_init (spline, x_grid, phi_grid, size_phigrid);
+				phithenx = 0;
+			}
+		printf(" i = %d\n", i);
+			new_phi[i] = gsl_spline_eval (spline, new_x[i], acc);
+		printf(" i = %d\n", i);
+			printf("x phi = (%f %f)\n", new_x[i], new_phi[i]);
+		printf(" i = %d\n", i);
+		}
+		//g = sqrt(new_x[i]);
+		printf("x phi = (%f %f)\n", new_x[i], new_phi[i]);
+		//fprintf(fp, "%f %f\n", g, new_phi[i]);
+		i++;
+	}
+	*psize_phigrid = i;
+	for (i=0; i < size_phigrid; i++) {
+		phi_grid[i] = new_phi[i];
+		x_grid[i] = new_x[i];
+	}
+	free(new_phi);
+	free(new_x);
+	return;
+}
+
 void make_phigrid(double *x_grid, double *phi_grid, int size_phigrid, double grid_parameter, double deltax, int initial, double phi_jump, double len_scale) {
 	int i;
-	double g, xi, *ff, *new_phi, *new_x;
+	double g, xi, *ff, *new_phi, *new_x, power = 0.5;
 	//FILE *fp;
 	new_phi = malloc(size_phigrid*sizeof(double));
 	new_x = malloc(size_phigrid*sizeof(double));
@@ -43,9 +106,9 @@ void make_phigrid(double *x_grid, double *phi_grid, int size_phigrid, double gri
 	printf("in make_phigrid: size_phigrid = %d\n", size_phigrid);
 	if (initial != 0) {
 			printf("grid_parameter = %f\n", grid_parameter);
-		
 		for (i=0; i<size_phigrid; i++) {
-		    ff[i] = pow(sqrt(grid_parameter)+sqrt(x_grid[i]), 2.0) - grid_parameter;
+		    //ff[i] = pow(sqrt(grid_parameter)+sqrt(x_grid[i]), 2.0) - grid_parameter;
+		    ff[i] = pow(pow(grid_parameter, power)+pow(x_grid[i], power), 1.0/power) - grid_parameter;
 			//printf("ff[%d] = %f\n", i, ff[i]);
 		}
 		gsl_interp_accel *acc
@@ -58,7 +121,7 @@ void make_phigrid(double *x_grid, double *phi_grid, int size_phigrid, double gri
 		for (i=0; i < size_phigrid; i++) {
 			xi = i*deltax;
 			new_phi[i] = phi_grid[i];
-			new_x[i] = pow( pow(grid_parameter+xi, 0.5) - sqrt(grid_parameter), 2.0);
+			new_x[i] = pow( pow(grid_parameter+xi, power) - pow(grid_parameter, power), 1.0/power);
 			g = sqrt(new_x[i]);
 			//fprintf(fp, "%f %f\n", g, new_phi[i]);
 		}
@@ -73,9 +136,14 @@ void make_phigrid(double *x_grid, double *phi_grid, int size_phigrid, double gri
 		for (i=0; i < size_phigrid; i++) {
 			xi = i*deltax;
 			ff[i] = xi;
-			new_x[i] = pow( pow(grid_parameter+xi, 0.5) - sqrt(grid_parameter), 2.0);
+			//new_x[i] = pow( pow(grid_parameter+xi, 0.5) - sqrt(grid_parameter), 2.0);
+			new_x[i] = pow( pow(grid_parameter+xi, power) - pow(grid_parameter, power), 2.0);
 			g = sqrt(new_x[i]);
 			new_phi[i] = phi_jump*pow(len_scale, 2.0)/pow(new_x[i] + len_scale, 2.0);
+			//if (new_x[i] < 10.0/sqrt(2)) 
+			//	new_phi[i] = 3.0*pow((new_x[i]*sqrt(2.0)/10.0 - 1.0), 5.0);
+			//else 
+			//	new_phi[i] = 0.0;
 			//fprintf(fp, "%f %f\n", g, new_phi[i]);
 		}
 		for (i=0; i < size_phigrid; i++) {
@@ -131,12 +199,13 @@ double mucut(double beta, double vcut) {
 // The main function of MAGSHEATH
 int main() {
 
+double power = 1.0;
 clock_t begin_it = clock(); // Finds the start time of the computation
 int zoomfactor_DS;
 int size_mu_i, size_U_i, size_mu_e, size_vpar_e, number_species;
 int i, j, nrows_distfile = 0, ncols=0, ndirname, fix_current=0, ind; //s
-double error_current = 0.0001;
-double deltaphi=0.0, weight_j=WEIGHT, weight=WEIGHT;
+double error_current = 0.0005;
+double deltaphi=0.0, weight_j=1.0, weight=WEIGHT;
 double ioncharge= 1.0, *TioverTe;
 double **dist_i_GK, *mu_i, *U_i, zero = 0.0;
 double **dist_e_DK, **dist_e_GK, *vpar_e, *mu_e, *U_e_DS, *mu_e_DS;
@@ -160,6 +229,7 @@ double Te, alpha, alpha_deg, deltaxDS, factor_small_grid_parameter=2.0, system_s
 int size_phigrid, size_ngrid = 0, size_neDSgrid = 0, size_phiDSgrid;
 char line_hundred[100];
 double grid_parameter, deltax;
+
 //gsl_permutation *p;
 //gsl_matrix *m;
 //	const char *strqty[6];
@@ -453,7 +523,7 @@ if (TEST_EL==1) {
 	//size_phiDSgrid = (int) ( ( pow(sqrt(grid_parameter) + sqrt(2.0*system_size), 2.0) - 0.3 ) / deltax );
 	//printf("size_phiDSgrid = %d\n", size_phiDSgrid);
 	F_i_DS[0] = malloc(sizevxopen*sizeof(double));
-	make_phigrid(x_DSgrid, phi_DSgrid, size_phiDSgrid, 0.0, deltaxDS, 0, -0.05, 0.4);
+	make_phigrid(x_DSgrid, phi_DSgrid, size_phiDSgrid, 0.0, deltaxDS, 0, log(0.001), 0.01);
 	make_phigrid(x_grid, phi_grid, size_phigrid, grid_parameter, deltax, 0, 0.0, 1.0);
 	//phi_DSgrid[0] = -5.0;
 	printf("v_cutDS = %f\n", v_cutDS);
@@ -504,11 +574,24 @@ N=0;
 		//	grid_parameter = 0.5;
 			grid_parameter = factor_small_grid_parameter*(phi_grid[0] + 0.5*v_cut*v_cut);
 			weight = CAUTIOUSWEIGHT;
-			//weight_j = 0.1;
+			//weight_j = CAUTIOUSWEIGHT;
 		}
-		// MAKE ELECTROSTATIC POTENTIAL GRID
-		make_phigrid(x_grid, phi_grid, size_phigrid, grid_parameter, deltax, N, 0.0, 1.0);
+		//if (N != 0)
+		//power = log((phi_grid[2] - phi_grid[0])/(phi_grid[1] - phi_grid[0]))/log(x_grid[2]/x_grid[1]);
+		//if (power < 0.5) grid_parameter = 1.0;
+		//else if (power > 1.0) grid_parameter = 0.0;
+		//else grid_parameter = 2.0*pow((1.0-power), 2.0); 
+		//if ( (phi_grid[2] - phi_grid[1])/(phi_grid[1] - phi_grid[0]) > 1.0 )
+		//	grid_parameter -= 0.1;
+		//else if ( (phi_grid[2] - phi_grid[1])/(phi_grid[1] - phi_grid[0]) < 0.95 )
+		//	grid_parameter += 0.1;
 
+		//if (grid_parameter <= 0.0001) grid_parameter = 0.0001;
+		
+		// MAKE ELECTROSTATIC POTENTIAL GRID
+		//if (N==0) 
+		make_phigrid(x_grid, phi_grid, size_phigrid, grid_parameter, deltax, N, 0.0, 1.0);
+		//else remake_MPgrid(x_grid, phi_grid, &size_phigrid, deltax);//
 		printf("grid parameter = %f\n", grid_parameter);
 		fprintf(fout, "grid parameter = %f\n", grid_parameter);
 		printf("\t(phi_DSE, phi_wall) = (%f, %f)\n", phi_grid[0], -0.5*v_cut*v_cut);
@@ -523,7 +606,7 @@ N=0;
 		if (v_cut*v_cut < - 2.0*phi_grid[0]) v_cut = sqrt(-2.0*phi_grid[0]) + TINY;
 		v_cutDS = sqrt(v_cut*v_cut + 2.0*phi_grid[0]);
 		printf("v_cutDS = %f\n", v_cutDS);
-		if (gamma_ref > TINY) {
+		if (gamma_ref >= 0.1) {
 			vpar_cut_lookup[0] = 1e10;
 			mue_cut_lookup[0] = 0.0;
 			for (i=1; i< size_cut; i++) {
@@ -536,7 +619,7 @@ N=0;
 			mue_cut_lookup[size_cut] = 1e10;
 			//printf("%f %f\n", vpar_cut_lookup[size_cut], mue_cut_lookup[size_cut]);
 		}
-		else if (gamma_ref <= TINY) { // first solve MPS w/ simplified e- reflection
+		else if (gamma_ref < 0.1) { // first solve MPS w/ simplified e- reflection
 			for (i=0; i<= size_cut; i++) {
 				vpar_cut_lookup[i] = v_cutDS;// + i;
 				mue_cut_lookup[i] = i*(mu_e[size_mu_e-1]+TINY)/size_cut;;
@@ -552,8 +635,10 @@ N=0;
 		if (v_cut*v_cut < - 2.0*phi_grid[0]) {
 			printf("WARNING: The total sheath and presheath potential drop is smaller than the presheath potential drop\n");
 			printf("To avoid a non-monotonic potential, I will set the total potential drop to be just above the presheath potential drop\n");
-			v_cut = sqrt(-2.0*phi_grid[0] + TINY);
-			v_cutDS = sqrt(TINY);
+			//v_cut = sqrt(-2.0*phi_grid[0] + TINY);
+			//v_cutDS = sqrt(TINY);
+			rescale_array(phi_grid, size_phigrid, -0.5*v_cut*v_cut + TINY );
+			v_cutDS = sqrt(2.0*TINY);
 		}
 		printf("\tcurrent = %f (target = %f)\n", current, target_current);
 		fprintf(fout, "\tcurrent = %f (target = %f)\n", current, target_current);
@@ -582,6 +667,7 @@ if ( (gamma_ref <= 10.0) && (gamma_ref >= 0.1) ) {
 	N_DS = 0;
 	while ( ( ( convergence <= 1) || (convergence_DS <= 1) || (convergence_j <= 1) ) && (N_DS < MAX_IT) ) {
 		make_phigrid(x_grid, phi_grid, size_phigrid, grid_parameter, deltax, N, 0.0, 1.0);
+		//remake_MPgrid(x_grid, phi_grid, &size_phigrid, deltax);
 		//for (i=0; i < size_cut+1; i++) 
 		//	vpar_cut_lookup[i] = vpar_cut_lookup_old[i];	
 
@@ -616,11 +702,16 @@ if ( (gamma_ref <= 10.0) && (gamma_ref >= 0.1) ) {
 		//clock_t gsl_t_end = clock(); 
 		//printf("time for LU decomp is %f\n",  (double) (gsl_t_end - gsl_t) / CLOCKS_PER_SEC);
 		printf("flux_eDS = (%f, %f)\tflux_i = %f\n", flux_eDS*ne_grid[0]*sqrt(2.0*mioverme), flux_e*sqrt(mioverme), flux_i);
-		if ( (factor_small_grid_parameter*(phi_grid[0] + 0.5*v_cut*v_cut) < grid_parameter) && (phi_grid[0] + 0.5*v_cut*v_cut > 1.0e-13 ) )   {
+		if (factor_small_grid_parameter*(phi_grid[0] + 0.5*v_cut*v_cut) < grid_parameter) { // && (phi_grid[0] + 0.5*v_cut*v_cut > 1.0e-13 ) )   {
 			grid_parameter = factor_small_grid_parameter*(phi_grid[0] + 0.5*v_cut*v_cut);
-			weight = 0.1;
-			//weight_j = 0.1;
+			weight = CAUTIOUSWEIGHT;
+			weight_j = CAUTIOUSWEIGHT;
 		}
+		//power = log((phi_grid[2] - phi_grid[0])/(phi_grid[1] - phi_grid[0]))/log(x_grid[2]/x_grid[1]);
+		//if ( (phi_grid[2] - phi_grid[1])/(phi_grid[1] - phi_grid[0]) > 0.95 )
+		//	grid_parameter *= 0.9;
+		//else if ( (phi_grid[2] - phi_grid[1])/(phi_grid[1] - phi_grid[0]) < 0.9 )
+		//	grid_parameter *= 1.1;
 
 		///printf("grid parameter = %f\n", grid_parameter);
 		///fprintf(fout, "grid parameter = %f\n", grid_parameter);
@@ -689,6 +780,7 @@ if ( (gamma_ref <= 10.0) && (gamma_ref >= 0.1) ) {
 		//gsl_permutation_free (p);
 		//gsl_matrix_free (m);
 	}
+	printf("FINISHED?\n");
 	densfinorb(1, sizevxopen, Te, alpha, size_phigrid, &size_ngrid, ni_grid, x_grid, phi_grid, ioncharge, dist_i_GK, mu_i, U_i, size_mu_i, size_U_i, grid_parameter, vx_i_DS, fx_i_DS, &flux_i, ZOOM_MP, 0.999); 
 	densfinorb(2, size_cut+1, 1.0, alpha, size_phiDSgrid, &size_neDSgrid, ne_DSgrid, x_DSgrid, phi_DSgrid, -1.0, dist_e_GK, mu_e_DS, U_e_DS, size_mu_e, size_vpar_e, 0.0, mue_cut_lookup, vpar_cut_lookup, &flux_eDS, zoomfactor_DS, 0.999); 
 }
