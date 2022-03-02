@@ -9,11 +9,17 @@ The file inputfile.txt contains six lines: angle alpha in degrees, electron gyro
 Example input file:
 
 4.0 (angle in degrees)
+
 0.8 (electron gyroradius to Debye length)
+
 1 (number of species, only 1 supported for now)
+
 1.0 (ion to electron temperature ratio)
+
 3600.0 (ion to electron mass ratio)
+
 1 (set current)
+
 0.0 (value of current, in this case zero current = ambipolarity)
 
 To solve only the magnetic presheath (without the full Debye sheath potential profile) with a simplified electron model it is sufficient to set the value of gamma = 0.0 or gamma = 10.0 (or larger)
