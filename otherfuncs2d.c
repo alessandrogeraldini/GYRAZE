@@ -5,59 +5,19 @@
 #include <math.h>
 #define LEN 200
 
-
-//double lin_interp(double* x_grid, double* y_grid, double given_x ,int n, int line) {
-//	double interp_y;
-//	int cont = 0;
-//	int i;
-//	i = 0;
-//
-//	if (x_grid[n-1] < given_x) 
-//		interp_y = y_grid[n-1];
-//	else if (x_grid[0] > given_x) 
-//		interp_y = y_grid[0];
-//	else 
-//		cont = 1;
-//
-//	while (cont == 1)
-//	{
-//		printf("i = %d/%d\n", i, n);
-//		if (i == n)
-//		{
-//			if (fabs(given_x - x_grid[0]) < 1e-10) {
-//				interp_y = y_grid[0];
-//				cont = 0;
-//			}
-//			else if (fabs(given_x - x_grid[n-1]) < 1e-10) {
-//				interp_y = y_grid[n-1];
-//				cont = 0;
-//			}
-//			else {
-//				printf("The x value exceeds the given x grid");
-//				printf("The x value was: %.10f\n", given_x);
-//				printf("Error on line %d", line);
-//				exit(EXIT_FAILURE);
-//			}
-//		}
-//		if (given_x > x_grid[i]) {
-//			if (given_x <= x_grid[i + 1])
-//			{
-//				interp_y = y_grid[i] + (y_grid[i + 1] - y_grid[i]) * ((given_x - x_grid[i]) / (x_grid[i + 1] - x_grid[i]));
-//				cont = 0;
-//			}
-//		}
-//		i++;
-//	}
-//	return interp_y;
-//
-//}
-
 double lin_interp(double *xx, double *yy, double x, int n, int bla) {
 	double answer, deltax, aminus, aplus;
 	int i, ileft = 0, iright = n-1, out_of_bounds =0, A=0,B=0, guessi;
 	guessi = n/2;
 	i = guessi;
-	if ( (x < xx[0]) || (x > xx[n-1]) ) out_of_bounds = 1;
+	if (x < xx[0])  {
+		out_of_bounds = 1;
+		i = 1;
+	}
+	else if (x > xx[n-1]) {
+		out_of_bounds = 1;
+		i = n-2; 
+	}
 	else out_of_bounds = 0;
 	while ( ( ( xx[i] - x > 0 ) || ( xx[i+1] - x < 0 ) ) && out_of_bounds == 0 ) {
 		//printf("x = %f\nxx[i] = %f\nxx[i+1] = %f\n", x, xx[i], xx[i+1]);
@@ -108,14 +68,12 @@ double lin_interp(double *xx, double *yy, double x, int n, int bla) {
 		//}
 	}
 	else {
-		if (i==-1) answer = xx[0];
-		else if (i==n) answer = xx[n-1];
+		if (i==1) answer = yy[0];
+		else if (i==n-2) answer = yy[n-1];
 		else {
-			printf("ERROR in lin_interp function\n");
+			printf("ERROR: check otherfuncs().\n");
 			exit(-1);
 		}
-		//answer = 0.0;
-		//printf("OUT OF BOUNDS\n");
 	}
 	return answer;
 }
@@ -164,18 +122,124 @@ double bilin_interp(double x, double y, double **FF, double *xx, double *yy, int
 		if (i == -1 || i == cols)
 		{
 			out_of_bounds = 1;
-			//printf("Argument is out of bounds horizontally; extrapolation necessary instead of interpolation\n");
-			printf("Argument is out of bounds; extrapolation necessary instead of interpolation\n\n\n");
+			printf("in bilin_interp: Argument is out of bounds in first index; extrapolation necessary instead of interpolation\n");
+		}
+	}
+	if (guessj == -1) 
+		guessj = (int) rows/2;
+	j = guessj;
+	if ( (y < yy[0]) || (y > yy[rows-1]) ) out_of_bounds = 1;
+	while ( ( ( yy[j] - y > 0 ) ||  ( yy[j+1] - y < 0 ) ) && out_of_bounds == 0 ) {	
+		C = (yy[j] - y > 0);
+		D = (yy[j+1] - y < 0);
+		//printf("j is %d and C and D are %d and %d\n", j, C, D);
+		if (C==1) {
+			if (j-jdown > 1) {
+				jup = j;
+				j = j - (j - jdown)/2;
+			}
+			else {
+				jup = j;
+				j = j - 1;
+			}
+		}
+		else if (D==1) {
+			if (jup - j > 1) {
+				jdown = j;
+				j = j + (jup - j)/2;
+			}
+			else {
+				jdown = j;
+				j = j +1;
+			}
+		}
+
+		if (j == -1 || j == rows) {
+			out_of_bounds = 1;
+			printf("in bilin_interp: Argument is out of bounds in second index; extrapolation necessary instead of interpolation\n");
+		}
+	//printf("jup is %d\n", jup);
+	}
+	//printf("out of loop\n");
+
+	if (out_of_bounds == 0)
+	{
+		deltax = xx[i+1] - xx[i];
+		aplus= (x - xx[i])/deltax;
+		aminus = (xx[i+1] - x )/deltax;
+		deltay = yy[j+1] - yy[j];
+		bplus = (y - yy[j])/deltay;
+		bminus = (yy[j+1] - y)/deltay;
+		answer = bplus*aplus*FF[i+1][j+1] + bplus*aminus*FF[i][j+1] + bminus*aplus*FF[i+1][j] + bminus*aminus*FF[i][j];
+		//printf("answer is %f\n", answer);
+		if (answer < 0.0) {
+			printf("whymain????, FF++, FF0+ FF00 FF+0 = %f %f %f %f\n\n", FF[i+1][j+1], FF[i][j+1], FF[i][j], FF[i+1][j]);
+			printf(" mu UminmU = %f %f\txi xi+1 yi yi+1 = %f %f %f %f\n\n", x, y, xx[i], xx[i+1], yy[j], yy[j+1]);
+			printf(" deltax aplus aminus bplus bminus  = %f %f %f %f %f\n\n", deltax, aplus, aminus, bplus, bminus);
+			exit(-1);
+		}
+	}
+	else
+	{
+		answer = 0.0;
+		//printf("OUT OF BOUNDS\n");
+	}
+	return answer;
+}
+
+double trilin_interp(double z, double x, double y, double ***FF, double *zz, double *xx, double *yy, int levels, int cols, int rows, int guessk, int guessi, int guessj) {
+	double answer, deltax, deltay, deltaz, aminus, aplus, bminus, bplus, cminus, cplus;
+	int i, j, k, ileft = 0, iright = cols-1, jdown = 0, jup = rows-1, kdown=0, kup=levels-1, out_of_bounds =0, A=0, B=0, C=0, D=0, E=0, F=0;
+	//for (i=0; i<cols; i++) printf("xx[%d] = %f\n", i, xx[i]);
+	//for (i=0; i<rows; i++) printf("yy[%d] = %f\n", i, yy[i]);
+	//for (i=0; i<levels; i++) printf("zz[%d] = %f\n", i, zz[i]);
+	if (guessi == -1) {
+		guessi = (int) cols/2;
+		//printf("%d is guessi\n", guessi);
+	}
+	i = guessi;
+	if ( (x < xx[0]) || (x > xx[cols-1]) ) out_of_bounds = 1;
+	else out_of_bounds = 0;
+	while ( ( ( xx[i] - x > 0 ) || ( xx[i+1] - x < 0 ) ) && out_of_bounds == 0 ) {
+		//printf("x = %f\nxx[i] = %f\nxx[i+1] = %f\n", x, xx[i], xx[i+1]);
+		A = (xx[i] - x > 0);
+		B = (xx[i+1] - x < 0);	
+		if (A==1)
+		{
+			if (i-ileft > 1) {
+				iright = i;
+				i = i - (i - ileft)/2;
+			}
+			else {
+				iright = i;
+				i = i - 1;
+			}
+		}
+		else if (B==1)
+		{
+			if (iright - i > 1) {
+				ileft = i;
+				i = i + (iright - i)/2;
+			}
+			else
+			{
+				ileft = i;
+				i = i +1;
+			}
+		}
+		//printf("i is %d, A and B are %d and %d\n", i, A, B);
+		if (i == -1 || i == cols)
+		{
+			out_of_bounds = 1;
+			printf("Argument is out of bounds in first index; extrapolation necessary instead of interpolation\n");
 		}
 	}
 
-	if (guessj == -1) {
+	if (guessj == -1) 
 		guessj = (int) rows/2;
-	}
 	j = guessj;
 	if ( (y < yy[0]) || (y > yy[rows-1]) ) out_of_bounds = 1;
-	while ( ( ( yy[j] - y > 0 ) ||  ( yy[j+1] - y < 0 ) ) && out_of_bounds == 0 )
-	{	
+	while ( ( ( yy[j] - y > 0 ) ||  ( yy[j+1] - y < 0 ) ) && out_of_bounds == 0 ) {	
 		C = (yy[j] - y > 0);
 		D = (yy[j+1] - y < 0);
 		//printf("j is %d and C and D are %d and %d\n", j, C, D);
@@ -203,31 +267,69 @@ double bilin_interp(double x, double y, double **FF, double *xx, double *yy, int
 		if (j == -1 || j == rows)
 		{
 			out_of_bounds = 1;
-			printf("Argument is out of bounds; extrapolation necessary instead of interpolation\n\n\n");
+			printf("Argument is out of bounds in second index; extrapolation necessary instead of interpolation\n");
+		}
+	}
+
+	if (guessk == -1) {
+		guessk = (int) levels/2;
+	}
+	k = guessk;
+	if ( (z < zz[0]) || (z > zz[levels-1]) ) out_of_bounds = 1;
+	while ( ( ( zz[k] - z > 0 ) ||  ( zz[k+1] - z < 0 ) ) && out_of_bounds == 0 ) {	
+		E = (zz[k] - z > 0);
+		F = (zz[k+1] - z < 0);
+		//printf("j is %d and C and D are %d and %d\n", j, C, D);
+		if (E==1) {
+			if (k-kdown > 1) {
+				kup = k;
+				k = k - (k - kdown)/2;
+			}
+			else {
+				kup = k;
+				k = k - 1;
+			}
+		}
+		else if (F==1) {
+			if (kup - k > 1) {
+				kdown = k;
+				k = k + (kup - k)/2;
+			}
+			else {
+				kdown = k;
+				k = k + 1;
+			}
+		}
+
+		if (k == -1 || k == levels) {
+			out_of_bounds = 1;
+			printf("Argument is out of bounds in third index; extrapolation necessary instead of interpolation\n");
 		}
 	//printf("jup is %d\n", jup);
 	}
 	//printf("out of loop\n");
 
-	if (out_of_bounds == 0)
-	{
+	if (out_of_bounds == 0) {
 		deltax = xx[i+1] - xx[i];
 		aplus= (x - xx[i])/deltax;
 		aminus = (xx[i+1] - x )/deltax;
 		deltay = yy[j+1] - yy[j];
 		bplus = (y - yy[j])/deltay;
 		bminus = (yy[j+1] - y)/deltay;
-		answer = bplus*aplus*FF[i+1][j+1] + bplus*aminus*FF[i][j+1] + bminus*aplus*FF[i+1][j] + bminus*aminus*FF[i][j];
+		deltaz = zz[k+1] - zz[k];
+		cplus= (z - zz[k])/deltaz;
+		cminus = (zz[k+1] - z )/deltaz;
+		answer = cminus*(bplus*aplus*FF[k][i+1][j+1] + bplus*aminus*FF[k][i][j+1] + bminus*aplus*FF[k][i+1][j] + bminus*aminus*FF[k][i][j]) +
+			 cplus* (bplus*aplus*FF[k+1][i+1][j+1] + bplus*aminus*FF[k+1][i][j+1] + bminus*aplus*FF[k+1][i+1][j] + bminus*aminus*FF[k+1][i][j]);
 		//printf("answer is %f\n", answer);
 		if (answer < 0.0) {
-			printf("whymain????, FF++, FF0+ FF00 FF+0 = %f %f %f %f\n\n", FF[i+1][j+1], FF[i][j+1], FF[i][j], FF[i+1][j]);
+			printf("whymain????, FF++, FF0+ FF00 FF+0 = %f %f %f %f\n\n", FF[k][i+1][j+1], FF[k][i][j+1], FF[k][i][j], FF[k][i+1][j]);
 			printf(" mu UminmU = %f %f\txi xi+1 yi yi+1 = %f %f %f %f\n\n", x, y, xx[i], xx[i+1], yy[j], yy[j+1]);
 			printf(" deltax aplus aminus bplus bminus  = %f %f %f %f %f\n\n", deltax, aplus, aminus, bplus, bminus);
 			exit(-1);
 		}
 	}
-	else
-	{
+	else {
 		answer = 0.0;
 		//printf("OUT OF BOUNDS\n");
 	}
