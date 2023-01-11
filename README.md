@@ -6,7 +6,7 @@ There are currently two different versions of the code: a 1D version called MPS 
 
 The file inputfile.txt contains nine lines:
 
-1st line: a specifier: e.g. ADHOC uses analytical ad hoc distribution functions at the magnetic presheath entrance. If anything other than ADHOC is written here, the code can only run if the files Fi_mpe.txt and Fi_mpe_args.txt are present in the folder. If ADHOC is written here, these files are not necessary because the code defines the adhoc distribution functions by itself.
+1st line: a specifier: e.g. ADHOC uses analytical ad hoc distribution functions at the magnetic presheath entrance. If anything other than ADHOC is written here, the code can only run if the files Fi_mpe.txt and Fi_mpe_args.txt are present in the folder. If ADHOC is written here, these files are not necessary because the code defines the ad hoc distribution functions by itself.
 
 2nd line: the angle between the magnetic field angle and the wall, measured in degrees
 
@@ -25,3 +25,13 @@ The file inputfile.txt contains nine lines:
 9th line: the value of current or electrostatic potential
 
 To solve only the magnetic presheath (without the full Debye sheath potential profile) with a simplified electron model it is sufficient to set the value of rho_e/lambda_D to 0.0 or to 100.0 for the two simplified electron models. Setting to 0.0 is more standard.
+
+## Ion distribution function files
+
+These files are only necessary, and opened by the code, if the first line of the input file does not read "ADHOC". 
+
+We have two text files:
+
+Fi_mpe_args.txt includes the grid of values of (1/2) m_i v_perp^2 / T_i in the first line, and the grid of values of (1/2) m_i v_parallel^2 / T_i in the second line. In each line, the values should be separated by a space and there should not be a space after the last value on each line.
+
+Fi_mpe.txt includes the values of the distribution function defined on the grids which are read in the Fi_mpe_args.txt file. The number of columns of the file is the number of grid points in (1/2) m_i v_parallel^2 / T_i (second line in Fi_mpe_args), and the number of rows is the number of grid points in (1/2) m_i v_perp^2 / T_i (first line in Fi_mpe_args.txt).
