@@ -6,17 +6,17 @@
 #include <math.h>
 #include <string.h>
 #include <time.h>
-#include "mps.h"
+#include "mps_renorm.h"
 #include <gsl/gsl_spline.h>
 #include <gsl/gsl_errno.h>
 #include <gsl/gsl_linalg.h>
 
-void newvcut(double *v_cut, double v_cutDS, double mioverme, double TioverTe, double u_i, double u_e, double current, double error_current, double weight) {
+void newvcut(double *v_cut, double v_cutDS, double u_i, double u_e, double current, double error_current, double weight) {
 	double old_v_cut = *v_cut;// u_etilde;
 	//u_etilde = u_e - sqrt(mioverme/M_PI)*0.5*exp(-0.5*old_v_cut*old_v_cut);
 	//*v_cut = (1.0-weight)*(old_v_cut) + weight*sqrt(-2.0*log(2.0*(-current + u_i - u_etilde)) - log(M_PI/mioverme) ); //OLD
 	printf("v_cut before = %f\n", v_cutDS);
-	*v_cut = sqrt( 2.0*( (1.0-weight)*0.5*old_v_cut*old_v_cut + weight* ( 0.5*old_v_cut*old_v_cut + (current - u_i + u_e)/( sqrt(mioverme/(TioverTe))*0.5*exp(-0.5*old_v_cut*old_v_cut) ) ) ) );
+	*v_cut = sqrt( 2.0*( (1.0-weight)*0.5*old_v_cut*old_v_cut + weight* ( 0.5*old_v_cut*old_v_cut + (current - u_i + u_e)/( 0.5*exp(-0.5*old_v_cut*old_v_cut) ) ) ) );
 	if ( (*v_cut*(*v_cut)*0.5 < 0.5*v_cutDS*v_cutDS ) )  {
 		printf("WARNING: v_cutDS > v_cut\n");
 		*v_cut = v_cutDS;
@@ -24,7 +24,7 @@ void newvcut(double *v_cut, double v_cutDS, double mioverme, double TioverTe, do
 	printf("v_cut after = %f\n", v_cutDS);
 }
 
-void error_Poisson(double *error, double *x_grid, double *ne_grid, double *ni_grid, double *phi_grid, int size_phigrid, int size_ngrid, double invgammasq) {
+void error_Poisson(double *error, double *x_grid, double *ne_grid, double *ni_grid, double *nioverne, double *phi_grid, int size_phigrid, int size_ngrid, double invgammasq) {
 	clock_t begin = clock(); 
 	int i;
 	double *phip, *phipp;
@@ -66,9 +66,8 @@ void error_Poisson(double *error, double *x_grid, double *ne_grid, double *ni_gr
 	return;
 }
 
-void newguess(double *x_grid, double* ne_grid, double *ni_grid, double* phi_grid,int size_phigrid, int *psize_ngrid, double invgammasq, double v_cutDS, double pfac, double weight) {
+void newguess(double *x_grid, double* ne_grid, double *ni_grid, double* phi_grid, int size_phigrid, int size_ngrid, double invgammasq, double v_cutDS, double pfac, double weight) {
 clock_t begin = clock(); 
-int size_ngrid = *psize_ngrid;
 int i, j, s;
 double phiW_impose, temp;
 double *phipp_red, *newphi;

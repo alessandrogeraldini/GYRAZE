@@ -1,3 +1,4 @@
+// 2d version of Magnetic presheath / Chodura sheath code
 //Authors: Alessandro Geraldini and Robbie Ewart 
 
 #include <stdlib.h>
