@@ -34,7 +34,7 @@ We have two text files:
 
 Fi_mpe_args.txt includes the grid of values of (1/2) m_i v_perp^2 / T_i in the first line, and the grid of values of (1/2) m_i v_parallel^2 / T_i in the second line. In each line, the values should be separated by a space and there should not be a space after the last value on each line.
 
-Fi_mpe.txt includes the values of the ion distribution function defined on the grids which are read in the Fi_mpe_args.txt file. The number of columns of the file is the number of grid points in (1/2) m_i v_parallel^2 / T_i (second line in Fi_mpe_args), and the number of rows is the number of grid points in (1/2) m_i v_perp^2 / T_i (first line in Fi_mpe_args.txt).
+Fi_mpe.txt includes the values of the ion distribution function defined on the grids which are read in the Fi_mpe_args.txt file. The number of columns of the file is the number of grid points in (1/2) m_i v_parallel^2 / T_i (second line in Fi_mpe_args), and the number of rows is the number of grid points in (1/2) m_i v_perp^2 / T_i (first line in Fi_mpe_args.txt). Values in each row should be separated only by a space, and there should be no space after the last value and no blank line after the last line of values.
 
 ## Electron distribution function files
 
