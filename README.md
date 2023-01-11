@@ -1,17 +1,16 @@
 # MagSheath
 
-There are currently 3 different versions of the code: an old (discontinued) version called MPS which simply had different normalizations in the input and output of the scripts evaluating the ion density in the magnetic presheath and the electron density in the Debye sheath (will soon be deleted); a newer version called MPS_renorm; a 2d (in space) version called MPS2d.
+There are currently two different versions of the code: a 1D version called MPS and a 2D version called MPS2d. They are entirely separate, using different scripts and a different executable. This choice was made because the 2D version involves highly nontrivial changes, and so it was decided that it was safer to have an independent 2D version simplified to deal with Boltzmann electrons, and only at a much later stage merge the 2D feutures as an option in a single code. The 2D version is a work-in-progress project, not meant to be used by anyone but the developers. The standard 1D version is written such that it can be run by external users, with the exception of the parameter rho_e/lambda_D (3rd line in input file) which should for the moment be kept to zero by anyone but the developers.
 
 ## Input file
-The file inputfile.txt contains seven lines: angle alpha in degrees, electron gyroradius over Debye length, number of ion species, ion to electron temperature, ion to electron mass, a constant equal to 1 when setting current to wall or 0 wheh setting the wall potential, the value of current or potential (whichever was indicated in the previous line).
 
-Lines in the input file:
+The file inputfile.txt contains nine lines:
 
 1st line: a specifier: e.g. ADHOC uses analytical ad hoc distribution functions at the magnetic presheath entrance. If anything other than ADHOC is written here, the code can only run if the files Fi_mpe.txt and Fi_mpe_args.txt are present in the folder. If ADHOC is written here, these files are not necessary because the code defines the adhoc distribution functions by itself.
 
 2nd line: the angle between the magnetic field angle and the wall, measured in degrees
 
-3rd line: the electron gyroradius rho\_e normalised by the Debye length lambda_\D
+3rd line: the electron gyroradius rho_e normalised by the Debye length lambda_D
 
 4th line: the number of ion species present
 
@@ -25,4 +24,4 @@ Lines in the input file:
 
 9th line: the value of current or electrostatic potential
 
-To solve only the magnetic presheath (without the full Debye sheath potential profile) with a simplified electron model it is sufficient to set the value of gamma = 0.0 or gamma = 100.0 (or larger)
+To solve only the magnetic presheath (without the full Debye sheath potential profile) with a simplified electron model it is sufficient to set the value of rho_e/lambda_D to 0.0 or to 100.0 for the two simplified electron models. Setting to 0.0 is more standard.
