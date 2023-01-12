@@ -1,6 +1,7 @@
 # MagSheath
 
-There are currently two different versions of the code: a 1D version called MPS and a 2D version called MPS2d. They are entirely separate, using different scripts and a different executable. This choice was made because the 2D version involves highly nontrivial changes, and so it was decided that it was safer to have an independent 2D version simplified to deal with Boltzmann electrons, and only at a much later stage merge the 2D feutures as an option in a single code. The 2D version is a work-in-progress project, not meant to be used by anyone but the developers. The standard 1D version is written such that it can be run by external users, with the exception of the parameter rho_e/lambda_D (3rd line in input file) which should for the moment be kept to zero by anyone but the developers.
+There are currently two different versions of the code: a 1D version called MPS and a 2D version called MPS2d. They are entirely separate, using different scripts and a different executable. This choice was made because the 2D version involves highly nontrivial changes, and so it was decided that it was safer to have an independent 2D version simplified to deal with Boltzmann electrons, and only at a much later stage merge the 2D feutures as an option in a single code. The 2D version is a work-in-progress project, not meant to be used by anyone but the developers. The standard 1D version is written such that it can be run by external users, with the right choice of parameters (see input file section below).
+
 
 ## Input file
 
@@ -24,7 +25,15 @@ The file inputfile.txt contains nine lines:
 
 9th line: the value of current or electrostatic potential
 
-To solve only the magnetic presheath (without the full Debye sheath potential profile) with a simplified electron model it is sufficient to set the value of rho_e/lambda_D to 0.0 or to 100.0 for the two simplified electron models. Setting to 0.0 is more standard.
+To solve only the magnetic presheath (without the full Debye sheath potential profile) with a simplified electron model it is sufficient to set the value of rho_e/lambda_D to 0.0 or to 100.0 for the two simplified electron models.
+
+The parameter tau must be kept above 0.2. Simulations crash when tau is too small because the small-alpha equations to lowest order cannot recover the fluid limit (they start missing important terms, see Geraldini, Parra and Militello 2019).
+
+Simulations crash or don't converge if the angle alpha is below the critical angle. For larger values of the parameter gamma the critical angle becomes larger. Therefore, use parameter gamma with caution. Below the critical angle, the code is unable to obtain the solution (because the solution is probably non-monotonic, while the code only handles monotonic profiles).
+
+Other parameter choices that might cause the simulation to crash: a very large electron current, a very large ion current (bounded by the incoming distribution function, which for the moment is independent of the current), a value of wall potential which is not negative enough.
+
+Simulations can run with multiple ion species at the moment only with a specific choice of distribution functions. More work is needed to include other options in how the combined distribution functions satisfy the Chodura condition. The output distribution function file is only produced for one ion distribution function.
 
 ## Ion distribution function files
 
