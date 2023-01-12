@@ -6,7 +6,7 @@
 #include <math.h>
 #include <string.h>
 #include <time.h>
-#include "mps_renorm.h"
+#include "mps.h"
 #include <gsl/gsl_spline.h>
 #include <gsl/gsl_errno.h>
 #include <gsl/gsl_linalg.h>
@@ -174,6 +174,9 @@ if ( invgammasq > TINY ) {
 		}
 	}
 
+	
+	//phibar = ( - (0.5*v_cutDS*v_cutDS) - (1.0-weight)*phi_grid[0] )/weight;
+
 	phipp_red = malloc((size_phigrid-2)*sizeof(double));
 	printf("size_phigrid = %d\nswize_ngrid=%d\n\n", size_phigrid, size_ngrid);
 	for (i=0;i<size_phigrid-2; i++) {
@@ -184,7 +187,7 @@ if ( invgammasq > TINY ) {
 		//printf("phipp_red[%d/%d/%d] = %f\n", i, size_ngrid-3, size_phigrid-3, phipp_red[i]);
 		//printf("ne, ni =  %f, %f\n", ne_grid[i+1], ni_grid[i+1]); 
 	}
-	phiW_impose = (-0.5*v_cutDS*v_cutDS); 
+	phiW_impose = ( - (0.5*v_cutDS*v_cutDS) - (1.0-weight)*phi_grid[0] )/weight; //(-0.5*v_cutDS*v_cutDS); 
 	//printf("phi0 = %f\tCC=%f\n", phi0, CC);
 	//printf("phiW_impose = %f\n", phiW_impose);
 	phipp_red[0] -= (phiW_impose*invgammasq/deltaxsq);
@@ -205,7 +208,7 @@ if ( invgammasq > TINY ) {
 	//printf("%f\n", -0.5*v_cutDS*v_cutDS);
 	//gsl_vector_fprintf (stdout, newphi_gsl, "%g");
 
-	newphi[0] = - 0.5*v_cutDS*v_cutDS;
+	newphi[0] = phiW_impose;
 	printf("%f\n", newphi[0]);
 	for (i=0; i<size_ngrid-1; i++) {
 		temp = gsl_vector_get(newphi_gsl, i);

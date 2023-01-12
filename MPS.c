@@ -13,16 +13,16 @@
 #include "mps.h"
 #define MAX_IT 500
 // number of maximum iterations set to some large number but iterations should converge in about 20-100. If they don't, then there is a problem
-#define INITIAL_GRID_PARAMETER 1.4
+#define INITIAL_GRID_PARAMETER 2.0
 #define TEST_EL 0
 #define SYS_SIZ 25.0
 #define MAXV 6.0
 #define DV 0.14
 
-const double tol_MP[2] = {0.0005, 0.002}, tol_DS[2] = {0.0005, 0.002}, tol_current = 0.01;
-const double WEIGHT_j = 0.5, WEIGHT_MP = 0.2, CAUTIOUSWEIGHT = 0.15;
-const double STOP_MP = 0.98, STOP_DS = 0.98;
-const double GRIDSIZE_MP = 0.3, GRIDSIZE_DS = 0.2;
+const double tol_MP[2] = {0.0008, 0.003}, tol_DS[2] = {0.0008, 0.003}, tol_current = 0.01;
+const double WEIGHT_j = 0.5, WEIGHT_MP = 0.3, CAUTIOUSWEIGHT = 0.15;
+const double STOP_MP = 0.96, STOP_DS = 0.96;
+const double GRIDSIZE_MP = 0.4, GRIDSIZE_DS = 0.1;
 	// factor of extra interpolated grid points in electrostatic potential used in finite orbit density calculation
 const int ZOOM_DS = 1, ZOOM_MP = 2;
 
@@ -141,7 +141,7 @@ void densionDS(double alpha, double *ni_DS, double *phi_DS, double phi0, double 
 				ni_DS[i] += (intgrd + intgrdold)*0.5*(mu[j] - mu[j-1]);
 		}
 		ni_DS[i] /= n_inf;
-		//printf("ni_DS = %f\tphi_DS = %f\n", ni_DS[i], phi_DS[i]);
+		printf("ni_DS = %f\tphi_DS = %f\n", ni_DS[i], phi_DS[i]);
 	}
 	return;
 }
@@ -175,11 +175,12 @@ void Figen(double ***ffarr, double **Uminmuarr, double **muarr, int num_spec, do
 			}
 			else {
 				chodura = 0.0;
+				u = 0.1;
 				while  ( (chodura > condition) || (chodura < condition - 0.05) ) {
 					if (chodura > condition)
-						u -= 0.01;
+						u -= 0.000001;
 					else
-						u += 0.01;
+						u += 0.000001;
 					normalization =  2.0*(sqrt(M_PI*u) - M_PI*exp(1/u)*(1-erf(1.0/sqrt(u))))/(2.0*u*sqrt(u));
 					printf("normalization = %f\n", normalization);
 					chodura = 2.0*M_PI*exp(1.0/u)*(1.0-erf(1.0/sqrt(u)))/(2.0*sqrt(u)*normalization);
@@ -320,8 +321,10 @@ void make_phigrid(double *x_grid, double *phi_grid, int size_phigrid, double gri
 				xi = i*deltax;
 				new_phi[i] = phi_grid[i];
 				new_x[i] = pow( pow(grid_parameter+xi, power) - pow(grid_parameter, power), 1.0/power);
+				printf("%f ", new_x[i]);
 				//g = sqrt(new_x[i]);
 			}
+			printf("\n", new_x[i]);
 			gsl_spline_free (spline);
 			gsl_interp_accel_free (acc);
 			for (i=0; i < size_phigrid; i++) {
@@ -506,6 +509,7 @@ int main() {
 	double *sumni_grid, *sumni_DSgrid, sumflux_i=0.0, sumni_norm=0.0;
 	int size_sumnigrid;
 // quantities related to the iteration
+	int zoomfactor;
 	int N=0, N_DS=0, convergence_MP = 0, convergence_DS = 0, convergence_j = 0;
 	double error_MP[2], error_DS[2], olderror_MP, olderror_DS; 
 	double weight_j=WEIGHT_j, weight_MP=WEIGHT_MP;
@@ -609,21 +613,49 @@ int main() {
 	fclose(input);
 	if (alpha_deg < 2.0) weight_MP = WEIGHT_MP/3.0;
 	if (alpha_deg < 1.0) weight_MP = WEIGHT_MP/5.0;
-	if (TioverTe[0] < 0.6) weight_MP = WEIGHT_MP/1.0;
 	//if (TioverTe[0] < 0.4) weight_MP = WEIGHT_MP/6.0;
 	printf("directory where output will be stored is %s\n", dirname);
 	mkdir(dirname, S_IRWXU);
 	alpha = alpha_deg*M_PI/180; // alpha used in radians from now on
 	// initial iteration assumes flat potential profile in magnetic presheath
 	// therefore, the parameter v_cutDS is equal to v_cut
+
+	lenfactor = malloc(num_spec*sizeof(double));
+	lenMP = 0.0;
+	for (n=0; n<num_spec; n++) {
+		lenMP += (nioverne[n]*mioverme[n]) ;
+	}
+	lenMP = sqrt(lenMP);
+	for (n=0; n<num_spec; n++)
+		lenfactor[n] = lenMP/sqrt(mioverme[n]*TioverTe[n]); 
+		
+	n=0; lenMP = 0.0;
+	printf("lenMP = %f\tlenfactor[0] = %f\n", lenMP, lenfactor[0]);
+	while ( (lenMP < 1.0/lenfactor[n]) && (n < num_spec) ) {
+		lenMP = 1.0/lenfactor[n];
+		n++;
+	}
+	printf("lenMP = %f\n", lenMP);
+
 	v_cutDS = v_cut;
 	if (gamma_ref > 1.0)
 		deltaxDS = GRIDSIZE_DS/gamma_ref;
 	else
 		deltaxDS = GRIDSIZE_DS;
-	printf("deltaxDS = %f\n\n\n", deltaxDS);
-	if (TioverTe[0] > 1.0) system_size = SYS_SIZ;
-	else system_size = SYS_SIZ/sqrt(TioverTe[0]);
+	printf("deltaxDS = %f\n", deltaxDS);
+	if (lenMP > 1.0) {
+		system_size = SYS_SIZ*lenMP;
+		deltax *= lenMP;
+		zoomfactor = ZOOM_MP;
+	}
+	else {
+		system_size = SYS_SIZ;
+		zoomfactor = ZOOM_MP*((int) (1.0/lenMP));
+		weight_MP *= lenMP;
+	}
+	printf("lenMP = %f\n", lenMP);
+	//if (TioverTe[0] > 1.0) system_size = SYS_SIZ*TioverTe[0];
+	//else system_size = SYS_SIZ/sqrt(TioverTe[0]);
 
 	if (gamma_ref < TINY) DS_size = SYS_SIZ;
 	else if (gamma_ref < 1.0) DS_size = SYS_SIZ/gamma_ref;
@@ -659,6 +691,7 @@ int main() {
 	printf("size of coarse potential grid in magnetic presheath = %d\n", size_phigrid);
 	fprintf(fout, "size of coarse potential grid in magnetic presheath = %d\n", size_phigrid);
 
+
 	// form x, phi, ne and ni grids for magnetic presheath
 	x_grid = malloc(size_phigrid*sizeof(double));
 	phi_grid = malloc(size_phigrid*sizeof(double));
@@ -669,7 +702,6 @@ int main() {
 	chiM_i = malloc(num_spec*sizeof(double));
 	twopidmudvy_i = malloc(num_spec*sizeof(double));
 	flux_i = malloc(num_spec*sizeof(double));
-	lenfactor = malloc(num_spec*sizeof(double));
 	mu_i = malloc(num_spec*sizeof(double));
 	U_i = malloc(num_spec*sizeof(double));
 	dist_i_GK = malloc(num_spec*sizeof(double));
@@ -677,14 +709,8 @@ int main() {
 	size_mu_i = malloc(num_spec*sizeof(int));
 	size_U_i = malloc(num_spec*sizeof(int));
 	sizevxopen = malloc(num_spec*sizeof(int));
-	lenMP = 0.0;
-	for (n=0; n<num_spec; n++) {
-		ni_grid[n] = malloc(size_phigrid*sizeof(double));
-		lenMP += (nioverne[n]*mioverme[n]) ;
-	}
-	lenMP = sqrt(lenMP);
-	for (n=0; n<num_spec; n++)
-		lenfactor[n] = lenMP/sqrt(mioverme[n]*TioverTe[n]); 
+
+
 //// quantities related to individual ion species: dim1 is for species
 //	double **ni_grid, **ni_DSgrid;
 //	double **vy_i_wall, **chiM_i, **twopidmudvy_i;
@@ -699,8 +725,10 @@ int main() {
 	ni_DSgrid = malloc(num_spec*sizeof(double));
 	flux_i_DS = malloc(num_spec*sizeof(double));
 	sumni_DSgrid = malloc(size_phiDSgrid*sizeof(double));
-	for (n=0; n<num_spec; n++)
+	for (n=0; n<num_spec; n++){
+		ni_grid[n] = malloc(size_phigrid*sizeof(double));
 		ni_DSgrid[n] = malloc(size_phiDSgrid*sizeof(double));
+	}
 
 	if (adhoc == 0) {
 		size_mu_e = (int) (MAXV/DV);
@@ -858,7 +886,7 @@ int main() {
 		make_phigrid(x_grid, phi_grid, size_phigrid, grid_parameter, deltax, 0, phi0_init_MP, 1.0, alpha);
 		//size_ngrid = (int) ( ( pow(sqrt(grid_parameter) + sqrt(system_size - 5.0), 2.0) - grid_parameter ) / deltax );
 		for (n=0; n<num_spec; n++) 
-			densfinorb(TioverTe[n], lenfactor[n], alpha, size_phigrid, size_ngrid+n, ne_grid, x_grid, phi_grid, ioncharge, dist_i_GK[n], mu_i[n], U_i[n], size_mu_i[n], size_U_i[n], grid_parameter, flux_i+n, ZOOM_MP, STOP_MP, -999.9, vy_i_wall[n], chiM_i[n], twopidmudvy_i[n]);
+			densfinorb(TioverTe[n], lenfactor[n], alpha, size_phigrid, size_ngrid+n, ne_grid, x_grid, phi_grid, ioncharge, dist_i_GK[n], mu_i[n], U_i[n], size_mu_i[n], size_U_i[n], grid_parameter, flux_i+n, zoomfactor, STOP_MP, -999.9, vy_i_wall[n], chiM_i[n], twopidmudvy_i[n]);
 	}
 
 	if (TEST_EL==1) {
@@ -880,8 +908,8 @@ int main() {
 		//size_ngrid = 0;
 		//size_ngrid = (int) ( ( pow(sqrt(grid_parameter) + sqrt(system_size - 5.0), 2.0) - grid_parameter ) / deltax );
 		for (n=0; n<num_spec; n++) 
-			densfinorb(TioverTe[n], lenfactor[n], alpha, size_phigrid, size_ngrid+n, ne_grid, x_grid, phi_grid, ioncharge, dist_i_GK[n], mu_i[n], U_i[n], size_mu_i[n], size_U_i[n], grid_parameter, flux_i+n, ZOOM_MP, STOP_MP, -999.9, vy_i_wall[n], chiM_i[n], twopidmudvy_i[n]);
-		//densfinorb(1.0/TioverTe[0], alpha, size_phigrid, &size_ngrid, ni_grid, x_grid, phi_grid, ioncharge, dist_i_GK, mu_i, U_i, size_mu_i, size_U_i, grid_parameter, &flux_i, ZOOM_MP, STOP_MP, -999.9, vy_i_wall, chiM_i, twopidmudvy_i); 
+			densfinorb(TioverTe[n], lenfactor[n], alpha, size_phigrid, size_ngrid+n, ne_grid, x_grid, phi_grid, ioncharge, dist_i_GK[n], mu_i[n], U_i[n], size_mu_i[n], size_U_i[n], grid_parameter, flux_i+n, zoomfactor, STOP_MP, -999.9, vy_i_wall[n], chiM_i[n], twopidmudvy_i[n]);
+		//densfinorb(1.0/TioverTe[0], alpha, size_phigrid, &size_ngrid, ni_grid, x_grid, phi_grid, ioncharge, dist_i_GK, mu_i, U_i, size_mu_i, size_U_i, grid_parameter, &flux_i, zoomfactor, STOP_MP, -999.9, vy_i_wall, chiM_i, twopidmudvy_i); 
 		for (ncols=0; ncols<size_mu_e; ncols+=1) {
 			for (ind=0; ind<size_vpar_e; ind+=1) {
 				U_e_DS[ind] = 0.5*ind*dvpar*ind*dvpar;
@@ -950,11 +978,11 @@ int main() {
 			phiDSbump = - 0.5*v_cut*v_cut - phi_grid[0];  
 			//phiDSbump = -999.9;
 			//for (n=0; n<num_spec; n++) 
-			//densfinorb(1.0/TioverTe[0], alpha, size_phigrid, &size_ngrid, ni_grid, x_grid, phi_grid, ioncharge, dist_i_GK, mu_i, U_i, size_mu_i, size_U_i, grid_parameter, &flux_i, ZOOM_MP, STOP_MP, phiDSbump, vy_i_wall, chiM_i, twopidmudvy_i); 
+			//densfinorb(1.0/TioverTe[0], alpha, size_phigrid, &size_ngrid, ni_grid, x_grid, phi_grid, ioncharge, dist_i_GK, mu_i, U_i, size_mu_i, size_U_i, grid_parameter, &flux_i, zoomfactor, STOP_MP, phiDSbump, vy_i_wall, chiM_i, twopidmudvy_i); 
 			for (i=0; i<size_phigrid; i++) sumni_grid[i] = 0.0;
 			sumflux_i = 0.0;
 			for (n=0; n<num_spec; n++) {
-				densfinorb(TioverTe[n], lenfactor[n], alpha, size_phigrid, size_ngrid+n, ni_grid[n], x_grid, phi_grid, ioncharge, dist_i_GK[n], mu_i[n], U_i[n], size_mu_i[n], size_U_i[n], grid_parameter, flux_i+n, ZOOM_MP, STOP_MP, -999.9, vy_i_wall[n], chiM_i[n], twopidmudvy_i[n]);
+				densfinorb(TioverTe[n], lenfactor[n], alpha, size_phigrid, size_ngrid+n, ni_grid[n], x_grid, phi_grid, ioncharge, dist_i_GK[n], mu_i[n], U_i[n], size_mu_i[n], size_U_i[n], grid_parameter, flux_i+n, zoomfactor, STOP_MP, -999.9, vy_i_wall[n], chiM_i[n], twopidmudvy_i[n]);
 				//if (size_sumnigrid > size_ngrid[n])	
 				//	size_sumnigrid = size_ngrid[n];
 				do
@@ -1046,11 +1074,11 @@ int main() {
 				//printf("ENTER ION DENSITY EVALUATION IN MPS\n");
 				//The argument of densfinorb set to one makes the module compute the ion distribution function at x=0
 				//for (n=0; n<num_spec; n++)
-				//	densfinorb(1.0/TioverTe[0], alpha, size_phigrid, &size_ngrid, ni_grid, x_grid, phi_grid, ioncharge, dist_i_GK, mu_i, U_i, size_mu_i, size_U_i, grid_parameter, &flux_i, ZOOM_MP, 1.000, -999.9, vy_i_wall, chiM_i, twopidmudvy_i); 
+				//	densfinorb(1.0/TioverTe[0], alpha, size_phigrid, &size_ngrid, ni_grid, x_grid, phi_grid, ioncharge, dist_i_GK, mu_i, U_i, size_mu_i, size_U_i, grid_parameter, &flux_i, zoomfactor, 1.000, -999.9, vy_i_wall, chiM_i, twopidmudvy_i); 
 				for (i=0; i<size_sumnigrid; i++) sumni_grid[i] = 0.0;
 				sumflux_i = 0.0;
 				for (n=0; n<num_spec; n++) {
-					densfinorb(TioverTe[n], lenfactor[n], alpha, size_phigrid, size_ngrid+n, ni_grid[n], x_grid, phi_grid, ioncharge, dist_i_GK[n], mu_i[n], U_i[n], size_mu_i[n], size_U_i[n], grid_parameter, flux_i+n, ZOOM_MP, STOP_MP, -999.9, vy_i_wall[n], chiM_i[n], twopidmudvy_i[n]);
+					densfinorb(TioverTe[n], lenfactor[n], alpha, size_phigrid, size_ngrid+n, ni_grid[n], x_grid, phi_grid, ioncharge, dist_i_GK[n], mu_i[n], U_i[n], size_mu_i[n], size_U_i[n], grid_parameter, flux_i+n, zoomfactor, STOP_MP, -999.9, vy_i_wall[n], chiM_i[n], twopidmudvy_i[n]);
 					//if (size_sumnigrid > size_ngrid[n])	
 					//	size_sumnigrid = size_ngrid[n];
 					do
@@ -1076,8 +1104,11 @@ int main() {
 		fprintf(fout, "At %dth iteration MP iteration with simplified DS model converged successfully in %f seconds\n", N, tot_time);
 	//}
 	if ( (gamma_ref <= 5.0) && (gamma_ref >= 0.05) ) {
-		if (alpha_deg < 2.0) weight_j = WEIGHT_j/2.5;
-		if (alpha_deg < 1.0) weight_j = WEIGHT_j/4.0;
+		//if (alpha_deg < 2.0) weight_j = WEIGHT_j/2.5;
+		//if (alpha_deg < 1.0) weight_j = WEIGHT_j/4.0;
+		//weight_j = 0.1;
+		//weight_j = 0.05;
+		//weight_MP = 0.05;//YOLO
 	// FULL DEBYE SHEATH SOLUTION CALCULATED WITH FINITE (DISTORTED) ELECTRON GYROORBITS
 		make_phigrid(x_grid, phi_grid, size_phigrid, grid_parameter, deltax, N, phi0_init_MP, 1.0, alpha);
 		if (gamma_ref < 1.0) 
@@ -1133,11 +1164,11 @@ int main() {
 			
 			printf("evaluate ion density in MP\n");
 			//for (n=0; n<num_spec; n++)
-			//	densfinorb(1.0/TioverTe[0], alpha, size_phigrid, &size_ngrid, ni_grid, x_grid, phi_grid, ioncharge, dist_i_GK, mu_i, U_i, size_mu_i, size_U_i, grid_parameter, &flux_i, ZOOM_MP, STOP_MP, -999.9, vy_i_wall, chiM_i, twopidmudvy_i); 
+			//	densfinorb(1.0/TioverTe[0], alpha, size_phigrid, &size_ngrid, ni_grid, x_grid, phi_grid, ioncharge, dist_i_GK, mu_i, U_i, size_mu_i, size_U_i, grid_parameter, &flux_i, zoomfactor, STOP_MP, -999.9, vy_i_wall, chiM_i, twopidmudvy_i); 
 			for (i=0; i<size_sumnigrid; i++) sumni_grid[i] = 0.0;
 			sumflux_i = 0.0;
 			for (n=0; n<num_spec; n++) {
-				densfinorb(TioverTe[n], lenfactor[n], alpha, size_phigrid, size_ngrid+n, ni_grid[n], x_grid, phi_grid, ioncharge, dist_i_GK[n], mu_i[n], U_i[n], size_mu_i[n], size_U_i[n], grid_parameter, flux_i+n, ZOOM_MP, STOP_MP, -999.9, vy_i_wall[n], chiM_i[n], twopidmudvy_i[n]);
+				densfinorb(TioverTe[n], lenfactor[n], alpha, size_phigrid, size_ngrid+n, ni_grid[n], x_grid, phi_grid, ioncharge, dist_i_GK[n], mu_i[n], U_i[n], size_mu_i[n], size_U_i[n], grid_parameter, flux_i+n, zoomfactor, STOP_MP, -999.9, vy_i_wall[n], chiM_i[n], twopidmudvy_i[n]);
 				do
 					size_sumnigrid = size_ngrid[n] ;
 				while (size_sumnigrid > size_ngrid[n]) ;
@@ -1180,11 +1211,13 @@ int main() {
 			zero = 0.0;
 			printf("evaluate ion density in DS\n");
 			//denszeroorb(ioncharge, 1.0/TioverTe[0], phi_DSgrid, ni_DSgrid, size_phiDSgrid, &flux_i_DS, F_i_DS, vx_i_DS, NULL, sizevxopen, 1, NULL, &zero, 0, 0.0, x_DSgrid);
+			for (i=0; i<size_phiDSgrid; i++) sumni_DSgrid[i] = 0.0;
 			for (n=0; n<num_spec; n++) {
-				//densfinorb(1.0/TioverTe[n], alpha, size_phigrid, size_ngrid+n, ni_grid[n], x_grid, phi_grid, ioncharge, dist_i_GK[n], mu_i[n], U_i[n], size_mu_i[n], size_U_i[n], grid_parameter, flux_i+n, ZOOM_MP, STOP_MP, -999.9, vy_i_wall[n], chiM_i[n], twopidmudvy_i[n]);
+				//densfinorb(1.0/TioverTe[n], alpha, size_phigrid, size_ngrid+n, ni_grid[n], x_grid, phi_grid, ioncharge, dist_i_GK[n], mu_i[n], U_i[n], size_mu_i[n], size_U_i[n], grid_parameter, flux_i+n, zoomfactor, STOP_MP, -999.9, vy_i_wall[n], chiM_i[n], twopidmudvy_i[n]);
 				densionDS(alpha, ni_DSgrid[n], phi_DSgrid, phi_grid[0], dist_i_GK[n], mu_i[n], U_i[n], vy_i_wall[n], chiM_i[n], twopidmudvy_i[n], size_phiDSgrid, size_mu_i[n], size_U_i[n]);
+				printf("niDS[0] = %f\n", ni_DSgrid[n][0]);
 				//sumfluxDS_i += (nioverne[n]*sqrt(TioverTe[n]/mioverme[n])*flux_i[n]);
-				for (i=0; i<size_sumnigrid; i++)
+				for (i=0; i<size_phiDSgrid; i++)
 					sumni_DSgrid[i] += (nioverne[n]*ni_DSgrid[n][i]);
 			}
 			//for (n=0; n< num_spec; n++) 
@@ -1236,7 +1269,7 @@ int main() {
 			printf("error_av = %f\terror_max = %f\n", error_MP[0], error_MP[1]);
 			if ( (error_MP[0] < tol_MP[0]) && (error_MP[1] < tol_MP[1]) ) convergence_MP += 1 ;
 			else convergence_MP = 0;
-			if (convergence_MP != -1) {
+			if (convergence_MP == 0) {
 				printf("MP not converged --> calculate new MP potential guess\n");
 				fprintf(fout, "MP not converged --> calculate new MP potential guess\n");
 				newguess(x_grid, ne_grid, sumni_grid, phi_grid, size_phigrid, size_sumnigrid, 0.0, 0.0, 1.5, weight_MP);// p, m);
@@ -1284,7 +1317,7 @@ int main() {
 			printf("error_av = %f\terror_max = %f\n", error_DS[0], error_DS[1]);
 			if ( (error_DS[0] < tol_DS[0]) && (error_DS[1] < tol_DS[1]) ) convergence_DS += 1 ;
 			else convergence_DS = 0;
-			if (convergence_DS != -1) {
+			if (convergence_DS == 0) {
 				printf("DS not converged --> calculate new DS potential guess\n");
 				fprintf(fout, "DS not converged --> calculate new DS potential guess\n");
 				newguess(x_DSgrid, ne_DSgrid, sumni_DSgrid, phi_DSgrid, size_phiDSgrid, size_neDSgrid, 1.0/(gamma_ref*gamma_ref), v_cutDS, 2.0, weight_MP);// p, m);
@@ -1311,11 +1344,11 @@ int main() {
 		printf("FINAL CHECK on accuracy of electrostatic potential solution\n");
 		fprintf(fout, "FINAL CHECK on accuracy of electrostatic potential solution\n");
 		//for (n=0; n<num_spec; n++)
-		//	densfinorb(1.0/TioverTe[0], alpha, size_phigrid, &size_ngrid, ni_grid, x_grid, phi_grid, ioncharge, dist_i_GK, mu_i, U_i, size_mu_i, size_U_i, grid_parameter, &flux_i, ZOOM_MP, 0.999, -999.9, vy_i_wall, chiM_i, twopidmudvy_i); 
+		//	densfinorb(1.0/TioverTe[0], alpha, size_phigrid, &size_ngrid, ni_grid, x_grid, phi_grid, ioncharge, dist_i_GK, mu_i, U_i, size_mu_i, size_U_i, grid_parameter, &flux_i, zoomfactor, 0.999, -999.9, vy_i_wall, chiM_i, twopidmudvy_i); 
 		for (i=0; i<size_sumnigrid; i++) sumni_grid[i] = 0.0;
 		sumflux_i = 0.0;
 		for (n=0; n<num_spec; n++) {
-			densfinorb(TioverTe[n], lenfactor[n], alpha, size_phigrid, size_ngrid+n, ni_grid[n], x_grid, phi_grid, ioncharge, dist_i_GK[n], mu_i[n], U_i[n], size_mu_i[n], size_U_i[n], grid_parameter, flux_i+n, ZOOM_MP, STOP_MP, -999.9, vy_i_wall[n], chiM_i[n], twopidmudvy_i[n]);
+			densfinorb(TioverTe[n], lenfactor[n], alpha, size_phigrid, size_ngrid+n, ni_grid[n], x_grid, phi_grid, ioncharge, dist_i_GK[n], mu_i[n], U_i[n], size_mu_i[n], size_U_i[n], grid_parameter, flux_i+n, zoomfactor, STOP_MP, -999.9, vy_i_wall[n], chiM_i[n], twopidmudvy_i[n]);
 			do
 				size_sumnigrid = size_ngrid[n] ;
 			while (size_sumnigrid > size_ngrid[n]) ;

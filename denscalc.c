@@ -943,6 +943,7 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 		}
 		fclose(fp);
 	}
+	printf("lenfactor = %f\n", lenfactor);
 	printf("Ti= %f\tcharge = %f\n", Ti, charge);
 	printf("phi[0] = %f\tphi_grid[0] = %f\n", phi[0], phi_grid[0]);
 
