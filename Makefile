@@ -1,11 +1,11 @@
-MPS: MPS.o denscalc.o potupdate.o otherfuncs.o
-	gcc -Wall -g -lgsl -lgslcblas -lm -o MPS MPS.o denscalc.o potupdate.o otherfuncs.o 
+GIMS: GIMS.o denscalc.o potupdate.o otherfuncs.o
+	gcc -Wall -g -lgsl -lgslcblas -lm -o GIMS GIMS.o denscalc.o potupdate.o otherfuncs.o 
 
-2d: MPS2d.o otherfuncs2d.o
-	gcc -Wall -g -lgsl -lgslcblas -lm -o MPS2d MPS2d.o otherfuncs2d.o
+2d: GIMS2d.o otherfuncs2d.o
+	gcc -Wall -g -lgsl -lgslcblas -lm -o GIMS2d GIMS2d.o otherfuncs2d.o
 
-MPS.o: MPS.c 
-	gcc -Wall -c -o MPS.o MPS.c -g
+GIMS.o: GIMS.c 
+	gcc -Wall -c -o GIMS.o GIMS.c -g
 
 otherfuncs.o: otherfuncs.c 
 	gcc -Wall -g  -c -o otherfuncs.o otherfuncs.c
@@ -19,8 +19,8 @@ denscalc.o: denscalc.c
 potupdate.o: potupdate.c
 	gcc -Wall -g  -c -o potupdate.o potupdate.c
 
-MPS2d.o: MPS2d.c 
-	gcc -Wall -g  -c -o MPS2d.o MPS2d.c
+GIMS2d.o: GIMS2d.c 
+	gcc -Wall -g  -c -o GIMS2d.o GIMS2d.c
 
 clean:
-	rm MPS MPS_renorm MPS2d MPS2d.o MPS.o MPS_renorm.o denscalc.o denscalc_renorm.o potupdate.o otherfuncs.o otherfuncs2d.o
+	rm GIMS GIMS2d GIMS2d.o GIMS.o denscalc.o potupdate.o otherfuncs.o otherfuncs2d.o
