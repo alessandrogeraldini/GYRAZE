@@ -1,6 +1,6 @@
-# MagSheath
+# Grazing-Incidence Magnetised Sheath (GIMS) code
 
-There are currently two different versions of the code: a 1D version called MPS and a 2D version called MPS2d. They are entirely separate, using different scripts and a different executable. This choice was made because the 2D version involves highly nontrivial changes, and so it was decided that it was safer to have an independent 2D version simplified to deal with Boltzmann electrons, and only at a much later stage merge the 2D feutures as an option in a single code. The 2D version is a work-in-progress project, not meant to be used by anyone but the developers. The standard 1D version is written such that it can be run by external users, with the right choice of parameters (see input file section below).
+There are currently two different versions of the code: a 1D version called GIMS and a 2D version called GIMS2d. They are entirely separate, using different scripts and a different executable. This choice was made because the 2D version involves highly nontrivial changes, and so it was decided that it was safer to have an independent 2D version simplified to deal with Boltzmann electrons, and only at a much later stage merge the 2D feutures as an option in a single code. The 2D version is a work-in-progress project, not meant to be used by anyone but the developers. The standard 1D version is written such that it can be run by external users, with the right choice of parameters (see input file section below).
 
 
 ## Input file

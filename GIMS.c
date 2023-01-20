@@ -11,7 +11,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include "mps.h"
-#define MAX_IT 500
+#define MAX_IT 1000
 // number of maximum iterations set to some large number but iterations should converge in about 20-100. If they don't, then there is a problem
 #define INITIAL_GRID_PARAMETER 2.0
 #define TEST_EL 0
@@ -20,7 +20,7 @@
 #define DV 0.14
 
 const double tol_MP[2] = {0.0008, 0.003}, tol_DS[2] = {0.0008, 0.003}, tol_current = 0.01;
-const double WEIGHT_j = 0.5, WEIGHT_MP = 0.3, CAUTIOUSWEIGHT = 0.15;
+const double WEIGHT_j = 0.3, WEIGHT_MP = 0.3, CAUTIOUSWEIGHT = 0.15;
 const double STOP_MP = 0.98, STOP_DS = 0.98;
 const double GRIDSIZE_MP = 0.4, GRIDSIZE_DS = 0.1;
 	// factor of extra interpolated grid points in electrostatic potential used in finite orbit density calculation
@@ -141,10 +141,64 @@ void densionDS(double alpha, double *ni_DS, double *phi_DS, double phi0, double 
 				ni_DS[i] += (intgrd + intgrdold)*0.5*(mu[j] - mu[j-1]);
 		}
 		ni_DS[i] /= n_inf;
-		printf("ni_DS = %f\tphi_DS = %f\n", ni_DS[i], phi_DS[i]);
+		//printf("ni_DS = %f\tphi_DS = %f\n", ni_DS[i], phi_DS[i]);
 	}
 	return;
 }
+
+//void Bohm(double *Bohm, double alpha, double **FF, double *mu, double *Uminmu, double *vy, double *chiM, double *twopidmudvy, int size_phi, int size_mu, int size_U) {
+//	int i, j, k, count;
+//	double deltaUperp, halfVx0sq, intgrd, intgrdold, vzk, vzkm, n_inf;
+//	n_inf = 0.0;
+//	intgrd = 0.0;
+//	for (j=0; j< size_mu; j++) {
+//		intgrdold = intgrd;
+//		intgrd=0.0;
+//		for (k=1; k < size_U; k++) {
+//			halfVx0sq = chiM[j] - 0.5*vy[j]*vy[j] - phi0;
+//			deltaUperp = mu[j] - chiM[j] ;
+//			//if ( (deltaUperp < 0.0) && (deltaUperp > -0.01) ) deltaUperp = 0.0; 
+//			if (phi0 == 0.0) {
+//				halfVx0sq = 0.0; 
+//				deltaUperp = 0.0;
+//			}
+//			vzk = sqrt(2.0*(deltaUperp + Uminmu[k]));
+//			vzkm = sqrt(2.0*(deltaUperp + Uminmu[k-1]));
+//			intgrd += ( (sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - sqrt(2.0*halfVx0sq)) * FF[j][k] + (sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - sqrt(2.0*halfVx0sq)) * FF[j][k-1] ) * 0.5 * ( vzk - vzkm );
+//		}
+//		if (j != 0) 
+//			n_inf += (intgrd + intgrdold)*0.5*(mu[j] - mu[j-1]);
+//		//printf("n_inf = %f\n", n_inf);
+//	}
+//	for (i=0; i < size_phi; i++) { 
+//		ni_DS[i] = 0.0;
+//		for (j=0; j< size_mu; j++) {
+//			intgrdold = intgrd;
+//			intgrd = 0.0;
+//			count = 0;
+//			for (k=1; k < size_U; k++) {
+//				halfVx0sq = chiM[j] - 0.5*vy[j]*vy[j] - phi_DS[i] - phi0;
+//				deltaUperp = mu[j] - chiM[j];
+//				if (phi0 == 0.0) {
+//					halfVx0sq = -phi_DS[i]; 
+//					deltaUperp = 0.0;
+//				}
+//				vzk = sqrt(2.0*(deltaUperp + Uminmu[k]));
+//				vzkm = sqrt(2.0*(deltaUperp + Uminmu[k-1]));
+//				intgrd += ( (sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - sqrt(2.0*halfVx0sq)) * FF[j][k] + (sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - sqrt(2.0*halfVx0sq)) * FF[j][k-1] ) * 0.5 * ( vzk - vzkm );
+//				if ((count == 0) && (intgrd != intgrd) ) {
+//					count = 1;
+//					//printf("???%f %f %f %f\n", halfVx0sq, deltaUperp, vzk, vzkm);
+//				}
+//			}
+//			if (j != 0) 
+//				ni_DS[i] += (intgrd + intgrdold)*0.5*(mu[j] - mu[j-1]);
+//		}
+//		ni_DS[i] /= n_inf;
+//		printf("ni_DS = %f\tphi_DS = %f\n", ni_DS[i], phi_DS[i]);
+//	}
+//	return;
+//}
 
 void Figen(double ***ffarr, double **Uminmuarr, double **muarr, int num_spec, double *nioverne, double *mioverme, double *TioverTe, int *sizevpar, int *sizevperp, double dvpar, double dvperp) {
 	int n, i, j, coldelectrons;
@@ -324,7 +378,6 @@ void make_phigrid(double *x_grid, double *phi_grid, int size_phigrid, double gri
 				printf("%f ", new_x[i]);
 				//g = sqrt(new_x[i]);
 			}
-			printf("\n", new_x[i]);
 			gsl_spline_free (spline);
 			gsl_interp_accel_free (acc);
 			for (i=0; i < size_phigrid; i++) {
@@ -515,6 +568,7 @@ int main() {
 	double weight_j=WEIGHT_j, weight_MP=WEIGHT_MP;
 	double Bohmshouldbe;
 
+	printf("SMALLGAMMA = %f\n", SMALLGAMMA);
 	mkdir("OUTPUT", S_IRWXU);
 	FILE *fout = fopen("OUTPUT/output_MAGSHEATH.txt", "w");
 	if (fout == NULL) {
@@ -597,25 +651,28 @@ int main() {
 		}
 		if (i<7) {
 			ndirname += strlen(line_hundred)-1;
-			dirname[ndirname] = '_';
+			dirname[ndirname] = '/';
 			ndirname += 1;
 		}
 		i += 1; // count the rows in the file
 		//printf("dirname = %s\n", dirname);
+		printf("%s\n", dirname);
+		mkdir(dirname, S_IRWXU);
 	}
 	for (n=0; n<num_spec; n++) sumni_norm += nioverne[n];
 	for (n=0; n<num_spec; n++) {
 		nioverne[n] /= sumni_norm;
 		printf("nioverne[%d] = %f\n", n, nioverne[n]);
 	}
-	dirname[ndirname+1] = '\0';
-	ndirname+=1;
+	//dirname[ndirname+1] = '\0';
+	//ndirname+=1;
 	fclose(input);
 	if (alpha_deg < 2.0) weight_MP = WEIGHT_MP/3.0;
 	if (alpha_deg < 1.0) weight_MP = WEIGHT_MP/5.0;
+	if (alpha_deg < 0.5) weight_MP = WEIGHT_MP/10.0;
+	//weight_j = weight_MP;
 	//if (TioverTe[0] < 0.4) weight_MP = WEIGHT_MP/6.0;
 	printf("directory where output will be stored is %s\n", dirname);
-	mkdir(dirname, S_IRWXU);
 	alpha = alpha_deg*M_PI/180; // alpha used in radians from now on
 	// initial iteration assumes flat potential profile in magnetic presheath
 	// therefore, the parameter v_cutDS is equal to v_cut
@@ -1106,8 +1163,12 @@ int main() {
 	if ( (gamma_ref <= 5.0) && (gamma_ref >= 0.05) ) {
 		//if (alpha_deg < 2.0) weight_j = WEIGHT_j/2.5;
 		//if (alpha_deg < 1.0) weight_j = WEIGHT_j/4.0;
+		if (gamma_ref < 0.5) {
+			weight_MP /= 3.0;
+			weight_j /= 3.0;
+		}
 		//weight_j = 0.1;
-		//weight_j = 0.05;
+		//weight_MP = 0.1;
 		//weight_MP = 0.05;//YOLO
 	// FULL DEBYE SHEATH SOLUTION CALCULATED WITH FINITE (DISTORTED) ELECTRON GYROORBITS
 		make_phigrid(x_grid, phi_grid, size_phigrid, grid_parameter, deltax, N, phi0_init_MP, 1.0, alpha);
@@ -1258,7 +1319,7 @@ int main() {
 				i=0;
 				while (ne_DSgrid[i] < 0.98) i++;
 				size_neDSgrid = i;
-				//printf("flux_eDS = %f\n", flux_eDS);
+				printf("size_neDSgrid = %d\n", size_neDSgrid);
 				//printf("%f\n", flux_eDS*ne_grid[0]*sqrt(2.0));
 				//printf("flux_e = %f\n", flux_e);
 				//exit(1);
@@ -1313,7 +1374,9 @@ int main() {
 				v_cutDS = sqrt(0.01);
 			}
 			else v_cutDS = sqrt(2.0*phi_grid[0] + v_cut*v_cut);
+			printf("what's up?");
 			error_Poisson(error_DS, x_DSgrid, ne_DSgrid, sumni_DSgrid, nioverne, phi_DSgrid, size_phiDSgrid, size_neDSgrid, 1.0/(gamma_ref*gamma_ref));
+			printf("who knows...");
 			printf("error_av = %f\terror_max = %f\n", error_DS[0], error_DS[1]);
 			if ( (error_DS[0] < tol_DS[0]) && (error_DS[1] < tol_DS[1]) ) convergence_DS += 1 ;
 			else convergence_DS = 0;
@@ -1359,10 +1422,10 @@ int main() {
 		densfinorb(1.0, 1.0, alpha, size_phiDSgrid, &size_neDSgrid, ne_DSgrid, x_DSgrid, phi_DSgrid, -1.0, dist_e_GK, mu_e, U_e_DS, size_mu_e, size_vpar_e, 0.0, &flux_eDS, ZOOM_DS, 0.999, -999.9, vy_e_wall, chiM_e, twopidmudvy_e); 
 		error_Poisson(error_MP, x_grid, ne_grid, sumni_grid, nioverne,  phi_grid, size_phigrid, size_sumnigrid, 0.0);
 		printf("error_av = %f\terror_max = %f\n", error_MP[0], error_MP[1]);
-		if ( error_MP[1] > tol_MP[1] ) {
+		if ( error_MP[1] > 3.0*tol_MP[1] ) {
 			printf("ERROR: MP solution rejected because it does not satisfy Poisson's equation accurately enough on the extended domain\n");
 			fprintf(fout, "ERROR: MP solution rejected because it does not satisfy Poisson's equation accurately enough on the extended domain\n");
-			//exit(-1);
+			exit(-1);
 		}
 		error_Poisson(error_DS, x_DSgrid, ne_DSgrid, sumni_DSgrid, nioverne, phi_DSgrid, size_phiDSgrid, size_neDSgrid, 1.0/(gamma_ref*gamma_ref));
 		printf("error_av = %f\terror_max = %f\n", error_DS[0], error_DS[1]);
@@ -1376,11 +1439,11 @@ int main() {
 		//	}
 		//	i++;
 		//}
-		if ( error_DS[1] > tol_DS[1]) {
+		if ( error_DS[1] > 3.0*tol_DS[1]) {
 			// IDEA: check instead for non-monotonicity in n_i-n_e to accept or reject a Debye sheath solution
 			printf("ERROR: DS solution rejected because it does not satisfy Poisson's equation accurately enough on the extended domain\n");
 			fprintf(fout, "ERROR: DS solution rejected because it does not satisfy Poisson's equation accurately enough on the extended domain\n");
-			//exit(-1);
+			exit(-1);
 		}
 		printf("FINAL CHECK passed. HURRAY!\n");
 	}
@@ -1407,7 +1470,7 @@ int main() {
 	//fp = fopen("OUTPUT/phi_n_DS.txt", "w");
 	fp = fopen(fpstr, "w");
 	if (fp == NULL)  
-		printf("error when opening file\n");
+		printf("error when opening file %s\n", fpstr);
 
 	for (i=0; i<size_phiDSgrid; i++) {
 		fprintf(fp, "%f %f %f %f\n", x_DSgrid[i], phi_DSgrid[i], sumni_DSgrid[i], ne_DSgrid[i]);
