@@ -838,7 +838,7 @@ void denszeroorb(double charge, double TeovTs, double *phi_real, double *n_grid,
 }
 
 
-void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int *size_ngrid, double* n_grid, double *x_grid, double* phi_grid, double charge, double **FF, double *mumu, double *UU, int sizemumu, int sizeUU, double grid_parameter, double *flux, int zoomfactor, double stopdens, double phi_DSbump, double *vy_op, double *chiMax_op, double *dmudvy_op) {
+void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int *size_ngrid, double* n_grid, double *x_grid, double* phi_grid, double charge, double **FF, double *mumu, double *UU, int sizemumu, int sizeUU, double grid_parameter, double *flux, int zoomfactor, double margin, double phi_DSbump, double *vy_op, double *chiMax_op, double *dmudvy_op) {
 	// declare variables
 	clock_t begin = clock(); // Finds the start time of the computation
 	double limit_rho = 8.0;
@@ -867,7 +867,7 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 	/* Uperp stores the possible values of Uperp associated with closed orbits, and so does vx; chiMax and chimin store the local maxima and minima of the effective potential maximum, oorbintgrd is the value of the integrand in the first open orbit integral (oorbintgrdantycal is the analytical result for flat potential); oorbintgrdBohm is the value of the integrand in the `Bohm' integral */
 	double vz, U, dvz = 0.2, dvzopen = 0.2, dvx, dxbar, intdU=0.0, intdUopen=0.0, intdUopenBohm = 0.0;
 		/* vz used in the density integral; U is the total energy, used in the density integral; dvz is the thickness of the vz grid used to take the integral over U (which is taken over vz in practice), dvzopen is the same for the open orbit piece; dvx is the thickness of the vx grid used to take the integral over Uperp ( which is taken over vx in practice). It must be evaluated because it depends on stored values of vx[j][i][k]; dxbar is the thickness of the xbar grid; intdU is the value of the integral over U in the closed orbit density integration process; intdUopen is the same as above, for the open orbit integral; intdUopenBohm same, for Bohm integral */
-	double intdUold=0.0, intdvx=0.0, intdvxold = 0.0, intdxbar=0.0, intdxbaropen=0.0, intdxbaropenBohm = 0.0, F, Fold=0.0, Fold_ref=0.0, Ucap, Bohm;
+	double intdUold=0.0, intdvx=0.0, intdvxold = 0.0, intdxbar=0.0, intdxbaropen=0.0, intdxbaropenBohm = 0.0, F, Fold=0.0, Fold_ref=0.0, Ucap;
 		/* intdUold is a variable which stores the old intdU, so that the trapezium rule of integration can be applied (intdUold + intdU)*dvz; intdvx stores the integral over Uperp (hence over vx) in the closed orbit integral; intdxbar stores the value of the integral over xbar (which is the final result!), intdxbaropen does the same in the open orbit density integral; intdxbaropenBohm does the same for the Bohm integral; idealBohm is what the Bohm integral shoult be if Bohm condition is marginally satisfied; F is the value of the distribution function evaluated in the density integrals by interpolating FF, and Fold is the `old' needed to apply the trapezium rule; Fprime is the bilinearly interpolated value of FFprime, and Fprimeold is the same at the previous grid point (needed for trapezium rule); used in INTEGRALS OF DISTRIBUTION FUNCTION AT INFINITY; Ucap is the topmost total energy integrated to */
 	double intdUopenflow = 0.0, intdUopenflowold = 0.0, intdxbaropenflow = 0.0, oorbintgrdflow = 0.0, oorbintgrdflowold = 0.0;
 	// values of various integrals
@@ -876,7 +876,7 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 	double intdUantycal=0.0, intdvxantycal=0.0, vxnew=0.0, vxold = 0.0, Uperpnew = 0.0, *xtop, intdUopenantycal=0.0;
 	double openorbitnew, chinew, munew = 0.0;
 	/* intdUantycal is the integral over U (or v_z) for a flat potential profile (phi =0) for some value of xbar and Uperp; intdvxantycal  is the integral over Uperp (or vx) for a flat potential profile for some value of xbar; vxnew is the value of vx at the 'new' grid point, used in the vx integral (taken using the trapezium rule); vxold is the value of vx at the 'old' grid point, used in the vx integral; Uperpnew is the value of Uperp (used in the closed orbit density integral); munew is the valye of mu (used in the closed orbit density integral); xtop is the top bounce point x_t of the last closed orbit; intdUopenantycal is the analytical value of the integral over U  in the open orbit density integral */
-	double oorbintgrdxbar, oorbintgrdsquare, intdUopenxbar = 0.0, intdUopensquare = 0.0, intdxbarxbar=0.0, intdxbarsquare=0.0;// kBohmsquared;
+	double oorbintgrdxbar, oorbintgrdsquare, intdUopenxbar = 0.0, intdUopensquare = 0.0; // kBohmsquared;
 	/* oorbintgrdxbar is an integral over the open orbit distribution function at x=0 which is needed to evaluate a coefficient that appears when; expanding quasineutrality near x=0. It was just for playing around and at the moment plays no role in the code; similarly with all other integrals here */
 	double oorbintgrdxbarold, oorbintgrdsquareold, intdUopenxbarold, intdUopensquareold;
 	// all used to take integrals above
@@ -920,6 +920,7 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 			xx[i] = pow( pow(grid_parameter+xi, 0.5) - sqrt(grid_parameter), 2.0);
 			//xx[i] = xi*xi;
 			phi[i] = gsl_spline_eval (spline, xi, acc);
+			//phi[i] = lin_interp(gg, phi_grid, sqrt(xx[i]), size_phigrid, 923);
 			fprintf(fp, "%f %f\n", xx[i], phi[i]);
 			xx[i] *= lenfactor;
 			phi[i] *= (charge/Ti);
@@ -989,7 +990,6 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 			densinf += 0.5*(mumu[i]-mumu[i-1])*(densinf1 + densinf1old);
 		}
 	}
-	printf("YOLO\n");
 	densinf *= (4.0*M_PI);
 	fluxinf *= (4.0*M_PI);
 	Chodura *= (4.0*M_PI);
@@ -1643,8 +1643,8 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 					intdxbaropen += 0.5*(intdUopen+intdUopenold)*dxbar;
 					intdxbaropenflow += 0.5*(intdUopenflow+intdUopenflowold)*dxbar;
 					intdxbaropenBohm += 0.5*(intdUopenBohm+intdUopenBohmold)*dxbar;
-					intdxbarxbar += 0.5*(intdUopenxbar+intdUopenxbarold)*dxbar;
-					intdxbarsquare += 0.5*(intdUopensquare+intdUopensquareold)*dxbar; 
+					//intdxbarxbar += 0.5*(intdUopenxbar+intdUopenxbarold)*dxbar;
+					//intdxbarsquare += 0.5*(intdUopensquare+intdUopensquareold)*dxbar; 
 				}
 			}
 			else if (j > jmopen[i]) {
@@ -1750,8 +1750,8 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 				intdxbaropen += 0.5*(intdUopen+intdUopenold)*dxbar;
 				intdxbaropenflow += 0.5*(intdUopenflow+intdUopenflowold)*dxbar;
 				intdxbaropenBohm += 0.5*(intdUopenBohm+intdUopenBohmold)*dxbar;
-				intdxbarxbar += 0.5*(intdUopenxbar+intdUopenxbarold)*dxbar;
-				intdxbarsquare += 0.5*(intdUopensquare+intdUopensquareold)*dxbar; 
+				//intdxbarxbar += 0.5*(intdUopenxbar+intdUopenxbarold)*dxbar;
+				//intdxbarsquare += 0.5*(intdUopensquare+intdUopensquareold)*dxbar; 
 				if (intdxbaropen != intdxbaropen) {
 					printf("PROBLEM HERE, j is %d\n", j); 
 					exit(-1);
@@ -1944,7 +1944,8 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 		//niclosed = intdxbar; //niopen = intdxbaropen;
 		n_grid[ic] = intdxbar + intdxbaropen;
 		if (ic == 0) {
-			Bohm = intdxbaropenBohm/n_grid[0];
+			//Bohm = intdxbaropenBohm/n_grid[0];
+			//*Bohmpt = Bohm;
 			if (charge < 0.0) 
 				*flux = intdxbaropenflow/(n_inf*alpha); 
 			printf("flow velocity at x=0 = %f\n", (*flux)/n_grid[0]);
@@ -1953,11 +1954,11 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 			//printf("intdxbarsquare = %f\tintdxbarxbar = %f\n", intdxbarsquare, intdxbarxbar);
 			//kBohmsquared = intdxbarxbar/(intdxbarsquare - 0.5*n_grid[0]); 
 		}
-		if ( n_grid[ic] >= stopdens*n_inf) {	
+		if ( ( n_inf - n_grid[ic] <= margin*n_inf ) || ( ( (charge < 0.0) && ( - phi_grid[ic] < margin ) ) && ( - phi_grid[0] < 0.2 ) ) ) {	
 			printf("ic = %d/%d\n", ic, size_phigrid);
 			stop = 1;
 			*size_ngrid = ic; 
-			printf("stopping because density larger than %f times the density at infinity\n", stopdens);
+			printf("stopping density evaluation at x = %f because either the potential or the charge density perturbation are too small\n", x_grid[ic]);
 		}
 		else if (xx[i] > xx[size_finegrid-1] - limit_rho) {
 			printf("ic = %d/%d\n", ic, size_phigrid);

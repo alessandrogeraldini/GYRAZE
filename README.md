@@ -7,7 +7,7 @@ There are currently two different versions of the code: a 1D version called GIMS
 
 The file inputfile.txt contains nine lines:
 
-1st line: a specifier: e.g. ADHOC uses analytical ad hoc distribution functions at the magnetic presheath entrance. If anything other than ADHOC is written here, the code can only run if the files Fi_mpe.txt and Fi_mpe_args.txt are present in the folder. If ADHOC is written here, these files are not necessary because the code defines the ad hoc distribution functions by itself.
+1st line: a specifier: e.g. ADHOC uses analytical ad hoc distribution functions at the magnetic presheath entrance. If anything other than ADHOC is written here, the code can only run if the files Fi_mpe.txt and Fi_mpe_args.txt (plus the corresponding electron files starting in Fe) are present in the folder. If ADHOC is written here, these files are not necessary because the code has some built-in ad hoc distribution functions (see paper Geraldini, Parra, Militello 2019).
 
 2nd line: the angle between the magnetic field angle and the wall, measured in degrees
 
@@ -25,13 +25,13 @@ The file inputfile.txt contains nine lines:
 
 9th line: the value of current or electrostatic potential
 
-To solve only the magnetic presheath (without the full Debye sheath potential profile) with a simplified electron model it is sufficient to set the value of rho_e/lambda_D to 0.0 or to 100.0 for the two simplified electron models.
+To solve only the magnetic presheath (without the full Debye sheath potential profile) with a simplified electron model it is sufficient to set the value of rho_e/lambda_D to 0.0 or to 100.0 (or any larger number) for the two simplified electron models.
 
 The parameter tau must be kept above 0.2. Simulations crash when tau is too small because the small-alpha equations to lowest order cannot recover the fluid limit (they start missing important terms, see Geraldini, Parra and Militello 2019).
 
 Simulations crash or don't converge if the angle alpha is below the critical angle. For larger values of the parameter gamma the critical angle becomes larger. Therefore, use parameter gamma with caution. Below the critical angle, the code is unable to obtain the solution (because the solution is probably non-monotonic, while the code only handles monotonic profiles).
 
-Other parameter choices that might cause the simulation to crash: a very large electron current, a very large ion current (bounded by the incoming distribution function, which for the moment is independent of the current), a value of wall potential which is not negative enough.
+Other parameter choices that might cause the simulation to crash: a very large electron current, a very large ion current (bounded by the incoming distribution function, which for the moment is independent of the current), a value of wall potential which is not negative enough (the sheath is non-monotonic below a larger critical angle in this case).
 
 Simulations can run with multiple ion species at the moment only with a specific choice of distribution functions. More work is needed to include other options in how the combined distribution functions satisfy the Chodura condition. The output distribution function file is only produced for one ion distribution function.
 

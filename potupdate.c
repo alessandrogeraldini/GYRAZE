@@ -15,7 +15,7 @@ void newvcut(double *v_cut, double v_cutDS, double u_i, double u_e, double curre
 	double old_v_cut = *v_cut;// u_etilde;
 	//u_etilde = u_e - sqrt(mioverme/M_PI)*0.5*exp(-0.5*old_v_cut*old_v_cut);
 	//*v_cut = (1.0-weight)*(old_v_cut) + weight*sqrt(-2.0*log(2.0*(-current + u_i - u_etilde)) - log(M_PI/mioverme) ); //OLD
-	printf("v_cut before = %f\n", v_cutDS);
+	printf("v_cut before = %f --> \t", v_cutDS);
 	*v_cut = sqrt( 2.0*( (1.0-weight)*0.5*old_v_cut*old_v_cut + weight* ( 0.5*old_v_cut*old_v_cut + (current - u_i + u_e)/( 0.5*exp(-0.5*old_v_cut*old_v_cut) ) ) ) );
 	if ( (*v_cut*(*v_cut)*0.5 < 0.5*v_cutDS*v_cutDS ) )  {
 		printf("WARNING: v_cutDS > v_cut\n");
@@ -25,7 +25,6 @@ void newvcut(double *v_cut, double v_cutDS, double u_i, double u_e, double curre
 }
 
 void error_Poisson(double *error, double *x_grid, double *ne_grid, double *ni_grid, double *nioverne, double *phi_grid, int size_phigrid, int size_ngrid, double invgammasq) {
-	clock_t begin = clock(); 
 	int i;
 	double *phip, *phipp;
 	double res = 0.0, dev, devbig;
@@ -34,8 +33,7 @@ void error_Poisson(double *error, double *x_grid, double *ne_grid, double *ni_gr
 	phipp = (double*)calloc( size_phigrid,sizeof(double)); // phi now has correct size
 	// Calculate first and second derivatives of potential
 	for (i=0; i<size_phigrid; i++) {	
-		if ( (i != size_phigrid-1) && (i!=0) )
-		{	
+		if ( (i != size_phigrid-1) && (i!=0) ) {	
 			//phipp[i] = ((x_grid[i] - x_grid[i-1])/(x_grid[i+1] - x_grid[i-1]))*(phip[i+1] - phip[i])/(x_grid[i+1] - x_grid[i]);
 			//+ ((x_grid[i+1] - x_grid[i])/(x_grid[i+1] - x_grid[i-1]))*(phip[i] - phip[i-1])/(x_grid[i] - x_grid[i-1]);
 			phip[i] = (phi_grid[i+1] - phi_grid[i]) / (x_grid[i+1] - x_grid[i]);
@@ -51,8 +49,8 @@ void error_Poisson(double *error, double *x_grid, double *ne_grid, double *ni_gr
 	res = 0.0;
 	devbig = dev = 0.0;
 	for (i=size_ngrid-1; i>=0; i--)  {
-		if (i==size_ngrid-1)	printf("gamma^-2 x phi phipp ne ni err \n");
-		printf("%f %f %f %f %f %f %f\n", invgammasq, x_grid[i], phi_grid[i], phipp[i], ne_grid[i], ni_grid[i], (-ne_grid[i] + phipp[i]*invgammasq)/ni_grid[i] + 1.0);
+		//if (i==size_ngrid-1)	printf("gamma^-2 x phi phipp ne ni err \n");
+		//printf("%f %f %f %f %f %f %f\n", invgammasq, x_grid[i], phi_grid[i], phipp[i], ne_grid[i], ni_grid[i], (-ne_grid[i] + phipp[i]*invgammasq)/ni_grid[i] + 1.0);
 		if ( (i!=0) && (i!=size_ngrid-1) ) {
 			dev = fabs((-ne_grid[i] + phipp[i]*invgammasq)/ni_grid[i] + 1.0);
 			res += fabs((-ne_grid[i] + phipp[i]*invgammasq)/ni_grid[i] + 1.0);
@@ -67,12 +65,12 @@ void error_Poisson(double *error, double *x_grid, double *ne_grid, double *ni_gr
 }
 
 void newguess(double *x_grid, double* ne_grid, double *ni_grid, double* phi_grid, int size_phigrid, int size_ngrid, double invgammasq, double v_cutDS, double pfac, double weight) {
-clock_t begin = clock(); 
-int i, j, s;
+int i, j, s, attempt_at_adapting_grid=0;
 double phiW_impose, temp;
+double *new_x;
 double *phipp_red, *newphi;
 //double res = 0.0, reslimit, dev, dev_0, devbig;
-double phi0, phip0, CC, pdec, deltaxsq;
+double phi0, phip0, CC, pdec, deltaxsq, deltax = 0.3, deltaphi = 0.1;
 //FILE *fout;
 
 //if (size_ngrid == size
@@ -178,7 +176,7 @@ if ( invgammasq > TINY ) {
 	//phibar = ( - (0.5*v_cutDS*v_cutDS) - (1.0-weight)*phi_grid[0] )/weight;
 
 	phipp_red = malloc((size_phigrid-2)*sizeof(double));
-	printf("size_phigrid = %d\nswize_ngrid=%d\n\n", size_phigrid, size_ngrid);
+	//printf("size_phigrid = %d\nsize_ngrid=%d\n\n", size_phigrid, size_ngrid);
 	for (i=0;i<size_phigrid-2; i++) {
 		if (i< size_ngrid-2)
 			phipp_red[i] = (ne_grid[i+1] - ni_grid[i+1]) - phi_grid[i+1]* exp(phi_grid[i+1]);
@@ -201,7 +199,7 @@ if ( invgammasq > TINY ) {
 	clock_t t1 = clock(); // finds the end time of the computation
 	gsl_linalg_LU_decomp (m, p, &s);
 	clock_t t2 = clock(); double decomptime  = (double)(t2 - t1) / CLOCKS_PER_SEC;
-	printf("LU decomposition time = %f\n", decomptime);
+	//printf("LU decomposition time = %f\n", decomptime);
 	gsl_linalg_LU_solve (m, p, &phipp_gsl.vector, newphi_gsl);
 
 	//printf ("newphi_gsl = \n");
@@ -209,7 +207,7 @@ if ( invgammasq > TINY ) {
 	//gsl_vector_fprintf (stdout, newphi_gsl, "%g");
 
 	newphi[0] = phiW_impose;
-	printf("%f\n", newphi[0]);
+	//printf("%f\n", newphi[0]);
 	for (i=0; i<size_ngrid-1; i++) {
 		temp = gsl_vector_get(newphi_gsl, i);
 		if (temp > 0.0) {
@@ -218,7 +216,7 @@ if ( invgammasq > TINY ) {
 			//exit(-1);
 		}
 		newphi[i+1] = temp;
-		printf("newphi[%d/%d] = %f\n", i+1, size_ngrid, newphi[i+1]);
+		//printf("newphi[%d/%d] = %f\n", i+1, size_ngrid, newphi[i+1]);
 	}
 	phip0 = (newphi[size_ngrid-1] - newphi[size_ngrid-2])/(x_grid[size_ngrid-1] - x_grid[size_ngrid-2]);
 	//CC = pdec*newphi[size_ngrid-1]/phip0 - x_grid[size_ngrid-1];
@@ -230,7 +228,7 @@ if ( invgammasq > TINY ) {
 		newphi[i] = phi0*pow(x_grid[i]+CC, pdec);
 		//printf("%f decay\n", newphi[i]);
 	}
-	printf("%f last\n", newphi[size_phigrid-1]);
+	//printf("%f last\n", newphi[size_phigrid-1]);
 	gsl_permutation_free(p);
 	gsl_matrix_free (m);
 	gsl_vector_free (newphi_gsl);
@@ -244,7 +242,7 @@ else {
 			newphi[i] = ( ni_grid[i] - ne_grid[i] )*exp(-phi_grid[i]) + phi_grid[i];
 			//newphi[i] = (1.0/ne_grid[i]) * ( ni_grid[i] - ne_grid[i] ) + phi_grid[i];
 		else if (i== size_ngrid-1) {
-			//newphi[i] = log( ni_grid[i] - ne_grid[i] + exp(phi_grid[i])); // + phi_grid[i];
+			newphi[i] = log( ni_grid[i] - ne_grid[i] + exp(phi_grid[i])); // + phi_grid[i];
 			//newphi[i] = phi_grid[i] + 1.0* ( ni_grid[i] - ne_grid[i] ); // + exp(phi_grid[i])); // + phi_grid[i];
 			newphi[i] = ( ni_grid[i] - ne_grid[i] )*exp(-phi_grid[i]) + phi_grid[i];
 			//newphi[i] = (1.0/ne_grid[i]) * ( ni_grid[i] - ne_grid[i] ) + phi_grid[i];
@@ -253,7 +251,7 @@ else {
 			//CC = 0.0;
 			phi0 =  newphi[i-1] /pow(x_grid[i-1]+CC, pdec) ;
 			//phi0 =  phip0/(pdec*pow(x_grid[i-1]+CC, pdec-1)) ;
-			printf("CC = %f and phi0 = %f\n", CC, phi0);
+			//printf("CC = %f and phi0 = %f\n", CC, phi0);
 		}
 		else 
 			newphi[i] = phi0*pow(x_grid[i]+CC, pdec);
@@ -269,12 +267,66 @@ for (i=size_phigrid-1; i>=0; i--) {
 	newphi[i] = weight*newphi[i] + (1.0-weight)*phi_grid[i] ; 
 	phi_grid[i] = newphi[i];
 }
+
 //phifree(phip);
 //free(phipp);
-free(newphi);
 
-clock_t end = clock(); // finds the end time of the computation
-double jobtime  = (double)(end - begin) / CLOCKS_PER_SEC;
-printf("Module to obtain the new guess for the electrostatic potential ran in %f\n", jobtime);
+// remake grid in magnetic presheath
+//FILE *fp;
+if (attempt_at_adapting_grid==1) {
+	new_x = malloc(size_phigrid*sizeof(double));
+	printf("in remake_MPgrid: size_phigrid = %d\n", size_phigrid);
+	newphi[0] = phi_grid[0];
+	new_x[0] = x_grid[0];
+	for (i=1; i<size_phigrid; i++) {
+		if (phi_grid[i] - phi_grid[i-1] > deltaphi) {
+			printf("equal phi interval");
+			//gsl_interp_accel *acc
+			//= gsl_interp_accel_alloc ();
+			//gsl_spline *spline
+			//= gsl_spline_alloc (gsl_interp_cspline, size_phigrid);
+			//gsl_spline_init (spline, phi_grid, x_grid, size_phigrid);
+			newphi[i] = newphi[i-1] + deltaphi;
+			//new_x[i] = gsl_spline_eval (spline, newphi[i], acc);
+			new_x[i] = lin_interp(phi_grid, x_grid, newphi[i], size_phigrid, 293);
+			//gsl_spline_free (spline);
+			//gsl_interp_accel_free (acc);
+		}
+		else {
+			printf("equal x interval");
+			new_x[i] = new_x[i-1] + deltax;
+			if (new_x[i] < x_grid[size_phigrid-1]) {
+				//gsl_interp_accel *acc
+				//= gsl_interp_accel_alloc ();
+				//gsl_spline *spline
+				//= gsl_spline_alloc (gsl_interp_cspline, size_phigrid);
+				//gsl_spline_init (spline, x_grid, phi_grid, size_phigrid);
+				//newphi[i] = gsl_spline_eval (spline, new_x[i], acc);
+				newphi[i] = lin_interp(x_grid, phi_grid, new_x[i], size_phigrid, 293);
+				//gsl_spline_free (spline);
+				//gsl_interp_accel_free (acc);
+				printf("path A\n");
+			}
+			else {
+				phip0 = (newphi[i] - newphi[i-1])/(new_x[i] - new_x[i-1]);
+				CC = pdec*newphi[size_ngrid-1]/phip0 - new_x[i-1];
+				phi0 =  newphi[i-1] /pow(new_x[i-1]+CC, pdec) ;
+				newphi[i] = phi0*pow(new_x[i]+CC, pdec);
+				printf("path B\n");
+			}
+			//printf(" i = %d\n", i);
+		}
+		printf("x phi = (%f %f)\n", new_x[i], newphi[i]);
+		//fprintf(fp, "%f %f\n", g, new_phi[i]);
+	}
+	//*psize_phigrid = i;
+	for (i=0; i < size_phigrid; i++) {
+		phi_grid[i] = newphi[i];
+		x_grid[i] = new_x[i];
+	}
+	free(new_x);
+}
+free(newphi);
 return;
+
 }

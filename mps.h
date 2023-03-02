@@ -2,7 +2,7 @@
 // used to make print statements appear when needed
 #define TINY 1e-12
 // used to make some inequalities work numerically in case of exact equality.
-#define SMALLGAMMA 0.36
+#define SMALLGAMMA 0.06
 
 double tophat(double x1, double x2, double x); 
 void newguess(double *x_grid, double* ne_grid, double *ni, double* phi_grid,int p_size, int size_ngrid, double lambdaDoverl, double v_cutDS, double pfac, double weight); // gsl_permutation *p, gsl_matrix *m);
