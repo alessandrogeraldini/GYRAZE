@@ -3,68 +3,21 @@
 #include <string.h>
 #include <ctype.h>
 #include <math.h>
+#include "mps.h"
 #define LEN 200
-
-
-//double lin_interp(double* x_grid, double* y_grid, double given_x ,int n, int line) {
-//	double interp_y;
-//	int cont = 0;
-//	int i;
-//	i = 0;
-//
-//	if (x_grid[n-1] < given_x) 
-//		interp_y = y_grid[n-1];
-//	else if (x_grid[0] > given_x) 
-//		interp_y = y_grid[0];
-//	else 
-//		cont = 1;
-//
-//	while (cont == 1)
-//	{
-//		printf("i = %d/%d\n", i, n);
-//		if (i == n)
-//		{
-//			if (fabs(given_x - x_grid[0]) < 1e-10) {
-//				interp_y = y_grid[0];
-//				cont = 0;
-//			}
-//			else if (fabs(given_x - x_grid[n-1]) < 1e-10) {
-//				interp_y = y_grid[n-1];
-//				cont = 0;
-//			}
-//			else {
-//				printf("The x value exceeds the given x grid");
-//				printf("The x value was: %.10f\n", given_x);
-//				printf("Error on line %d", line);
-//				exit(EXIT_FAILURE);
-//			}
-//		}
-//		if (given_x > x_grid[i]) {
-//			if (given_x <= x_grid[i + 1])
-//			{
-//				interp_y = y_grid[i] + (y_grid[i + 1] - y_grid[i]) * ((given_x - x_grid[i]) / (x_grid[i + 1] - x_grid[i]));
-//				cont = 0;
-//			}
-//		}
-//		i++;
-//	}
-//	return interp_y;
-//
-//}
 
 double lin_interp(double *xx, double *yy, double x, int n, int bla) {
 	double answer, deltax, aminus, aplus;
-	int i, ileft = 0, iright = n-1, out_of_bounds =0, A=0,B=0, guessi;
+	int i, ileft = 0, iright = n-1, out_of_bounds =0, guessi;
 	guessi = n/2;
 	i = guessi;
+	//printf("x = %f\nxx[0] = %f\nxx[n-1] = %f\n", x, xx[0], xx[n-1]);
 	if ( (x < xx[0]) || (x > xx[n-1]) ) out_of_bounds = 1;
 	else out_of_bounds = 0;
-	while ( ( ( xx[i] - x > 0 ) || ( xx[i+1] - x < 0 ) ) && out_of_bounds == 0 ) {
+	//printf("out_of_bounds = %d\n", out_of_bounds);
+	while ( ( ( xx[i] - x > TINY ) || ( xx[i+1] - x < - TINY ) ) && out_of_bounds == 0 ) {
 		//printf("x = %f\nxx[i] = %f\nxx[i+1] = %f\n", x, xx[i], xx[i+1]);
-		A = (xx[i] - x > 0);
-		B = (xx[i+1] - x < 0);	
-		if (A==1)
-		{
+		if (xx[i] - x > TINY) {
 			if (i-ileft > 1) {
 				iright = i;
 				i = i - (i - ileft)/2;
@@ -74,8 +27,7 @@ double lin_interp(double *xx, double *yy, double x, int n, int bla) {
 				i = i - 1;
 			}
 		}
-		else if (B==1)
-		{
+		else if (xx[i+1] - x < - TINY) {
 			if (iright - i > 1) {
 				ileft = i;
 				i = i + (iright - i)/2;
@@ -86,11 +38,10 @@ double lin_interp(double *xx, double *yy, double x, int n, int bla) {
 				i = i +1;
 			}
 		}
-		//printf("i is %d, A and B are %d and %d\n", i, A, B);
-		if (i == -1 || i == n)
-		{
+		if (i == -1 || i == n) {
 			out_of_bounds = 1;
 			printf("Argument is out of bounds; extrapolation necessary instead of interpolation\n\n\n");
+			exit(-1);
 		}
 	}
 
@@ -108,10 +59,17 @@ double lin_interp(double *xx, double *yy, double x, int n, int bla) {
 		//}
 	}
 	else {
-		if (i==-1) answer = xx[0];
-		else if (i==n) answer = xx[n-1];
+		if ( (x < xx[0]) && (x > xx[0] - (xx[1] - xx[0])) ) {
+			answer = yy[0] - (xx[0] - x)*(yy[1] - yy[0])/(xx[1]-xx[0]);
+			printf("WARNING in lin_interp: extrapolation carried out on the right. Make sure this does not happen often\n");
+		}
+		else if ( (x > xx[n-1]) && (x < xx[n-1] + (xx[n-1] - xx[n-2])) ) {
+			answer = yy[0] + (xx[n-1] - x)*(yy[n-1] - yy[n-2])/(xx[n-1]-xx[n-2]); 
+			printf("WARNING in lin_interp: extrapolation carried out on the right. Make sure this does not happen often\n");
+		}
 		else {
-			printf("ERROR in lin_interp function\n");
+			printf("x = %f\nxx[0] = %f\nxx[n-1] = %f\n", x, xx[0], xx[n-1]);
+			printf("ERROR in lin_interp function, %d\n", bla);
 			exit(-1);
 		}
 		//answer = 0.0;
@@ -220,10 +178,16 @@ double bilin_interp(double x, double y, double **FF, double *xx, double *yy, int
 		answer = bplus*aplus*FF[i+1][j+1] + bplus*aminus*FF[i][j+1] + bminus*aplus*FF[i+1][j] + bminus*aminus*FF[i][j];
 		//printf("answer is %f\n", answer);
 		if (answer < 0.0) {
-			printf("whymain????, FF++, FF0+ FF00 FF+0 = %f %f %f %f\n\n", FF[i+1][j+1], FF[i][j+1], FF[i][j], FF[i+1][j]);
+			printf("distribution function value = %f\n", answer);
+			printf("why is the interpolated distribution function so negative??, FF++, FF0+ FF00 FF+0 = %f %f %f %f\n\n", FF[i+1][j+1], FF[i][j+1], FF[i][j], FF[i+1][j]);
 			printf(" mu UminmU = %f %f\txi xi+1 yi yi+1 = %f %f %f %f\n\n", x, y, xx[i], xx[i+1], yy[j], yy[j+1]);
 			printf(" deltax aplus aminus bplus bminus  = %f %f %f %f %f\n\n", deltax, aplus, aminus, bplus, bminus);
-			exit(-1);
+			// this if loop is necessary if the input distribution function has small negative values due to numerical error in code simulating rest of plasma
+			//if (fabs(answer) > 1e-10) 
+			//	exit(-1);
+			//else 
+			//	answer = 0.0;
+
 		}
 	}
 	else
