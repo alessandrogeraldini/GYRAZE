@@ -1,4 +1,4 @@
-// delete this line and rename inputfile.txt to use this standard case
+// delete this line and rename to inputfile.txt to use this standard case
 ADHOC
 3.0
 0.0
