@@ -33,7 +33,16 @@ const int ZOOM_DS = 1, ZOOM_MP = 3;
 const char *strqty[8] = {"alpha=","gamma=","nspec=", "ni:ne=", "Ti:Te=","mi:me=","jwall=","pwall="};
 const int lenstrqty = 6;
 
-void densionDS(double alpha, double TiovTe, double *ni_DS, double *phi_DS, double phi0, double **FF, double *mu, double *Uminmu, double *vy, double *chiM, double *twopidmudvy, int size_phi, int size_mu, int size_U) {
+void densionDS(double alpha, double TiovTe, double *ni_DS, double *phi_DS, double phi0, double **FF, double *mu, double *Uminmu, double *vy, double *chiM, double *twopidmudvy, int size_phi, int size_mu, int size_U) { 
+/* 
+This function calculates the ion density in the Debye sheath, which exploits a 1D acceleration of ions in the direction normal to the wall.
+It is not a particularly accurate density calculation; a trapezium rule is used.
+Two different alternative methods are includedethods
+INPUTS: alpha, temperature ratio TiovTe, potential in Debye sheath phi_DS, potential at the Debye sheath entrance relative to the magnetic presheath phi0 = phi_mp(0),
+        distribution function entering the magnetised sheath, its arguments mu and Uminmu, vy at x=0 in the magnetic presheath which is effectively xbar, effective potential maximum chiM, 
+        open orbit integral twopidmudvy, and the size of the phi grid, the size of the mu grid, the size of the Uminmu grid.
+OUTPUT: density profile ni_DS
+*/
 	int l, i, j, k, count, sizevx=490, method = 1;
 	double Bohm, fvx[sizevx], vx[sizevx];
 	double deltaUperp, halfVx0sq, intgrd, intgrdold, vzk, vzkm, n_inf;
@@ -44,7 +53,6 @@ void densionDS(double alpha, double TiovTe, double *ni_DS, double *phi_DS, doubl
 		intgrd = 0.0;
 		intgrdBohm = 0.0;
 		for (j=0; j< size_mu; j++) {
-			//twopidmudvy[j] *= 1.3; TEST: should be commented out when code is working properly
 			intgrdold = intgrd;
 			intgrdBohmold = intgrdBohm;
 			intgrd=0.0;
@@ -95,8 +103,6 @@ void densionDS(double alpha, double TiovTe, double *ni_DS, double *phi_DS, doubl
 				else if (j==1) {
 					intgrd = 0.0;
 				}
-				//if (j != 0) 
-				//	ni_DS[i] += (intgrd + intgrdold)*0.5*(vy[j] - vy[j-1]);
 			}
 			ni_DS[i] /= n_inf;
 			//printf("ni_DS = %f\tphi_DS = %f\n", ni_DS[i], phi_DS[i]);
@@ -153,32 +159,27 @@ void densionDS(double alpha, double TiovTe, double *ni_DS, double *phi_DS, doubl
 }
 
 void Bohmeval(double *Bohm, double alpha, double TiovTe, double phi0, double **FF, double *mu, double *Uminmu, double *vy, double *chiM, double *twopidmudvy, int size_phi, int size_mu, int size_U, double **FF_e, double *mu_e, double *vpar_e, int size_mu_e, int size_vpar_e, double *vpar_e_cut) {
-	int i, j, k, count, sizevx=250;
+/*
+This function evaluates the Bohm integral for the ions: int f d^3v/v_x^2
+*/
+	int i, j, k, sizevx=250;
 	double deltaUperp, halfVx0sq, intgrdn=0.0, intgrdnold, intgrdB=0.0, intgrdBold, vzk, vzkm;
 	double Bohmval=0.0, Bohmval2=0.0, Bohmval3=0.0,  nval = 0.0, fvx[sizevx], vx[sizevx];
-	double vpar_e_acc[size_U], Fval, Fval2, vpar_e_cut_acc;
-	double sign, ninf, maxf = 0.0, extraphi = 0.0; //extraphi = 0.036 or any other non-zero value is just a TEST;
+	double vpar_e_acc[size_U], Fval, vpar_e_cut_acc;
+	//double Fval2, sign; //int count;
+	double ninf, maxf = 0.0, extraphi = 0.0; //extraphi = 0.036 or any other non-zero value is just a TEST;
 	for (j=1; j< size_mu; j++) {
 		intgrdBold = intgrdB;
 		intgrdnold = intgrdn;
 		intgrdn = 0.0;
 		intgrdB = 0.0;
-		count = 0;
 		for (k=1; k < size_U; k++) {
 			halfVx0sq = chiM[j] - 0.5*vy[j]*vy[j] - phi0/TiovTe + extraphi;
 			deltaUperp = mu[j] - chiM[j];
-			//if (phi0 == 0.0) {
-			//	halfVx0sq = -phi_DS[i]; 
-			//	deltaUperp = 0.0;
-			//}
 			vzk = sqrt(2.0*(deltaUperp + Uminmu[k]));
 			vzkm = sqrt(2.0*(deltaUperp + Uminmu[k-1]));
 			intgrdB += ( (-1.0/sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) + 1.0/sqrt(2.0*halfVx0sq)) * FF[j][k] + (-1.0/sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) + 1.0/sqrt(2.0*halfVx0sq)) * FF[j][k-1] ) * 0.5 * ( vzk - vzkm );
 			intgrdn += ( ( (sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - sqrt(2.0*halfVx0sq)) * FF[j][k] + (sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - sqrt(2.0*halfVx0sq)) * FF[j][k-1] ) * 0.5 * ( vzk - vzkm ) );
-			//if ((count == 0) && (intgrd != intgrd) ) {
-			//	count = 1;
-			//	//printf("???%f %f %f %f\n", halfVx0sq, deltaUperp, vzk, vzkm);
-			//}
 		}
 		if (j > 1) {
 			nval += (intgrdn + intgrdnold)*0.5*(vy[j] - vy[j-1]);
@@ -206,7 +207,6 @@ void Bohmeval(double *Bohm, double alpha, double TiovTe, double phi0, double **F
 			intgrdnold = intgrdn;
 			intgrdn = 0.0;
 			intgrdB = 0.0;
-			count = 0;
 			for (k=1; k < size_U; k++) {
 				halfVx0sq = chiM[j] - 0.5*vy[j]*vy[j] - phi0/TiovTe;
 				deltaUperp = mu[j] - chiM[j] - 0.5*vx[i]*vx[i] + halfVx0sq;
