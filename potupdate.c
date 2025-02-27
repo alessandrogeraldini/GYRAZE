@@ -1,4 +1,3 @@
-
 // LAST SUBSTANTIAL MODIFICATION MADE 16 JAN 2022
 /* This code calculates the next electrostatic potential guess in the iteration to obtain the self-consistent magnetic presheath electrostatic potential profile */
 
@@ -72,6 +71,7 @@ void error_Poisson(double *error, double *x_grid, double *ne_grid, double *ni_gr
 }
 
 void newguess(double *x_grid, double* ne_grid, double *ni_grid, double* phi_grid, int size_phigrid, int size_ngridin, double invgammasq, double v_cutDS, double pfac, double weight) {
+//attempt_at_adapting_grid failed. It was an attempt at refining grid near x=0 using a maximum Delta x maximum Delta phi gridding
 int i, j, s, attempt_at_adapting_grid=0, size_ngrid=size_ngridin;
 double phiW_impose, temp;
 double *new_x;
@@ -89,24 +89,6 @@ newphi = (double*)calloc(size_phigrid,sizeof(double)); // same as above
 //phip = (double*)calloc(  size_phigrid,sizeof(double)); // phi now has correct size
 phipp = (double*)calloc( size_phigrid,sizeof(double)); // phi now has correct size
 
-//reslimit = 0.001;
-//
-////if (invgammasq > TINY) reslimit *= invgammasq;
-//
-//printf("weight = %f\n", weight);
-//
-////if ((fout = fopen("phidataold.txt", "w")) == NULL)
-////{
-////	printf("Cannot open phidataold.txt");
-////	exit(EXIT_FAILURE);
-////}
-////for (i=0; i<size_phigrid; i++)
-////{
-////	gg[i] = sqrt(x_grid[i]);
-////	fprintf(fout, "%f %f\n", gg[i], phi_grid[i]);
-////}
-////fclose(fout); 
-//
 // Calculate first and second derivatives of potential
 for (i=0; i<size_phigrid; i++) {	
 	if ( (i != size_phigrid-1) && (i!=0) )
@@ -122,33 +104,6 @@ for (i=0; i<size_phigrid; i++) {
 	//if (i==0) phip[i] = (phi_grid[i+1] - phi_grid[i]) / (x_grid[i+1] - x_grid[i]);
 	//if (i==size_phigrid-1) phip[i] = 0.0;
 }
-//
-//// Calculate the residual of Poisson's/quasineutrality equation
-//res = 0.0;
-//devbig = dev = 0.0;
-//dev_0 = 0.0;
-////if (invgammasq < TINY) {
-////	fout = fopen("OUTPUT/iterationdata_MP.txt", "w");
-////	fout = fopen("OUTPUT/iterationdata_DS.txt", "w");
-////	if (fout == NULL) {
-////		printf("Cannot open iterationdata.txt");
-////		exit(EXIT_FAILURE);
-////	}
-////}
-//for (i=size_ngrid-1; i>=0; i--)  {
-//	//if (i==size_ngrid-1)	printf("x phi phipp phipp/gammasq ne ni err \n");
-//	//printf(fout, "%f %f %f %f %f %f %f\n", invgammasq, x_grid[i], phi_grid[i], phipp[i], ne_grid[i], ni_grid[i], (-ne_grid[i] + phipp[i]*invgammasq)/ni_grid[i] + 1.0);
-//	//fprintf(fout, "%f %f %f %f %f %f %f\n", invgammasq, x_grid[i], phi_grid[i], phipp[i], ne_grid[i], ni_grid[i], (-ne_grid[i] + phipp[i]*invgammasq)/ni_grid[i] + 1.0);
-//	if ( (i!=0) && (i!=size_ngrid-1) ) {
-//		dev = fabs((-ne_grid[i] + phipp[i]*invgammasq)/ni_grid[i] + 1.0);
-//		res += fabs((-ne_grid[i] + phipp[i]*invgammasq)/ni_grid[i] + 1.0);
-//		if (dev > devbig)  devbig = dev; 
-//		if (i==1) dev_0 = fabs((-ne_grid[i] + phipp[i]*invgammasq)/ni_grid[i] + 1.0);
-//	}
-//}
-////fclose(fout);
-//
-//res /= (size_ngrid-2);
 
 deltaxsq = x_grid[1]*x_grid[1];
 
@@ -170,10 +125,7 @@ if ( invgammasq > TINY ) {
 			}
 		}
 	}
-
-	
 	//phibar = ( - (0.5*v_cutDS*v_cutDS) - (1.0-weight)*phi_grid[0] )/weight;
-
 	phipp_red = malloc((size_phigrid-2)*sizeof(double));
 	//printf("size_phigrid = %d\nsize_ngrid=%d\n\n", size_phigrid, size_ngrid);
 	for (i=0;i<size_phigrid-2; i++) {

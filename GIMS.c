@@ -1,7 +1,7 @@
 /* 
    AUTHORS: Alessandro Geraldini and Robbie Ewart
 
-   DESCRIPTION: Main file of 1d Grazing-Incidence Magnetised Sheath Solver (magnetised sheath = magnetic presheath + Debye sheath)
+   DESCRIPTION: Main file of 1d Grazing-Incidence Magnetised Sheath solver (magnetised sheath = magnetic presheath + Debye sheath)
  
    MODIFIED: 27 Feb 2025 by Alessandro Geraldini
 */
@@ -19,23 +19,8 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include "mps.h"
-//#define MAX_IT 1000
-// number of maximum iterations set to some large number but iterations should converge in about 20-200. If they don't, then there is a problem
 
-//#define INITIAL_GRID_PARAMETER 1.0
 #define TEST_EL 0
-//#define SYS_SIZ 25.0
-//#define MAXV 7.0
-//#define DV 0.05
-//#define DXMIN 0.1
-//#define SMALLGAMMA 0.1999
-//
-//const double tol_MP[2] = {0.001, 0.006}, tol_DS[2] = {0.001, 0.003}, tol_current = 0.001;
-//const double WEIGHT_j = 0.4, WEIGHT_MP = 0.4, WEIGHT_DS = 1.0;
-//const double MARGIN_MP = 0.02, MARGIN_DS = 0.02;
-//const double GRIDSIZE_MP = 0.2, GRIDSIZE_DS = 0.15;
-//	// factor of extra interpolated grid points in electrostatic potential used in finite orbit density calculation
-//const int ZOOM_DS = 1, ZOOM_MP = 3;
 
 const char *strqty[8] = {"alpha=","gamma=","nspec=", "ni:ne=", "Ti:Te=","mi:me=","jwall=","pwall="};
 const int lenstrqty = 6;
@@ -832,20 +817,6 @@ double vparcut_mu(double mu, double vcut) {
 // The main function of MAGSHEATH
 int main() {
 // computation time
-//#define INITIAL_GRID_PARAMETER 1.0
-#define TEST_EL 0
-//#define SYS_SIZ 25.0
-//#define MAXV 7.0
-//#define DV 0.05
-//#define DXMIN 0.1
-//#define SMALLGAMMA 0.1999
-//
-//const double tol_MP[2] = {0.001, 0.006}, tol_DS[2] = {0.001, 0.003}, tol_current = 0.001;
-//const double WEIGHT_j = 0.4, WEIGHT_MP = 0.4, WEIGHT_DS = 1.0;
-//const double MARGIN_MP = 0.02, MARGIN_DS = 0.02;
-//const double GRIDSIZE_MP = 0.2, GRIDSIZE_DS = 0.15;
-//	// factor of extra interpolated grid points in electrostatic potential used in finite orbit density calculation
-//const int ZOOM_DS = 1, ZOOM_MP = 3;
 	int MAX_IT, ZOOM_DS, ZOOM_MP;
 	double INITIAL_GRID_PARAMETER, SYS_SIZ, MAXV, DV, SMALLGAMMA, tol_MP[2], tol_DS[2], tol_current, WEIGHT_MP, WEIGHT_DS, WEIGHT_j, MARGIN_MP, MARGIN_DS, GRIDSIZE_MP, GRIDSIZE_DS; // DXMIN
 
@@ -941,7 +912,7 @@ int main() {
 	for (ndirname=0; ndirname<strlen(outputstr);ndirname++) 
 		dirname[ndirname] = outputstr[ndirname];
 	while (fgets(line_hundred, 100, input) != NULL) {	
-		if (line_hundred[0] != '#') {
+		if ( ( (line_hundred[0] != '#') && (line_hundred[0] != ' ') ) && (line_hundred[0] != '\n') ) {
 		storevals = linetodata(line_hundred, strlen(line_hundred), &ncols);
 		//printf("ndirname = %d\n", ndirname);
 		if ( (i!= 7) && (i!=0) ) {
@@ -1077,12 +1048,11 @@ int main() {
 		exit(EXIT_FAILURE); 
 	}
 	ncols = 0; // for counting numbers in each row (line) of file
-//#define TEST_EL 0
 	i=0;
 	printf("HELLO\n");
 	while (fgets(line_hundred, 100, numinput) != NULL) {
 		printf("HELLO\n");
-		if (line_hundred[0] != '#') {
+		if ( ( (line_hundred[0] != '#') && (line_hundred[0] != ' ') ) && (line_hundred[0] != '\n') ) {
 			printf("HELLO\n");
 			storevals = linetodata(line_hundred, strlen(line_hundred), &ncols);
 			if (i==0) MAX_IT = *storevals;

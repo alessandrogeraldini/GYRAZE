@@ -1,12 +1,12 @@
 #input file with physical parameters of simulation
-#lines starting with # are not read
-#all other lines are read; do not leave blanks
+#empty lines, or lines starting with # or a space, are not read by the code
 #each parameter is introduced in the line above it
-######################
+#do not change the order in which the parameters are listed
+
 #set type_distfunc_entrance (= ADHOC or other string)
 ADHOC
 #set alphadeg
-3.0
+1.0
 #set gamma_ref
 0.0
 #set nspec

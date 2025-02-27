@@ -1,8 +1,8 @@
 #input file with numerical parameters of simulation
-#lines starting with # are not read
-#all other lines are read; do not leave blanks
+#empty lines, or lines starting with # or a space, are ignored by the code
 #parameters are introduced in the line above them
-######################
+#do not change the order in which the parameters are listed
+
 #set MAX_IT
 1000
 #set INITIAL_GRID_PARAMETER SYS_SIZ GRIDSIZE_MP, GRIDSIZE_DS
