@@ -1,3 +1,4 @@
+
 // Authors: Aessandro Geraldini and Robbie Ewart
 /* This script calculates the density profiles of charged particles in the magnetised sheath for a given potential profile and entrance distribution function: denszeroorb neglects gyro-orbit size; densfinorb includes distorted gyro-orbits for magnetic field angle α<<1. 
  * */
@@ -10,7 +11,8 @@ wrote the function densfinorb and upgraded denszeroorb by including integration 
 MODIFIED on 15 JUL 2022 by Alessandro Geraldini
 */
 
-#define TESTELL 1
+#define TESTELL 0
+#define APPROXMUFORSMALLORBIT 0
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -20,7 +22,7 @@ MODIFIED on 15 JUL 2022 by Alessandro Geraldini
 #include <gsl/gsl_errno.h>
 #include <gsl/gsl_spline.h>
 #include "mps.h"
-#define SMALLGAMMA 0.81
+#define SMALLGAMMA 0.21
 #define numb 0.00000001
 
 double tophat(double x1, double x2, double x) {
@@ -921,7 +923,7 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 	double *chiinf, *muinf, **vxinf;
 	double *xx, *phi, *phip, *phipp, **chi;
 	/* xx is the array containing the position (distance from the wall) on the fine grid; phi contains the values of phi(x), extracted from a file. phip is phi prime, first derivative of phi. n; newphi is the new electrostatic potential guess; chi is the effective potential;*/ 
-	int s, w, ind;
+	int s, w, ind, muapproxtype = 1;
 	int stop = 0, sizexbar, maxj, j_inf;
 	int reflected = 0;
 	int icrit;
@@ -952,7 +954,7 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 	double xi, *gg, *ff;
 	double flux0, du, fluxinf1old, fluxinfintgrdold, fluxinfintgrd, Qfluxinf1old, Qfluxinfintgrdold, Qfluxinfintgrd, u, Chodura2, Chodura2old, Chodura1old, Chodura1, Chodura;
 	double fluxinf, Qfluxinf, fluxinf1, Qfluxinf1, densinf1, densinf, densinf1old; 
-	double muexp, muell, Omegaell, minphiformucalc = 0.0001;
+	double musmall, muell, Omegaell, minphiformucalc = 0.0001;
 
 	//printf("charge = %f\n", charge);
 	//for (i=0; i<size_phigrid;i++) printf("index %d\tx = %f\tphi = %f\n", i, x_grid[i], phi_grid[i]);
@@ -1137,6 +1139,9 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 	//printf("icrit = %d\n", icrit);
 
 	for (i=0; i<size_finegrid; i++) {	
+		//printf("xx[%d] = %f\n", i, xx[i]);
+		//if (i < size_phigrid)
+		//	printf("x_grid[%d] = %f\n", i, x_grid[i]);
 		if (i == 0)
 			phipp[0] = (phip[1] - phip[0])/(xx[1]-xx[0]);
 		else if (i == size_finegrid-1)
@@ -1456,25 +1461,29 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 		//mu[j][upperlimit[j]-1] = 0.5*pow(xx[imin[j]] - xx[imin[j]-1], 2.0)*pow(chimpp[j], 0.5);
 		chiMopen[j+1] = chiMax[j];
 		k=0;
-		if (xbar[j] > 0.0) { //otherwise lin_interp fails
-		//if (charge < 0.0) {
-		phibar = lin_interp(xx, phi, xbar[j], size_finegrid, 1);
-		//while (fabs(phibar) < minphiformucalc && k < upperlimit[j]) {
-	
-		//while (fabs(lin_interp(xx, phi, xbar[j]+0.1, size_finegrid, 1) - phibar)/0.1 < minphiformucalc && k <= upperlimit[j]) {
-		//	Omegaell = sqrt(1.0 + lin_interp(xx, phipp, xbar[j], size_finegrid, 1));
-		//	//printf("Omegaell = %f\n", Omegaell);
-		//	muell = Uperp[j][upperlimit[j]-k] - phibar + 0.5*pow(lin_interp(xx, phip, xbar[j], size_finegrid, 1)/Omegaell, 2.0);
-		//	//printf("Uperp[j][k] = %f\n", muell);
-		//	muell /= Omegaell;
-		//	//printf("muell = %f\n", muell);
-		//	//mu[j][upperlimit[j]-k] = 0.5*pow(xx[imin[j]] - xx[imin[j]-k], 2.0)*pow(chimpp[j], 0.5);
-		//	//muexp = 0.5*pow(xx[imin[j]] - xx[imin[j]-k], 2.0)*pow(chimpp[j], 0.5);
-		//	//if ( (xbar[j] < 8.0) ) // (muell < 1.0) ) //&& 
-		//	//	printf("at xbar[j] = %f\tmu[j][k] = %f\tmuell = %f\tfractional error = %f\tmuexp = %f\tfractional error = %f\n", xbar[j], mu[j][upperlimit[j]-k], muell, muell/mu[j][upperlimit[j]-k] - 1.0, muexp, muexp/mu[j][upperlimit[j]-k] - 1.0);
-		//	mu[j][upperlimit[j]-k] = muell;
-		//	k++;
-		//}
+		if (APPROXMUFORSMALLORBIT == 1) {
+			if (xbar[j] > 0.0) { //otherwise lin_interp fails
+			//if (charge < 0.0) {
+			phibar = lin_interp(xx, phi, xbar[j], size_finegrid, 1);
+				//while (fabs(phibar) < minphiformucalc && k < upperlimit[j]) {
+				while (fabs(lin_interp(xx, phi, xbar[j]+0.1, size_finegrid, 1) - phibar)/0.1 < minphiformucalc && k <= upperlimit[j]) {
+					Omegaell = sqrt(1.0 + lin_interp(xx, phipp, xbar[j], size_finegrid, 1));
+					//printf("Omegaell = %f\n", Omegaell);
+					muell = Uperp[j][upperlimit[j]-k] - phibar + 0.5*pow(lin_interp(xx, phip, xbar[j], size_finegrid, 1)/Omegaell, 2.0);
+					//printf("Uperp[j][k] = %f\n", muell);
+					muell /= Omegaell;
+					//printf("muell = %f\n", muell);
+					//mu[j][upperlimit[j]-k] = 0.5*pow(xx[imin[j]] - xx[imin[j]-k], 2.0)*pow(chimpp[j], 0.5);
+					musmall = 0.5*pow(xx[imin[j]] - xx[imin[j]-k], 2.0)*pow(chimpp[j], 0.5);
+					//if ( (xbar[j] < 8.0) ) // (muell < 1.0) ) //&& 
+					//	printf("at xbar[j] = %f\tmu[j][k] = %f\tmuell = %f\tfractional error = %f\tmuexp = %f\tfractional error = %f\n", xbar[j], mu[j][upperlimit[j]-k], muell, muell/mu[j][upperlimit[j]-k] - 1.0, muexp, muexp/mu[j][upperlimit[j]-k] - 1.0);
+					if (muapproxtype == 1) 
+						mu[j][upperlimit[j]-k] = muell;
+					else
+						mu[j][upperlimit[j]-k] = musmall;
+					k++;
+				}
+			}
 		}
 		muopen[j+1] = mu[j][0]; //*
 		xbaropen[j+1] = xbar[j];
@@ -1494,21 +1503,21 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 		openorbitantycal = 2.0*M_PI*xbar[j];
 		if (DEBUG == 1)
 			printf("%f %f %f %f %f\n", xbar[j], mu[j][0], Uperp[j][0], openorbit[j], openorbitantycal); 
-		//if (TESTELL == 1) { // test elliptical orbit approximation // ignore
-		//	printf("TESTELL entered\n");
-		//	if (xbar[j] < xx[size_finegrid-1]) {
-		//		printf("xbar condition fulfilled\n");
-		//		for (k=0; k < upperlimit[j]; k++) {
-		//			Omegaell = sqrt(1.0 + lin_interp(xx, phipp, xbar[j], size_finegrid, 1));
-		//			muell = Uperp[j][k] - lin_interp(xx, phi, xbar[j], size_finegrid, 1) + 0.5*pow(lin_interp(xx, phip, xbar[j], size_finegrid, 1)/Omegaell, 2.0);
-		//			muell /= Omegaell;
-		//			if ( (mu[j][k] < 2.5) && (mu[j][k] > 1.5) ) {
-		//				printf("xbar = %f\tOmegaell = %f\tmu (actual, ellipmodel) = (%f, %f)\n", xbar[j], Omegaell, mu[j][k], muell);
-		//				fprintf(filellip, "%f %f %f %f\n", xbar[j], Omegaell, mu[j][k], muell);
-		//			}
-		//		}
-		//	}
-		//}
+		if (TESTELL == 1) { // test elliptical orbit approximation // ignore
+			printf("TESTELL entered\n");
+			if (xbar[j] < xx[size_finegrid-1]) {
+				printf("xbar condition fulfilled\n");
+				for (k=0; k < upperlimit[j]; k++) {
+					Omegaell = sqrt(1.0 + lin_interp(xx, phipp, xbar[j], size_finegrid, 1));
+					muell = Uperp[j][k] - lin_interp(xx, phi, xbar[j], size_finegrid, 1) + 0.5*pow(lin_interp(xx, phip, xbar[j], size_finegrid, 1)/Omegaell, 2.0);
+					muell /= Omegaell;
+					if ( (mu[j][k] < 2.5) && (mu[j][k] > 1.5) ) {
+						printf("xbar = %f\tOmegaell = %f\tmu (actual, ellipmodel) = (%f, %f)\n", xbar[j], Omegaell, mu[j][k], muell);
+						fprintf(filellip, "%f %f %f %f\n", xbar[j], Omegaell, mu[j][k], muell);
+					}
+				}
+			}
+		}
 	}
 	// temporary
 	muopen[maxj-1] = 999999.0;
@@ -1535,15 +1544,25 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 	/* DENSITY INTEGRALS 
 	This part calculates the density integrals and outputs the result of the integration to a file fout and also the yz distribution function to three files one containing the distribution function the other two containing the velocity grid */
 	FILE *fout; 
-	if ((fout = fopen("OUTPUT/densfinorb_out.txt", "w")) == NULL)
-	{	
+	if (Ti < 10.1) 
+		fout = fopen("OUTPUT/densfinorb_out.txt", "w");
+	else 
+		fout = fopen("TESTS/densfinorb_out.txt", "w");
+	if (fout == NULL) {	
 		printf("Cannot open densfinorb_out.txt");
 		exit(EXIT_FAILURE);
 	}
 
 	////////////////////////////////////////////
 	// calculate normalization at infinity
-	deltax_inf = (xx[size_finegrid-1] - xx[size_finegrid-2]);
+	ic = 0;
+	while(x_grid[ic+1] < x_grid[size_phigrid-1] - limit_rho) ic++;
+	size_xlim = ic;
+	printf("size_xlim = %d/%d, limit_rho = %f\n", size_xlim, size_phigrid, limit_rho);
+	//deltax_inf = (xx[size_finegrid-1] - xx[size_finegrid-2])*0.8; // overkill resolution to get n_inf correct
+	deltax_inf = (xx[size_xlim*zoomfactor] - xx[size_xlim*zoomfactor-1]); // overkill resolution to get n_inf correct
+	printf("deltax_inf = %f\n", deltax_inf);
+	//deltax_inf = (xx[1] - xx[0]); // higher resolution than at infinity
 	j_inf = (int) sqrt(2.0*Ucap)/deltax_inf ;
 	printf("j_inf = %d, deltax_inf = %f\n", j_inf, deltax_inf);
 	muinf = (double*)calloc(j_inf,sizeof(double*)); 
@@ -1561,9 +1580,8 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 			//		muinf[k] += (4.0/M_PI)*sqrt(chiinf[j+1]-chiinf[j])*(2.0/3.0)*deltax_inf;
 			//}
 		}
-		muinf[j] = chiinf[j]; // + charge*0.001;
+		muinf[j] = chiinf[j];
 	}
-
 
 	intdxbar = 0.0;
 	for (j=0; j<j_inf; j++) {
@@ -1581,27 +1599,31 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 			//printf("vxnew = %f\tmunew = %f\tUcrit = %f\n", vxnew, munew, Ucrit);
 			Uperpnew = chiinf[k];
 			sizeU = (int) sqrt(2.0*Ucap - 2.0*Uperpnew)/dvz;
-			reflected = 1;
+			if (phi[0] > 0.0) 
+				reflected = 1;
+			else
+				reflected = 0;
 			for (l=0; l < sizeU; l++) {	
 				if (l!=0) {	
 					Fold = F;
 					Fold_ref = F;
 					vz = dvz*l;
 					U = Uperpnew + 0.5*pow(vz, 2.0);
-					if ( (U > munew) && (U - 0.5*vz*vz + 0.5*(vz-dvz)*(vz-dvz) < munew) ) {
-						frac = (vz - sqrt(2.0*(munew - Uperpnew)))/dvz;
-						Fold = bilin_interp(munew, 0.0, FF, mumu, UU, sizemumu, sizeUU, -1, -1); 
-						F = bilin_interp(munew, U-munew, FF, mumu, UU, sizemumu, sizeUU, -1, -1); 
-					}
-					else if (U > munew){
-						frac = 1.0;
-						F = bilin_interp(munew, U-munew, FF, mumu, UU, sizemumu, sizeUU, -1, -1); 
-					}
-					else {
-						frac = 1.0;
-						F = 0.0;
-					}
-
+					//if ( (U > munew) && (U - 0.5*vz*vz + 0.5*(vz-dvz)*(vz-dvz) < munew) ) {
+					//	frac = (vz - sqrt(2.0*(munew - Uperpnew)))/dvz;
+					//	Fold = bilin_interp(munew, 0.0, FF, mumu, UU, sizemumu, sizeUU, -1, -1); 
+					//	F = bilin_interp(munew, U-munew, FF, mumu, UU, sizemumu, sizeUU, -1, -1); 
+					//}
+					//else if (U > munew){
+					//	frac = 1.0;
+					//	F = bilin_interp(munew, U-munew, FF, mumu, UU, sizemumu, sizeUU, -1, -1); 
+					//}
+					//else {
+					//	frac = 1.0;
+					//	F = 0.0;
+					//}
+					frac = 1.0;
+					F = bilin_interp(munew, U-munew, FF, mumu, UU, sizemumu, sizeUU, -1, -1); 
 
 					if ( (U-munew < Ucrit - numb) && (reflected == 1) ) 
 						frac_reflected = 1.0;
@@ -1620,6 +1642,7 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 					//if ( (charge < 0) && (l == 1) ) printf("frac_reflected = %f\n", frac_reflected);
 					
 					//if (fabs(frac_reflected) > TINY) printf("frac_reflected = %f, charge = %f\n", frac_reflected, charge);
+					if (charge > 0.0) frac_reflected = 0.0;
 					//frac_reflected = 0.0;
 					intdU += 0.5*frac*dvz*((F+Fold) + frac_reflected*(F + Fold_ref));
 					//if (reflected == 1) printf("particles are being reflected\n");
@@ -1633,11 +1656,14 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 
 			intdUantycal = exp(-chiinf[k])*(1.0/(2.0*M_PI));// result with phi =0
 			if (DEBUG == 1) printf("Analytical intdU is %f, numerical one is %f\n", intdUantycal, intdU);
-			if (k!=j) {	
+			if (k!=j) {
 				dvx = vxnew - vxold; 
+				//printf("intdU = %f\tintdUold = %f\nvx = %f\tvxold = %f\n", intdU, intdUold, vxnew, vxold);
 				intdvx += 2.0*0.5*dvx*(intdU+intdUold);
 			}
-			intdvxantycal = (2.0/(2.0*sqrt(M_PI)))*exp(-deltax_inf*j*deltax_inf*j);//*erf(sqrt(xbar[j]*xbar[j]-(pos-xbar[j])*(pos-xbar[j])));
+			intdvxantycal = (2.0/(2.0*sqrt(M_PI)))*exp(-0.5*deltax_inf*j*deltax_inf*j);//*erf(sqrt(xbar[j]*xbar[j]-(pos-xbar[j])*(pos-xbar[j])));
+			intdvxantycal = sqrt(1.0/(2.0*M_PI))*exp(-0.5*deltax_inf*j*deltax_inf*j);//*erf(sqrt(xbar[j]*xbar[j]-(pos-xbar[j])*(pos-xbar[j])));
+			//intdvx = intdvxantycal;
 		}
 		if (DEBUG == 1)	printf("intdvx is %f, analytical one is %f\n", intdvx, intdvxantycal); 
 		//printf("intdvx is %f, while the analytical one is %f\n", intdvx, intdvxantycal);
@@ -1661,10 +1687,6 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 		} 
 	} 
 
-	ic = 0;
-	while(x_grid[ic+1] < x_grid[size_phigrid-1] - limit_rho) ic++;
-	size_xlim = ic;
-	printf("size_xlim = %d/%d, limit_rho = %f\n", size_xlim, size_phigrid, limit_rho);
 	// density profile
 	stop = 0; // set stop index to zero; it turns to 1 if density exceeds threshold in the input (expressed as fraction of density at infinity)
 	ic = 0;
@@ -2035,9 +2057,11 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 		}
 		else {
 			fprintf(fout, "%f %f %f %f\n", xx[i], n_grid[ic]/n_inf, intdxbar/n_inf, intdxbaropen/n_inf);
+			//fprintf(fout, "%f %f %f %f\n", xx[i], n_grid[ic], intdxbar, intdxbaropen);
 			ic += 1;
 		}
 	} 
+	printf("NINF = %f\n", n_inf);
 	printf("in densfinorb: charge = %f, dndphi = %f\n", charge, (n_grid[*size_ngrid-1] - n_grid[*size_ngrid-2])/(phi_grid[*size_ngrid-1] - phi_grid[*size_ngrid-2]));
 	fclose(fout);
 	if (stop == 0) { 

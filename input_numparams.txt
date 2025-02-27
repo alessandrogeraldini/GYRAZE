@@ -1,0 +1,21 @@
+#input file with numerical parameters of simulation
+#lines starting with # are not read
+#all other lines are read; do not leave blanks
+#parameters are introduced in the line above them
+######################
+#set MAX_IT
+1000
+#set INITIAL_GRID_PARAMETER SYS_SIZ GRIDSIZE_MP, GRIDSIZE_DS
+1.0 25.0 0.4 0.125
+#set MAXV DV
+7.0 0.05
+#set SMALLGAMMA
+0.1999
+#set tol_MP[0] tol_MP[1] tol_DS[0] tol_DS[1] tol_j
+0.005 0.02 0.005 0.02 0.005
+#set WEIGHT_MP WEIGHT_DS WEIGHT_j
+0.3 0.3 0.5
+#set MARGIN_MP MARGIN_DS
+0.03 0.03
+#set ZOOM_MP ZOOM_DS
+3 1

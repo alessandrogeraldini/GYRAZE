@@ -1,0 +1,23 @@
+#input file with physical parameters of simulation
+#lines starting with # are not read
+#all other lines are read; do not leave blanks
+#each parameter is introduced in the line above it
+######################
+#set type_distfunc_entrance (= ADHOC or other string)
+ADHOC
+#set alphadeg
+3.0
+#set gamma_ref
+0.0
+#set nspec
+1
+#set nioverne
+1.0
+#set TioverTe
+1.0
+#set mioverme
+3600
+#set set_current
+1
+#set target_current or phi_wall
+0.0
