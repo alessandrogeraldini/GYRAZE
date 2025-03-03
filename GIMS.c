@@ -1032,7 +1032,7 @@ int main() {
 	}
 	//dirname[ndirname+1] = '\0';
 	//ndirname+=1;
-	fclose(input);
+	/*fclose(input);*/
 	if ( (fabs(gamma_ref) < TINY) && (alpha_deg < 1.0) ) deltax = 0.6;
 	//if (TioverTe[0] < 0.4) weight_MP = WEIGHT_MP/6.0;
 	printf("directory where output will be stored is %s\n", dirname);
