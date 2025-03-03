@@ -1,5 +1,6 @@
 *.o
 OUTPUT
+GIMS
 
 .DS_Store
 MPS
