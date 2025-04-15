@@ -1032,7 +1032,6 @@ int main() {
 	}
 	//dirname[ndirname+1] = '\0';
 	//ndirname+=1;
-	fclose(input);
 	if ( (fabs(gamma_ref) < TINY) && (alpha_deg < 1.0) ) deltax = 0.6;
 	//if (TioverTe[0] < 0.4) weight_MP = WEIGHT_MP/6.0;
 	printf("directory where output will be stored is %s\n", dirname);
@@ -2037,11 +2036,11 @@ int main() {
 		error_Poisson(error_DS, x_DSgrid, ne_DSgrid, sumni_DSgrid, nioverne, phi_DSgrid, size_phiDSgrid, size_neDSgrid, 1.0/(gamma_ref*gamma_ref));
 		printf("error_av = %f\terror_max = %f\n", error_DS[0], error_DS[1]);
 		i=1;
-		//if ( error_DS[1] > tol_DS[1]) {
-		//	printf("ERROR: DS solution rejected because it does not satisfy Poisson's equation accurately enough on the extended domain\n");
-		//	fprintf(fout, "ERROR: DS solution rejected because it does not satisfy Poisson's equation accurately enough on the extended domain\n");
-		//	exit(-1);
-		//}
+		if ( error_DS[1] > tol_DS[1]) {
+			printf("WARNING: DS solution should be rejected because it does not satisfy Poisson's equation accurately enough on the extended domain\n");
+			fprintf(fout, "WARNING: DS solution should be rejected because it does not satisfy Poisson's equation accurately enough on the extended domain\n");
+			exit(-1);
+		}
 		//printf("FINAL CHECK passed. HURRAY!\n");
 		Bohmeval(&Bohm, alpha, TioverTe[0], phi_grid[0], dist_i_GK[0], mu_i[0], U_i[0], vy_i_wall[0], chiM_i[0], twopidmudvy_i[0], size_phigrid, size_mu_i[0], size_U_i[0], dist_e_DK, mu_e, vpar_e, size_mu_e, size_vpar_e, vpar_e_cut); 
 		evalBohmshouldbe(&Bohmshouldbe, phi_grid[0], dist_e_DK, vpar_e, mu_e, size_vpar_e, size_mu_e, vpar_e_cut);
