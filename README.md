@@ -52,3 +52,21 @@ These files are only necessary, and opened by the code, if the first line of the
 Fe_mpe_args.txt includes the grid of values of (1/2) m_e v_perp^2 / T_e in the first line, and the grid of values of v_parallel / sqrt(T_e/m_e) in the second line. In each line, the values should be separated by a space and there should not be a space after the last value on each line.
 
 Fe_mpe.txt includes the values of the electron distribution function defined on the grids which are read in the Fe_mpe_args.txt file. The number of columns of the file is the number of grid points in v_parallel / sqrt(T_e/m_e) (second line in Fi_mpe_args), and the number of rows is the number of grid points in (1/2) m_e v_perp^2 / T_e (first line in Fe_mpe_args.txt). Values in each row should be separated only by a space, and there should be no space after the last value and no blank line after the last line of values.
+
+## Compiling
+
+Dependencies:
+- GNU Scientific Library (GSL): `gsl`, <https://www.gnu.org/software/gsl/>
+- CBLAS: `cblas`, <https://www.netlib.org/lapack>
+
+Compile for release (optimization flags)
+
+```sh
+make PROFILE=release
+```
+
+Compile for debug (requires `libasan`)
+
+```sh
+make PROFILE=debug
+```
