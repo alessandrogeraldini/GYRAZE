@@ -1101,7 +1101,7 @@ int main() {
 	n=0; 
 	lenMP = 0.0;
 	printf("lenMP = %f\tlenfactor[0] = %f\n", lenMP, lenfactor[0]);
-	while ( (lenMP < 1.0/lenfactor[n]) && (n < num_spec) ) {
+	while ( (n < num_spec) && (lenMP < 1.0/lenfactor[n]) ) {
 		lenMP = 1.0/lenfactor[n];
 		n++;
 	}
