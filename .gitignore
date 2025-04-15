@@ -1,4 +1,6 @@
 .DS_Store
+TESTS/
+tests.py
 MPS
 MPS.o
 Umufile.txt

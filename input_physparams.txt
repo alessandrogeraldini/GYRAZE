@@ -6,7 +6,7 @@
 #set type_distfunc_entrance (= ADHOC or other string)
 ADHOC
 #set alphadeg
-1.0
+3.0
 #set gamma_ref
 0.0
 #set nspec

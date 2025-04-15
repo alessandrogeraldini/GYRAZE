@@ -954,7 +954,7 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 	double xi, *gg, *ff;
 	double flux0, du, fluxinf1old, fluxinfintgrdold, fluxinfintgrd, Qfluxinf1old, Qfluxinfintgrdold, Qfluxinfintgrd, u, Chodura2, Chodura2old, Chodura1old, Chodura1, Chodura;
 	double fluxinf, Qfluxinf, fluxinf1, Qfluxinf1, densinf1, densinf, densinf1old; 
-	double musmall, muell, Omegaell, minphiformucalc = 0.0001;
+	double musmall, muell, Omegaell, minphiformucalc = 0.3;
 
 	//printf("charge = %f\n", charge);
 	//for (i=0; i<size_phigrid;i++) printf("index %d\tx = %f\tphi = %f\n", i, x_grid[i], phi_grid[i]);
@@ -1462,11 +1462,12 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 		chiMopen[j+1] = chiMax[j];
 		k=0;
 		if (APPROXMUFORSMALLORBIT == 1) {
-			if (xbar[j] > 0.0) { //otherwise lin_interp fails
-			//if (charge < 0.0) {
-			phibar = lin_interp(xx, phi, xbar[j], size_finegrid, 1);
-				//while (fabs(phibar) < minphiformucalc && k < upperlimit[j]) {
-				while (fabs(lin_interp(xx, phi, xbar[j]+0.1, size_finegrid, 1) - phibar)/0.1 < minphiformucalc && k <= upperlimit[j]) {
+			if (fabs(phi[0]) < minphiformucalc) {
+				if (xbar[j] > 0.0) { //otherwise lin_interp fails
+					phibar = lin_interp(xx, phi, xbar[j], size_finegrid, 1);
+					//printf("APPROXIMATE MU if potential drop across region is small\n");
+					//while (fabs(phibar) < minphiformucalc && k < upperlimit[j]) {
+					//while (fabs(lin_interp(xx, phi, xbar[j]+0.1, size_finegrid, 1) - phibar)/0.1 < minphiformucalc && k <= upperlimit[j]) {
 					Omegaell = sqrt(1.0 + lin_interp(xx, phipp, xbar[j], size_finegrid, 1));
 					//printf("Omegaell = %f\n", Omegaell);
 					muell = Uperp[j][upperlimit[j]-k] - phibar + 0.5*pow(lin_interp(xx, phip, xbar[j], size_finegrid, 1)/Omegaell, 2.0);

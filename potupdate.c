@@ -54,7 +54,7 @@ void error_Poisson(double *error, double *x_grid, double *ne_grid, double *ni_gr
 		//printf("%f %f %f %f %f %f %f\n", invgammasq, x_grid[i], phi_grid[i], phipp[i], ne_grid[i], ni_grid[i], (-ne_grid[i] + phipp[i]*invgammasq)/ni_grid[i] + 1.0);
 		if ( (i!=0) && (i!=size_ngrid-1) ) {
 			dev = fabs((-ne_grid[i] + phipp[i]*invgammasq)/ni_grid[i] + 1.0);
-			res += fabs((-ne_grid[i] + phipp[i]*invgammasq)/ni_grid[i] + 1.0);
+			res += dev;//fabs((-ne_grid[i] + phipp[i]*invgammasq)/ni_grid[i] + 1.0);
 			//dev = fabs((-ne_grid[i] + phipp[i]*invgammasq) + ni_grid[i]);
 			//res += fabs((-ne_grid[i] + phipp[i]*invgammasq) + ni_grid[i]);
 			if (dev > devbig)  {
