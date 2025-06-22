@@ -2,8 +2,9 @@
 /* 
    AUTHORS: Alessandro Geraldini and Robbie Ewart
 
-   DESCRIPTION: Main file of 1d SHEAZY code: SHEath grAZing-angle gYrokinetic code 
-		solves the magnetised sheath = magnetic presheath + Debye sheath
+   DESCRIPTION: Main file of GYRAZE
+		solves the magnetised sheath = magnetic presheath + Debye sheath 
+		using a grazing-angle gyrokinetic approach
  
    MODIFIED: 3 May 2025 by Alessandro Geraldini
 */
