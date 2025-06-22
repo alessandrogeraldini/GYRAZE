@@ -1,10 +1,10 @@
-# SHEAZY: the SHEath grAZing-angle gYrokinetic code
+# GYRAZE: the grazing-angle gyrokinetic sheath code
 
 This code solves the magnetised SHEATH region, composed of the magnetic presheath, whose thickness is of the order of several ion gyroradii, and the Debye sheath, whose thickness is of the order of several Debye lengths << ion gyroradius. It exploits the asymptotic limit lambda_D / rho_i --> 0 and the GRAZING-ANGLE alpha << 1 of the magnetic field with the wall. 
 This means that the Debye sheath and magnetic presheath potential profiles are solved separately, and the ion density in the magnetic presheath and electron density in the Debye sheath are solved using a GYROKINETIC treatment exploiting gyrophase independence and an adiabatic invariant to lowest order in alpha. 
 For more details on the theory, see papers by Geraldini, Parra, Militello and by Ewart, Parra and Geraldini. The paper explaining the solution of the combined Debye sheath and magnetic presheath will soon be submitted for publication, and will therefore soon be available on arxiv.com.
 
-The SHEAZY code does what the name suggests: it makes solving for the sheath in a magnetised plasma easy and quick, giving accurate ion distribution functions at the target (useful for sputtering), monotonic sheath profiles, the reflected electron velocity distribution and the electron fluxes through the sheath. All this hinges on a sophisticated asymptotic theory framework.
+GYRAZE can obtain quick solutions for electrostatic potential and density profiles in the magnetised sheath, and can also provide particle distribution functions leaving the magnetised sheath. Ion distribution functions hitting the target are useful for sputtering predictions, while the reflected electron velocity distribution is needed to calculate the electron fluxes through the sheath.
 
 A caveat is that the code cannot capture non-monotonic sheath profiles, which may arise at very shallow angles. However, the code can predict critical angles below which a monotonic solution cannot exist in the magnetised sheath. 
 Another caveat is that the code transitions to being very inaccurate at magnetic field angles of 5-8 degrees. 
