@@ -2081,9 +2081,6 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 		else n_grid[ic] = 0.0;
 	}
 
-	if (DEBUG == 1) { // change this to 0 to debug
-		printf("mu vy  chiM dmudvy\n");
-	}
 	//for (j=0; j<sizemumu; j++) {
 	//	vy_op[j] = lin_interp(muopen, xbaropen, mumu[j], maxj, 2700);
 	//	//vy_op[j] = lin_interp(muopen, xbar, mumu[j], sizexbar, 2700);
@@ -2097,7 +2094,7 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 		mu_op[j] = muopen[j];
 		chiMax_op[j] = chiMopen[j];
 		dmudvy_op[j] = openorbitopen[j];
-		if (DEBUG == 1) 
+		if (DEBUG == 0) 
 			printf("%d/%d %f %f %f %f\n", j, sizemumu, mu_op[j], vy_op[j], chiMax_op[j], dmudvy_op[j]);
 	}
 	*size_op = maxj/2;

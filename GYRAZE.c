@@ -110,7 +110,6 @@ OUTPUT: density profile ni_DS
 			if (i == size_phi-1) 
 				printf("in densionDS: derivative wrt phi is dndphi = %f\n", (ni_DS[i] - ni_DS[i-1])/(phi_DS[i] - phi_DS[i-1]));
 		}
-		printf("ni_DS = %f\tphi_DS = %f\n", (ni_DS[size_phi-1] - ni_DS[size_phi-2])/(phi_DS[size_phi-1] - phi_DS[size_phi-2]) , phi_DS[i]);
 	}
 	else if (method == 2) { 
 		n_inf = 0.0;
@@ -932,7 +931,7 @@ int main() {
 	int size_phigrid, size_phiDSgrid;
 // electron quantities
 	double *ne_grid, *ne_DSgrid, ne_inf = 0.0;
-	double *vy_e_wall, *mu_e_op, *chiM_e, *twopidmudvy_e;
+	double *vy_e_wall, *mu_e_op, *chiM_e, *twopidmudvy_e, *vpar_e_cut_lookup;
 	double **dist_e_DK, **dist_e_GK, *vpar_e, *mu_e, *U_e_DS, *vpar_e_DS, *vpar_e_cut;
 	double flux_e=0.0, flux_eDS = 0.0, Q_e=0.0, Q_eDS=0.0;
 	double Uminmu_MPE, garbage = 0.0;
@@ -1414,11 +1413,6 @@ int main() {
 	U_e_DS  = malloc(size_vpar_e*sizeof(double));
 	vpar_e_DS  = malloc(size_mu_e*sizeof(double));
 	vpar_e_cut  = malloc(size_mu_e*sizeof(double));
-	vy_e_wall  = malloc(size_mu_e*sizeof(double));
-	mu_e_op  = malloc(size_mu_e*sizeof(double));
-	chiM_e  = malloc(size_mu_e*sizeof(double));
-	twopidmudvy_e  = malloc(size_mu_e*sizeof(double));
-
 
 	/*
 	CARRY OUT A SINGLE ION DENSITY CALCULATION
@@ -1451,6 +1445,10 @@ int main() {
 		ne_DSgrid = malloc(size_phiDSgrid*sizeof(double));
 		ni_DSgrid = malloc(num_spec*sizeof(double));
 		sumni_DSgrid = malloc(size_phiDSgrid*sizeof(double));
+		vy_e_wall  = malloc((ZOOM_DS*size_phiDSgrid+1)*size_phiDSgrid*sizeof(double));
+		mu_e_op  = malloc((ZOOM_DS*size_phiDSgrid+1)*sizeof(double));
+		chiM_e  = malloc((ZOOM_DS*size_phiDSgrid+1)*sizeof(double));
+		twopidmudvy_e  = malloc((ZOOM_DS*size_phiDSgrid+1)*sizeof(double));
 		//size_phiDSgrid = (int) ( ( pow(sqrt(grid_parameter) + sqrt(2.0*system_size), 2.0) - 0.3 ) / deltax );
 		//printf("size_phiDSgrid = %d\n", size_phiDSgrid);
 		v_cut = 1.0;
@@ -1781,6 +1779,11 @@ int main() {
 		ne_DSgrid = malloc(size_phiDSgrid*sizeof(double));
 		ni_DSgrid = malloc(num_spec*sizeof(double));
 		sumni_DSgrid = malloc(size_phiDSgrid*sizeof(double));
+		vy_e_wall  = malloc(size_phiDSgrid*sizeof(double));
+		mu_e_op  = malloc(size_phiDSgrid*sizeof(double));
+		chiM_e  = malloc(size_phiDSgrid*sizeof(double));
+		twopidmudvy_e  = malloc(size_phiDSgrid*sizeof(double));
+		vpar_e_cut_lookup  = malloc(size_phiDSgrid*sizeof(double));
 		for (n=0; n<num_spec; n++) ni_DSgrid[n] = malloc(size_phiDSgrid*sizeof(double));
 		//make_phigrid(x_grid, phi_grid, size_phigrid, grid_parameter, deltax, N, phi0_init_MP, 1.0, alpha);
 		if (gamma_ref < 1.0) 
@@ -1883,8 +1886,13 @@ int main() {
 				//for (i=0; i<size_neDSgrid; i++)
 				//	ne_DSgrid[i] *= (sumni_DSgrid[size_neDSgrid-1]/ne_DSgrid[size_neDSgrid-1]);
 				//printf("chiM mu\n");
+				for (i=0; i<size_op_e; i++) {
+					vpar_e_cut_lookup[i] = sqrt(2.0*(chiM_e[i] - mu_e_op[i]));
+					//printf("%f %f \n", chiM_e[i], mu_e[i]);
+				} 
 				for (i=0; i<size_mu_e; i++) {
-					vpar_e_cut[i] = sqrt(2.0*(chiM_e[i] - mu_e[i]));
+					vpar_e_cut[i] = lin_interp(mu_e_op, vpar_e_cut_lookup, mu_e[i], size_op_e, -1);
+					//vpar_e_cut[i] = sqrt(2.0*(chiM_e[i] - mu_e[i]));
 					//printf("%f %f \n", chiM_e[i], mu_e[i]);
 				} 
 				printf("flux_eDS = %f\n", flux_eDS);
