@@ -17,10 +17,16 @@ void newvcut(double *v_cut, double v_cutDS, double u_i, double u_e, double curre
 	//*v_cut = (1.0-weight)*(old_v_cut) + weight*sqrt(-2.0*log(2.0*(-current + u_i - u_etilde)) - log(M_PI/mioverme) ); //OLD
 	printf("phi_wall before = %f --> \t", 0.5*(*v_cut)*(*v_cut));
 	*v_cut = sqrt( 2.0*( (1.0-weight)*0.5*old_v_cut*old_v_cut + weight* ( 0.5*old_v_cut*old_v_cut + (current - u_i + u_e)/( 0.5*exp(-0.5*old_v_cut*old_v_cut) ) ) ) );
+	//*v_cut = sqrt( 2.0*( (1.0-weight)*0.5*old_v_cut*old_v_cut - weight* log(sqrt(2.0*M_PI)*(current + u_i - u_e) + exp(-0.5*old_v_cut*old_v_cut) ) ) );
+	//*v_cut = sqrt( - 2.0*( log( 1.0*sqrt(2.0*M_PI)*(current + u_i - u_e) + 1.0*exp(-0.5*old_v_cut*old_v_cut) ) ) );
 	if ( (*v_cut*(*v_cut)*0.5 < 0.5*v_cutDS*v_cutDS ) )  {
 		printf("WARNING: v_cutDS > v_cut\n");
 		*v_cut = v_cutDS;
 	}
+	if ( (*v_cut*(*v_cut)*0.5 < 0.5*old_v_cut*old_v_cut - 0.5*v_cutDS*v_cutDS ) )  {
+		*v_cut = sqrt(old_v_cut*old_v_cut - v_cutDS*v_cutDS) - TINY;
+	}
+
 	printf("v_cut after = %f\n", *v_cut);
 	printf("phi_wall after = %f --> \t", 0.5*(*v_cut)*(*v_cut));
 }
@@ -70,13 +76,13 @@ void error_Poisson(double *error, double *x_grid, double *ne_grid, double *ni_gr
 	return;
 }
 
+// The function below is momentarily only valid for Ti = Te, so TiovTe = 1 in the physical input file
 void newguess(double *x_grid, double* ne_grid, double *ni_grid, double* phi_grid, int size_phigrid, int size_ngridin, double invgammasq, double v_cutDS, double pfac, double weight) {
 //attempt_at_adapting_grid failed. It was an attempt at refining grid near x=0 using a maximum Delta x maximum Delta phi gridding
 int i, j, s, attempt_at_adapting_grid=0, size_ngrid=size_ngridin;
-double phiW_impose, temp;
+double phiW_impose, temp, res = 1000.0;
 double *new_x;
-double *phipp_red, *newphi, *phipp;
-//double res = 0.0, reslimit, dev, dev_0, devbig;
+double *phipp_red, *newphi, *oldphi, *phipp;
 double phi0, phip0, CC, pdec, deltaxsq, deltax = 0.3, deltaphi = 0.1;
 //FILE *fout;
 
@@ -86,6 +92,7 @@ printf("0.5*v_cutDS*v_cutDS = %f\n", 0.5*v_cutDS*v_cutDS);
 
 /* Below we initialize all arrays that contain functions of position x with the correct size n */
 newphi = (double*)calloc(size_phigrid,sizeof(double)); // same as above 
+oldphi = (double*)calloc(size_phigrid,sizeof(double)); // same as above 
 //phip = (double*)calloc(  size_phigrid,sizeof(double)); // phi now has correct size
 phipp = (double*)calloc( size_phigrid,sizeof(double)); // phi now has correct size
 
@@ -107,10 +114,16 @@ for (i=0; i<size_phigrid; i++) {
 
 deltaxsq = x_grid[1]*x_grid[1];
 
+for (i=0;i<size_phigrid;i++)
+	oldphi[i] = phi_grid[i];
+
 if ( invgammasq > TINY ) {
 	phi0 = (ne_grid[size_ngrid-1] - ni_grid[size_ngrid-1])/(pow(phi_grid[size_ngrid-1], pfac));
 	gsl_vector *newphi_gsl = gsl_vector_alloc (size_phigrid-2);
 	gsl_matrix * m = gsl_matrix_alloc (size_phigrid-2, size_phigrid-2);
+
+
+	while (res>0.005) { // This loop is taking advantage of Nicole's trick
 
 	for (i = 0; i < size_phigrid-2; i++) {
 		for (j = 0; j < size_phigrid-2; j++) {
@@ -129,16 +142,9 @@ if ( invgammasq > TINY ) {
 	phipp_red = malloc((size_phigrid-2)*sizeof(double));
 	//printf("size_phigrid = %d\nsize_ngrid=%d\n\n", size_phigrid, size_ngrid);
 	for (i=0;i<size_phigrid-2; i++) {
-		//if ( (ne_grid[i+1] > ni_grid[i+1]) && (stop == 0) ) {
-		//	size_ngrid = i + 1;
-		//	stop = 1;
-		//}
 		if (i< size_ngrid-2)
-			phipp_red[i] = (ne_grid[i+1] - ni_grid[i+1]) - 1.0*phi_grid[i+1]* exp(phi_grid[i+1]);
-		else phipp_red[i] = phi0*pow(phi_grid[i+1], pfac) - 1.0*phi_grid[i+1]* exp(phi_grid[i+1]);
-		//printf("phipp_red[%d/%d/%d] = %f\n", i, size_ngrid-3, size_phigrid-3, phipp_red[i]);
-		//if (i< size_ngrid-2)
-		//	printf("i = %d,ne, ni =  %f, %f\n", i, ne_grid[i+1], ni_grid[i+1]); 
+			phipp_red[i] = (ne_grid[i+1] - ni_grid[i+1]) - phi_grid[i+1]* exp(phi_grid[i+1]);
+		else phipp_red[i] = phi0*pow(phi_grid[i+1], pfac) - phi_grid[i+1]* exp(phi_grid[i+1]);
 	}
 	printf("weight= %f, phi_grid[0] = %f\n", weight, phi_grid[0]);
 	//phiW_impose = ( - (0.5*v_cutDS*v_cutDS) - (1.0-weight)*phi_grid[0] )/weight;
@@ -149,8 +155,7 @@ if ( invgammasq > TINY ) {
 	//phi0 = phip[size_ngrid-1]/(pdec*pow(x_grid[size_ngrid-1] + CC, pdec-1));
 	//phipp_red[size_phigrid-1] -= ( phi0*pow(x_grid[size_phigrid-1] + CC, pdec)*invgammasq/deltaxsq );
 
-	gsl_vector_view phipp_gsl
-	    = gsl_vector_view_array (phipp_red, size_phigrid-2);
+	gsl_vector_view phipp_gsl = gsl_vector_view_array (phipp_red, size_phigrid-2);
 
 	gsl_permutation * p = gsl_permutation_alloc (size_phigrid-2);
 	clock_t t1 = clock(); // finds the end time of the computation
@@ -158,10 +163,6 @@ if ( invgammasq > TINY ) {
 	clock_t t2 = clock(); double decomptime  = (double)(t2 - t1) / CLOCKS_PER_SEC;
 	printf("LU decomposition time = %f\n", decomptime);
 	gsl_linalg_LU_solve (m, p, &phipp_gsl.vector, newphi_gsl);
-
-	//printf ("newphi_gsl = \n");
-	//printf("%f\n", -0.5*v_cutDS*v_cutDS);
-	//gsl_vector_fprintf (stdout, newphi_gsl, "%g");
 
 	newphi[0] = phiW_impose;
 	//printf("newphi[0/%d] = %f (imposed)\n", size_ngrid, newphi[0]);
@@ -199,8 +200,16 @@ if ( invgammasq > TINY ) {
 		newphi[i] = phi0*pow(x_grid[i]+CC, pdec);
 		//printf("newphi[%d/%d] = %f (analytical decay)\n", i, size_ngrid, newphi[i]);
 	}
-	//printf("%f last\n", newphi[size_phigrid-1]);
+	for (i=size_phigrid-1; i>= 0; i--) {
+		res += fabs(phi_grid[i] - newphi[i]);
+		phi_grid[i] = newphi[i];
+	}
+	res /= size_phigrid;
 	gsl_permutation_free(p);
+	printf("res = %f\n", res);
+	//res = 0.00001;
+	}
+	//printf("%f last\n", newphi[size_phigrid-1]);
 	gsl_matrix_free (m);
 	gsl_vector_free (newphi_gsl);
 	free(phipp_red);
@@ -235,15 +244,12 @@ else {
 //printf("conditions %d %d %d\n", res < reslimit, devbig < 5.0*reslimit, dev_0 < 5.0*reslimit);
 
 for (i=size_phigrid-1; i>=0; i--) {
-	newphi[i] = weight*newphi[i] + (1.0-weight)*phi_grid[i] ; 
+	newphi[i] = weight*newphi[i] + (1.0-weight)*oldphi[i] ; 
 	//printf("newphi[%d] = %f\n", i, newphi[i]);
 	phi_grid[i] = newphi[i];
 }
 
-//phifree(phip);
-//free(phipp);
-
-// remake grid in magnetic presheath
+// remake grid in magnetic presheath // This attempt failed miserably, don't change flag value to 1
 //FILE *fp;
 if (attempt_at_adapting_grid==1) {
 	new_x = malloc(size_phigrid*sizeof(double));

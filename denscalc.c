@@ -1,4 +1,3 @@
-
 // Authors: Aessandro Geraldini and Robbie Ewart
 /* This script calculates the density profiles of charged particles in the magnetised sheath for a given potential profile and entrance distribution function: denszeroorb neglects gyro-orbit size; densfinorb includes distorted gyro-orbits for magnetic field angle α<<1. 
  * */
@@ -428,7 +427,7 @@ void denszeroorb(double charge, double TeovTs, double *phi_real, double *n_grid,
 	//printf("n_grid[%d] = %f, n_pre = %f\n", p, n_grid[p], n_pre[p]);
 	//}
 
-		// ELECTRON FLUX
+		// ELECTRON FLUX electron flux
 		for (mu_ind=0; mu_ind<size_mu; mu_ind++) {
 			nepart[mu_ind] = 0.0;
 			//vpar_cut = lin_interp(mue_cut_lookup, vpar_cut_lookup, mu[mu_ind], size_cut, 205);
@@ -913,7 +912,7 @@ void denszeroorb(double charge, double TeovTs, double *phi_real, double *n_grid,
 }
 
 
-void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int *size_ngrid, double* n_grid, double *x_grid, double* phi_grid, double charge, double **FF, double *mumu, double *UU, int sizemumu, int sizeUU, double grid_parameter, double *flux, double *Qflux, int zoomfactor, double margin, double phi_DSbump, double *vy_op, double *chiMax_op, double *dmudvy_op) {
+void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int *size_ngrid, double* n_grid, double *x_grid, double* phi_grid, double charge, double **FF, double *mumu, double *UU, int sizemumu, int sizeUU, double grid_parameter, double *flux, double *Qflux, int zoomfactor, double margin, double phi_DSbump, double *vy_op, double *mu_op, double *chiMax_op, double *dmudvy_op, int *size_op) {
 	// declare variables
 	clock_t begin = clock(); // Finds the start time of the computation
 	double limit_rho = 8.0;
@@ -1744,9 +1743,10 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 					else {
 						frac = 1.0;
 						Fopen = bilin_interp(munew, U-munew, FF, mumu, UU, sizemumu, sizeUU, -1, -1); 
-						//****
-						oorbintgrd = ( sqrt(vx0open*vx0open + 2.0*alpha*vz*openorbitnew) - vx0open )*Fopen;
+						//printf("U = %f, munew = %f, Fopen = %f\n", U, munew, Fopen);
+						oorbintgrd = ( sqrt(vx0open*vx0open + 2.0*alpha*vz*openorbitnew + TINY) - vx0open )*Fopen;
 						oorbintgrdflow = 0.5*alpha*vz*openorbitnew*Fopen;
+
 					}
 					if (oorbintgrd != oorbintgrd) {	
 						printf("vx0open = %f, openorbit[%d] = %f, imaginary oorbintgrd in initial piece of integral due to negative value of openorbit?\n", vx0open, j, openorbit[j]); 
@@ -2084,39 +2084,69 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 	if (DEBUG == 1) { // change this to 0 to debug
 		printf("mu vy  chiM dmudvy\n");
 	}
-	for (j=0; j<sizemumu; j++) {
-		vy_op[j] = lin_interp(muopen, xbaropen, mumu[j], maxj, 2700);
-		//vy_op[j] = lin_interp(muopen, xbar, mumu[j], sizexbar, 2700);
-		chiMax_op[j] = lin_interp(muopen, chiMopen, mumu[j], maxj, 2700);
-		dmudvy_op[j] = lin_interp(muopen, openorbitopen, mumu[j], maxj, 2700);
+	//for (j=0; j<sizemumu; j++) {
+	//	vy_op[j] = lin_interp(muopen, xbaropen, mumu[j], maxj, 2700);
+	//	//vy_op[j] = lin_interp(muopen, xbar, mumu[j], sizexbar, 2700);
+	//	chiMax_op[j] = lin_interp(muopen, chiMopen, mumu[j], maxj, 2700);
+	//	dmudvy_op[j] = lin_interp(muopen, openorbitopen, mumu[j], maxj, 2700);
+	//	if (DEBUG == 1) 
+	//		printf("%d/%d %f %f %f %f\n", j, sizemumu, mumu[j], vy_op[j], chiMax_op[j], dmudvy_op[j]);
+	//}
+	for (j=0; j<maxj/2; j++) {
+		vy_op[j] = xbaropen[j];
+		mu_op[j] = muopen[j];
+		chiMax_op[j] = chiMopen[j];
+		dmudvy_op[j] = openorbitopen[j];
 		if (DEBUG == 1) 
-			printf("%d/%d %f %f %f %f\n", j, sizemumu, mumu[j], vy_op[j], chiMax_op[j], dmudvy_op[j]);
+			printf("%d/%d %f %f %f %f\n", j, sizemumu, mu_op[j], vy_op[j], chiMax_op[j], dmudvy_op[j]);
 	}
+	*size_op = maxj/2;
 
 	fclose(filellip);
 
 	// If you love your variables (and your memory) set them free // wise words Robbie
 	free(chiMopen);//
+	printf("1\n");
 	free(openorbitopen);//
+	printf("2\n");
 	free(xbaropen);//
+	printf("3\n");
 	free(Ucritf);//
+	printf("4\n");
 	free(muopen);//
+	printf("5\n");
 	free(xx);//
+	printf("6\n");
 	free(jmclosed);//
+	printf("7\n");
 	free(jmopen);//
+	printf("8\n");
 	free(xifunction);//
+	printf("9\n");
 	free(xbar);//
+	printf("10\n");
 	free(chimin);//
+	printf("11\n");
 	free(chiMax);//
+	printf("12\n");
 	free(chimpp);//
+	printf("13\n");
 	free(crossed_min);//
+	printf("13\n");
 	free(crossed_max);//
+	printf("13\n");
 	free(openorbit);//
+	printf("13\n");
 	free(upperlimit);//
+	printf("13\n");
 	free(lowerlimit);//
+	printf("14\n");
 	free(xtop);//
+	printf("14\n");
 	free(imax);//
+	printf("14\n");
 	free(imin);//
+	printf("14\n");
 
 	for (w = 0; w < sizexbar; w++) {
 		free(chi[w]);//
@@ -2127,23 +2157,32 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 			free(vx[w][s]);//
 		free(vx[w]);//
 	}
+	printf("14\n");
 	free(chi);//
+	printf("15\n");
 	free(Uperp);//
+	printf("15\n");
 	free(mu);//
+	printf("15\n");
 	free(upper);//
+	printf("15\n");
 	free(vx);//
+	printf("15\n");
 
 	free(phi);//
 	free(gg);//
 	free(ff);//
 	free(phip);//
 	free(kdrop);//
+	printf("16\n");
 
 	for (j=0; j<j_inf; j++) {
 		free(vxinf[j]);//
 	}
 	free(vxinf); //
+	printf("17\n");
 	free(chiinf); //
+	printf("18\n");
 	free(muinf);//
 
 	clock_t end = clock(); // finds the end time of the computation
