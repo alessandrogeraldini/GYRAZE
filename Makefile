@@ -20,9 +20,9 @@ endif
 
 LDFLAGS+= $(CFLAGS) -lgsl -lgslcblas -lm
 
-binaries=SHEAZY
+binaries=GYRAZE
 
-SHEAZY: SHEAZY.o denscalc.o potupdate.o otherfuncs.o
+GYRAZE: GYRAZE.o denscalc.o potupdate.o otherfuncs.o
 
 .phony: clean
 
