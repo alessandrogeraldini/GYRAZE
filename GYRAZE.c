@@ -393,6 +393,7 @@ void evalBohmshouldbe(double *Bohmshouldbe, double phi0, double **distfunc, doub
 			nepart[mu_ind] = 0.0;
 			//vpar_cut = lin_interp(mue_cut_lookup, vpar_cut_lookup, mu[mu_ind], size_cut, 205);
 			vpar_cut = vpar_cut_lookup[mu_ind] ; 
+			//printf("vpar_cut before = %f\n", vpar_cut);
 			vpar_cut = sqrt(vpar_cut*vpar_cut +  (-2.0*phi0) + TINY);
 			//printf("vpar_cut = %f\n", vpar_cut);
 			for (vi = 0; vi < len_F - 1; vi++) {
@@ -559,6 +560,7 @@ void evalBohmshouldbe(double *Bohmshouldbe, double phi0, double **distfunc, doub
 			}
 		}
 	}
+	printf("n_grid[0,1] = %f,%f\n", n_grid[0], n_grid[1]);
 	*Bohmshouldbe = (n_grid[1]/n_grid[0] - 1.0)/dphi;
 	printf("Bohmshouldbe = %f\n", *Bohmshouldbe);
 
@@ -632,21 +634,28 @@ void Figen(double ***ffarr, double **Uminmuarr, double **muarr, int num_spec, do
 				//printf("TioverTe[%d] = %f <= 1\n", n, TioverTe[n]);
 				printf("normalization = %f\n", normalization);
 				for (i=0; i<sizevperp[n]; i++) {
-					mu = 0.5*i*dvperp*i*dvperp;
+					//mu = 0.5*i*dvperp*i*dvperp;
+					mu = i*dvperp;
 					muarr[n][i] = mu;
 					for (j=0; j<sizevpar[n]; j++) { 
 						Uminmu = 0.5*j*dvpar*j*dvpar;
-						if (i==0)
+						if (i==0) {
 							Uminmuarr[n][j] = Uminmu;
+							//printf("Uminmu = %f\n", Uminmu);
+						}
 						ff = (2.0/(M_PI*sqrt(M_PI)))*(1.0/normalization)*(Uminmu)*exp(- Uminmu - mu + u*sqrt(2.0*Uminmu) - 0.5*u*u);
 						ffarr[n][i][j] = ff;
+						//printf("%f ", ff);
+						//printf("%f %d", ffarr[n][i][j], n);
 					}
+					//printf("\n", ff);
 				}
 			}
 			else {
 				//printf("TioverTe[%d] = %f > 1\n", n, TioverTe[n]);
 				for (i=0; i<sizevperp[n]; i++) {
-					mu = 0.5*i*dvperp*i*dvperp;
+					//mu = 0.5*i*dvperp*i*dvperp;
+					mu = i*dvperp;
 					muarr[n][i] = mu;
 					for (j=0; j<sizevpar[n]; j++) { 
 						Uminmu = 0.5*j*dvpar*j*dvpar;
@@ -663,7 +672,8 @@ void Figen(double ***ffarr, double **Uminmuarr, double **muarr, int num_spec, do
 			printf("TioverTe[%d] = infinite: ELECTRONS ARE COLD\n", n);
 			normalization = 1.0;
 			for (i=0; i<sizevperp[n]; i++) {
-				mu = 0.5*i*dvperp*i*dvperp;
+				//mu = 0.5*i*dvperp*i*dvperp;
+				mu = i*dvperp;
 				muarr[n][i] = mu;
 				for (j=0; j<sizevpar[n]; j++) { 
 					Uminmu = 0.5*j*dvpar*j*dvpar;
@@ -675,14 +685,130 @@ void Figen(double ***ffarr, double **Uminmuarr, double **muarr, int num_spec, do
 			}
 		}
 	}
+
+	//for (i=0; i<sizevperp[0]; i++) {
+	//	for (j=0; j<sizevpar[0]; j++) { 
+	//		printf("%f ", ffarr[0][i][j]);
+	//	}
+	//	printf("\n");
+	//}
 	return;
 }
 
-void Fegen(double **ffarr, double *mue, double *vpar_e, int sizemu_e, int sizevpar_e, double dvperp, double dvpar) {
+void Figenerate(struct distfuncDKGK *FiGK, int num_spec, double *nioverne, double *mioverme, double *TioverTe, double dvpar, double dvperp) {
+	int n, i, j, coldelectrons;
+	double mu, Uminmu, ff;
+	double u, condition, chodura, normalization;// flow;
+
+	for (n=0; n<num_spec; n++) {
+		if (TioverTe[n] > 10.0) coldelectrons = 1;
+		else coldelectrons = 0;
+		printf("are electrons cold (1=yes, 0=no): %d\n", coldelectrons);
+		u = 0.0;
+		condition = TioverTe[n]; 
+		if (coldelectrons == 0) {
+			if (TioverTe[n]<=1.0) {
+				chodura = 9999999.0;
+				u = 0.0;
+				while ( (chodura > condition) || (chodura < condition - 0.05) ) {
+					if (chodura > condition)
+						u += 0.0001;
+					else 
+						u -= 0.0001;
+					normalization =  sqrt(2.0)*(1 + erf(u/sqrt(2.0)))*(1.0+u*u) + sqrt(2.0/M_PI)*u*exp(-0.5*u*u);
+					//printf("normalization = %f\n", normalization);
+					chodura = sqrt(2.0)*(1+erf(u/sqrt(2.0)))/(normalization);
+					//flow = ( 0.5*(1+0.5*u*u)*exp(-0.5*u*u) + (1.5 + 0.5*u*u)*(sqrt(M_PI/2.0)*u/2.0)*(1 + erf(u/sqrt(2.0))))*4.0/sqrt(2.0*M_PI)/normalization;
+					//printf("%f, %f, %f, %f %f\n", normalization, u, flow, chodura, condition);
+				}
+			}
+			else {
+				chodura = 0.0;
+				u = 0.1;
+				while  ( (chodura > condition) || (chodura < condition - 0.05) ) {
+					if (chodura > condition)
+						u -= 0.001;
+					else
+						u += 0.001;
+					normalization = (1.0/sqrt(2.0))*2.0*(sqrt(M_PI*u) - M_PI*exp(1/u)*(1-erf(1.0/sqrt(u))))/(2.0*u*sqrt(u));
+					//printf("normalization = %f\n", normalization);
+					chodura = (1.0/sqrt(2.0))*0.5*2.0*M_PI*exp(1.0/u)*(1.0-erf(1.0/sqrt(u)))/(2.0*sqrt(u)*normalization);
+					//printf("%f, %f, %f, %f %f\n", normalization, u, flow, chodura, condition);
+				}
+			}
+		}
+
+		if (coldelectrons == 0) {
+			if ( TioverTe[n] <= 1.0 ) 
+				//normalization =  (1 + erf(u/sqrt(2.0)))*(1.0+u*u) + sqrt(2.0/M_PI)*u*exp(-0.5*u*u);
+				normalization =  sqrt(2.0)*(1 + erf(u/sqrt(2.0)))*(1.0+u*u) + sqrt(2.0/M_PI)*u*exp(-0.5*u*u);
+				//normalization =  (1 + erf(u))*(1.0+2.0*u*u) + (2.0/sqrt(M_PI))*u*exp(-u*u);
+			else
+				//normalization =  2.0*(sqrt(M_PI*u) - M_PI*exp(1/u)*(1-erf(1/sqrt(u))))/(2.0*u*sqrt(u));
+				normalization = (1.0/sqrt(2.0))*2.0*(sqrt(M_PI*u) - M_PI*exp(1/u)*(1-erf(1.0/sqrt(u))))/(2.0*u*sqrt(u));
+		}
+
+		if (coldelectrons == 0) {
+			if (TioverTe[n]<=1.0) {
+				//printf("TioverTe[%d] = %f <= 1\n", n, TioverTe[n]);
+				printf("normalization = %f\n", normalization);
+				for (i=0; i<FiGK[n].len_perp; i++) {
+					mu = 0.5*i*dvperp*i*dvperp;
+					mu = i*dvperp;
+					FiGK[n].perp[i] = mu;
+					for (j=0; j<FiGK[n].len_par; j++) { 
+						Uminmu = 0.5*j*dvpar*j*dvpar;
+						if (i==0)
+							FiGK[n].par[j] = Uminmu;
+						ff = (2.0/(M_PI*sqrt(M_PI)))*(1.0/normalization)*(Uminmu)*exp(- Uminmu - mu + u*sqrt(2.0*Uminmu) - 0.5*u*u);
+						FiGK[n].F[i][j] = ff;
+					}
+				}
+			}
+			else {
+				//printf("TioverTe[%d] = %f > 1\n", n, TioverTe[n]);
+				for (i=0; i<FiGK[n].len_perp; i++) {
+					mu = 0.5*i*dvperp*i*dvperp;
+					mu = i*dvperp;
+					FiGK[n].perp[i] = mu;
+					for (j=0; j<FiGK[n].len_par; j++) { 
+						Uminmu = 0.5*j*dvpar*j*dvpar;
+						if (i==0)
+							FiGK[n].par[j] = Uminmu;
+
+						ff = (1.0/M_PI)*(1.0/normalization)*((Uminmu)/(1+u*(Uminmu)))*exp(- Uminmu - mu );
+						FiGK[n].F[i][j] = ff;
+					}
+				}
+			}
+		}
+		else { // coldelectrons == 1:
+			printf("TioverTe[%d] = infinite: ELECTRONS ARE COLD\n", n);
+			normalization = 1.0;
+			for (i=0; i<FiGK[n].len_perp; i++) {
+				mu = 0.5*i*dvperp*i*dvperp;
+				mu = i*dvperp;
+				FiGK[n].perp[i] = mu;
+				for (j=0; j<FiGK[n].len_par; j++) { 
+					Uminmu = 0.5*j*dvpar*j*dvpar;
+					if (i==0)
+						FiGK[n].par[j] = Uminmu;
+					ff = (1.0/(sqrt(2.0)*(M_PI)*sqrt(M_PI)))*exp(- Uminmu - mu );
+					FiGK[n].F[i][j] = ff;
+				}
+			}
+		}
+	}
+	return;
+}
+
+void Fegen(double **ffarr, double *vpar_e, double *mue, int sizevpar_e, int sizemu_e, double dvpar, double dvperp) {
 	double mu, vpar, ff, Uminmu;
 	int i,j;
+	double halfdvperpsq = dvperp;
 	for (i=0; i<sizemu_e; i++) { 
-		mu = 0.5*i*dvperp*i*dvperp;
+		//mu = 0.5*i*dvperp*i*dvperp;
+		mu = i*halfdvperpsq;
 		mue[i] = mu;
 		for (j=0; j<sizevpar_e; j++) { 
 			vpar = j*dvpar;
@@ -834,9 +960,7 @@ void make_phigrid(double *x_grid, double *phi_grid, int size_phigrid, double gri
 			x_grid[i] = new_x[i];
 		}
 	}
-	printf("PIPPO\n");
 	free(new_phi);
-	printf("PIPPO\n");
 	free(new_x);
 	free(ff);
 	return;
@@ -899,7 +1023,7 @@ double vparcut_mu(double mu, double vcut) {
 int main() {
 // computation time
 	int MAX_IT, ZOOM_DS, ZOOM_MP;
-	double INITIAL_GRID_PARAMETER, SYS_SIZ, MAXV, DV, SMALLGAMMA, tol_MP[2], tol_DS[2], tol_current, WEIGHT_MP, WEIGHT_DS, WEIGHT_j, MARGIN_MP, MARGIN_DS, GRIDSIZE_MP, GRIDSIZE_DS; // DXMIN
+	double INITIAL_GRID_PARAMETER, SYS_SIZ, MAXMU, DMU, MAXVPAR, MAXVPAR_I, DVPAR, DVPAR_I, SMALLGAMMA, tol_MP[2], tol_DS[2], tol_current, WEIGHT_MP, WEIGHT_DS, WEIGHT_j, MARGIN_MP, MARGIN_DS, GRIDSIZE_MP, GRIDSIZE_DS; // DXMIN
 
 	clock_t begin_it = clock(); // Finds the start time of the computation
 	double tot_time;
@@ -912,7 +1036,6 @@ int main() {
 // pointer to double to which strings above is converted
 	double *storevals;
 // velocity grid parameters universal to all species
-	double dvpar;
 // spatial grid parameters in magnetic presheath / Chodura sheath
 	double grid_parameter, deltax, system_size, DS_size;
 // spatial grid parameters in Debye sheath
@@ -941,6 +1064,7 @@ int main() {
 	double **vy_i_wall, **mu_i_op, **chiM_i, **twopidmudvy_i;
 	double *flux_i, *lenfactor, Bohm=0.0, lenMP, *Q_i;
 	int *size_ngrid, *size_mu_i, *size_U_i, *sizevxopen, *size_op_i;
+	struct distfuncDKGK *FiGK;
 	double ***dist_i_GK, **mu_i, **U_i;
 // quantities related to overall ion properties
 	double *sumni_grid, *sumni_DSgrid, sumflux_i=0.0, sumni_norm=0.0, sumQ_i=0.0;
@@ -1150,9 +1274,12 @@ int main() {
 				deltax = GRIDSIZE_MP;
 			}
 			else if (i==2) {
-				MAXV = storevals[0]; 
-				DV =  storevals[1]; 
-				dvpar = DV;
+				MAXMU = storevals[0]; 
+				MAXVPAR = storevals[1]; 
+				MAXVPAR_I = storevals[2]; 
+				DMU =  storevals[3]; 
+				DVPAR =  storevals[4]; 
+				DVPAR_I =  storevals[5]; 
 			}
 			if (i==3) SMALLGAMMA = *storevals; //linetodata(line_hundred, strlen(line_hundred), &ncols); 
 			if (i==4) {
@@ -1256,6 +1383,7 @@ int main() {
 	mu_i = malloc(num_spec*sizeof(double));
 	U_i = malloc(num_spec*sizeof(double));
 	dist_i_GK = malloc(num_spec*sizeof(double));
+	FiGK = malloc(num_spec*sizeof(struct distfuncDKGK));
 	size_ngrid = calloc(num_spec,sizeof(int));
 	size_mu_i = malloc(num_spec*sizeof(int));
 	size_U_i = malloc(num_spec*sizeof(int));
@@ -1264,33 +1392,47 @@ int main() {
 		ni_grid[n] = malloc(size_phigrid*sizeof(double));
 
 	if (type_distfunc_entrance == 0) {
-		size_mu_e = (int) (MAXV/DV);
-		size_vpar_e = (int) (MAXV/DV);
+		size_mu_e = (int) (MAXMU/DMU);
+		size_vpar_e = (int) (MAXVPAR/DVPAR);
 		mu_e = malloc(size_mu_e*sizeof(double));
-		vpar_e = malloc(size_mu_e*sizeof(double));
+		vpar_e = malloc(size_vpar_e*sizeof(double));
 		dist_e_DK = malloc(size_mu_e*sizeof(double));
 		dist_e_GK = malloc(size_mu_e*sizeof(double));
 		for (i=0; i < size_mu_e; i++) {
 			dist_e_DK[i] = malloc(size_vpar_e*sizeof(double));
 			dist_e_GK[i] = malloc(size_vpar_e*sizeof(double));
 		}
-		Fegen(dist_e_DK, mu_e, vpar_e, size_vpar_e, size_mu_e, DV, DV);
+		Fegen(dist_e_DK, vpar_e, mu_e, size_vpar_e, size_mu_e, DVPAR, DMU);
 		for (n=0; n< num_spec; n++) {
-			size_mu_i[n] = (int) (MAXV/DV);
-			size_U_i[n] = (int)  (MAXV/DV);
+			size_mu_i[n] = (int) (MAXMU/DMU);
+			size_U_i[n] = (int)  ((MAXVPAR_I + 1.0/TioverTe[n])/DVPAR_I);
 			mu_i[n] = malloc(size_mu_i[n]*sizeof(double));
 			U_i[n] = malloc(size_U_i[n]*sizeof(double));
 			dist_i_GK[n] = malloc(size_mu_i[n]*sizeof(double));
-			for (i=0; i < size_mu_i[n]; i++) 
+			FiGK[n].F = malloc(size_mu_i[n]*sizeof(double));
+			FiGK[n].len_perp = size_mu_i[n];
+			FiGK[n].len_par = size_U_i[n];
+			FiGK[n].par = malloc(size_U_i[n]*sizeof(double));
+			FiGK[n].perp = malloc(size_mu_i[n]*sizeof(double));
+			for (i=0; i < size_mu_i[n]; i++) {
 				dist_i_GK[n][i] = malloc(size_U_i[n]*sizeof(double));
+				FiGK[n].F[i] = malloc(size_U_i[n]*sizeof(double));
+			}
 		}
-		Figen(dist_i_GK, mu_i, U_i, num_spec, nioverne, mioverme, TioverTe, size_U_i, size_mu_i, DV, DV);
+		Figen(dist_i_GK, U_i, mu_i, num_spec, nioverne, mioverme, TioverTe, size_U_i, size_mu_i, DVPAR_I, DMU);
+		Figenerate(FiGK, num_spec, nioverne, mioverme, TioverTe, DVPAR_I, DMU);
+		//for (i=0; i < size_mu_i[0]; i++) {
+		//	printf("mu = %f\n", mu_i[0][i]);
+		//	for (j=0; j < size_U_i[0]; j++) {
+		//		if (i==0)
+		//			printf("Uminmu = %f\n", U_i[0][j]);
+		//		printf("%f ", dist_i_GK[0][i][j]);
+		//	}
+		//	printf("\n");
+		//}
 	}
 	else { 
-		/*
-		EXTRACT ION DISTRIBUTION FUNCTION
-		import the distribution function into a 2 dimensional array, F(mu,U)
-		*/
+		// import the distribution function from a file into a 2 dimensional array, F(mu,U)
 		FILE *file;
 		if ((file = fopen("Fi_mpe.txt", "r")) == NULL)
 		{	
@@ -1303,6 +1445,7 @@ int main() {
 			nrows_distfile += 1; 
 		// Allocate the right amount of memory to the distribution function pointer
 		dist_i_GK[0] = (double**) calloc(nrows_distfile,sizeof(double*));
+		FiGK[0].F = (double**) calloc(nrows_distfile,sizeof(double*));
 		// The number of rows is also the the size of the array in U_i 
 		nrows_distfile = 0; // Set number of rows counter to zero again
 		rewind(file); // rewind file
@@ -1311,6 +1454,7 @@ int main() {
 		while (fgets(line_million, 1000000, file) != NULL) {
 			storevals = linetodata(line_million, strlen(line_million), &ncols);
 			dist_i_GK[0][nrows_distfile] = storevals;
+			FiGK[0].F[nrows_distfile] = storevals;
 			nrows_distfile +=1; 
 		}
 		fclose(file);
@@ -1329,7 +1473,7 @@ int main() {
 			if (i == 0) {
 				size_mu_i[0] = ncols;
 				mu_i[0] = storevals;
-				printf("size_mu_i[0] = %d\n", size_mu_i[0]);//YOLO
+				printf("size_mu_i[0] = %d\n", size_mu_i[0]);
 			}
 			else if (i==1) {
 				size_U_i[0] = ncols;
@@ -1418,7 +1562,7 @@ int main() {
 	CARRY OUT A SINGLE ION DENSITY CALCULATION
 	*/
 	if (TioverTe[0] > 10.0) {	
-		printf("YOLO\n");
+		printf("WARNING: ion temperature too high. Proceed by using hot ion limit i.e. flat potential profile (otherwise code will be too slow for little gain)\n");
 		make_phigrid(x_grid, phi_grid, size_phigrid, grid_parameter, deltax, 0, phi0_init_MP, 1.0, alpha);
 		//size_ngrid = (int) ( ( pow(sqrt(grid_parameter) + sqrt(system_size - 5.0), 2.0) - grid_parameter ) / deltax );
 		for (n=0; n<num_spec; n++) 
@@ -1434,6 +1578,7 @@ int main() {
 	}
 
 	if (TEST_EL==1) {
+		printf("WARNING: This is just a test for the finite electron orbits. Set flag TEST_EL = 0 to avoid being here...\n"); 
 		if (gamma_ref < TINY) DS_size = SYS_SIZ;
 		else if (gamma_ref < 1.0) DS_size = SYS_SIZ/gamma_ref;
 		else DS_size = SYS_SIZ;
@@ -1474,7 +1619,7 @@ int main() {
 			densfinorb(TioverTe[n], lenfactor[n], alpha, size_phigrid, size_ngrid+n, ne_grid, x_grid, phi_grid, ioncharge, dist_i_GK[n], mu_i[n], U_i[n], size_mu_i[n], size_U_i[n], grid_parameter, flux_i+n, Q_i+n, zoomfactor, -MARGIN_MP, -999.9, vy_i_wall[n], mu_i_op[n], chiM_i[n], twopidmudvy_i[n], size_op_i+n);
 		for (ncols=0; ncols<size_mu_e; ncols+=1) {
 			for (ind=0; ind<size_vpar_e; ind+=1) {
-				U_e_DS[ind] = 0.5*ind*dvpar*ind*dvpar;
+				U_e_DS[ind] = 0.5*ind*DVPAR*ind*DVPAR;
 				Uminmu_MPE = sqrt(2.0*U_e_DS[ind] - 2.0*phi_grid[0]);
 				if (ncols == 0) vpar_e_DS[ind] = sqrt(2.0*U_e_DS[ind] - 2.0*phi_grid[0]);
 				dist_e_GK[ncols][ind] = bilin_interp(mu_e[ncols], Uminmu_MPE, dist_e_DK, mu_e, vpar_e, size_mu_e, size_vpar_e, -1, -1)/ne_grid[0];
@@ -1873,7 +2018,7 @@ int main() {
 			printf("evaluate electron density in DS\n");
 			for (ncols=0; ncols<size_mu_e; ncols+=1) {
 				for (ind=0; ind<size_vpar_e; ind+=1) {
-					U_e_DS[ind] = 0.5*ind*dvpar*ind*dvpar;
+					U_e_DS[ind] = 0.5*ind*DVPAR*ind*DVPAR;
 					Uminmu_MPE = sqrt(2.0*U_e_DS[ind] - 2.0*phi_grid[0]);
 					if (ncols == 0) vpar_e_DS[ind] = Uminmu_MPE;
 					dist_e_GK[ncols][ind] = bilin_interp(mu_e[ncols], Uminmu_MPE, dist_e_DK, mu_e, vpar_e, size_mu_e, size_vpar_e, -1, -1)/(ne_inf*ne_grid[0]);
@@ -1893,7 +2038,7 @@ int main() {
 				for (i=0; i<size_mu_e; i++) {
 					vpar_e_cut[i] = lin_interp(mu_e_op, vpar_e_cut_lookup, mu_e[i], size_op_e, -1);
 					//vpar_e_cut[i] = sqrt(2.0*(chiM_e[i] - mu_e[i]));
-					//printf("%f %f \n", chiM_e[i], mu_e[i]);
+					printf("%f %f %f\n", chiM_e[i], mu_e[i], vpar_e_cut[i]);
 				} 
 				printf("flux_eDS = %f\n", flux_eDS);
 			}
@@ -1972,6 +2117,7 @@ int main() {
 			}
 
 			printf("new DS potential guess\n");
+// Calculating v_cutDS after new phiwall and new phi_MP[0] have been calculated, to ensure that the new imposed phi_DS[0] is consistent
 			if (v_cut*v_cut < - 2.0*phi_grid[0]) {
 				printf("WARNING: The total sheath and presheath potential drop is smaller than the presheath potential drop\n");
 				printf("\tTo avoid a non-monotonic potential, setting the total potential drop to be just above the presheath potential drop\n");
@@ -2105,9 +2251,14 @@ int main() {
 		if (gamma_ref > SMALLGAMMA) {
 			densfinorb(1.0, 1.0, alpha, size_phiDSgrid, &size_neDSgrid, ne_DSgrid, x_DSgrid, phi_DSgrid, -1.0, dist_e_GK, mu_e, U_e_DS, size_mu_e, size_vpar_e, 0.0, &flux_eDS, &garbage, ZOOM_DS, 0.0, -999.9, vy_e_wall, mu_e_op, chiM_e, twopidmudvy_e, &size_op_e); 
 			//printf("chiM mu\n");
-			for (i=0; i<size_mu_e; i++) {
-				vpar_e_cut[i] = sqrt(2.0*(chiM_e[i] - mu_e[i]));
+			for (i=0; i<size_op_e; i++) {
+				vpar_e_cut_lookup[i] = sqrt(2.0*(chiM_e[i] - mu_e_op[i]));
 				//printf("%f %f \n", chiM_e[i], mu_e[i]);
+			} 
+			for (i=0; i<size_mu_e; i++) {
+				vpar_e_cut[i] = lin_interp(mu_e_op, vpar_e_cut_lookup, mu_e[i], size_op_e, -1);
+				//vpar_e_cut[i] = sqrt(2.0*(chiM_e[i] - mu_e[i]));
+				//printf("%f %f %f\n", chiM_e[i], mu_e[i], vpar_e_cut[i]);
 			} 
 			printf("flux_eDS = %f\n", flux_eDS);
 		}
@@ -2148,7 +2299,7 @@ int main() {
 		//printf("FINAL CHECK passed. HURRAY!\n");
 		Bohmeval(&Bohm, alpha, TioverTe[0], phi_grid[0], dist_i_GK[0], mu_i[0], U_i[0], vy_i_wall[0], mu_i_op[0], chiM_i[0], twopidmudvy_i[0], size_phigrid, size_mu_i[0], size_U_i[0], dist_e_DK, mu_e, vpar_e, size_mu_e, size_vpar_e, vpar_e_cut, size_op_i[0]); 
 		evalBohmshouldbe(&Bohmshouldbe, phi_grid[0], dist_e_DK, vpar_e, mu_e, size_vpar_e, size_mu_e, vpar_e_cut);
-		printf("Bohm integral should be %f\n", Bohmshouldbe);
+		printf("?Bohm integral should be %f\n", Bohmshouldbe);
 		fprintf(fout, "Bohm integral should be %f\n", Bohmshouldbe);
 		fprintf(fBohm, "%f %f\n", Bohm, Bohmshouldbe);
 		printf("electron heat flux Q_e = %f\n", Q_e);
@@ -2259,7 +2410,83 @@ int main() {
 		}
 	}
 	fclose(fp);
-	fclose(fBohm);
+	snprintf(fpstr, 150, "%s/Fe_mpe_args.txt", dirname);
+	fp = fopen(fpstr, "w");
+	if (fp == NULL) {
+		printf("error when opening file\n");
+	}
+	for (i=0; i<size_mu_e; i++) {
+		fprintf(fp, "%f ", mu_e[i]);
+	}
+	fprintf(fp, "\n");
+	for (j=0; j<size_vpar_e; j++) {
+		fprintf(fp, "%f ", vpar_e[j]);
+	}
+	fclose(fp);
+	snprintf(fpstr, 150, "%s/Fe_mpe.txt", dirname);
+	fp = fopen(fpstr, "w");
+	if (fp == NULL) {
+		printf("error when opening file\n");
+	}
+	for (i=0; i<size_mu_e; i++) {
+		for (j=0; j<size_vpar_e; j++) {
+			fprintf(fp, "%f ", dist_e_DK[i][j]);
+			if (j == size_vpar_e - 1)	
+				fprintf(fp, "\n");
+		}
+	}
+	fclose(fp);
+	//fp = fopen("Fi_mpe_args.txt", "w");
+	//if (fp == NULL) {
+	//	printf("error when opening file\n");
+	//}
+	//for (i=0; i<size_mu_i[0]; i++) {
+	//	fprintf(fp, "%f ", mu_i[0][i]);
+	//}
+	//fprintf(fp, "\n");
+	//for (j=0; j<size_U_i[0]; j++) {
+	//	fprintf(fp, "%f ", U_i[0][j]);
+	//}
+	//fclose(fp);
+	//fp = fopen("Fi_mpe.txt", "w");
+	//if (fp == NULL) {
+	//	printf("error when opening file\n");
+	//}
+	//for (i=0; i<size_mu_i[0]; i++) {
+	//	for (j=0; j<size_U_i[0]; j++) {
+	//		fprintf(fp, "%f ", dist_i_GK[0][i][j]);
+	//		if (j == size_U_i[0] - 1)	
+	//			fprintf(fp, "\n");
+	//	}
+	//}
+	//fclose(fp);
+	//fp = fopen("Fe_mpe_args.txt", "w");
+	//if (fp == NULL) {
+	//	printf("error when opening file\n");
+	//}
+	//for (i=0; i<size_mu_e; i++) {
+	//	fprintf(fp, "%f ", mu_e[i]);
+	//}
+	//fprintf(fp, "\n");
+	//for (j=0; j<size_vpar_e; j++) {
+	//	fprintf(fp, "%f ", vpar_e[j]);
+	//}
+	//fclose(fp);
+	//fp = fopen("Fe_mpe.txt", "w");
+	//if (fp == NULL) {
+	//	printf("error when opening file\n");
+	//}
+	//for (i=0; i<size_mu_e; i++) {
+	//	for (j=0; j<size_vpar_e; j++) {
+	//		fprintf(fp, "%f ", dist_e_DK[i][j]);
+	//		if (j == size_vpar_e - 1)	
+	//			fprintf(fp, "\n");
+	//	}
+	//}
+	//fclose(fp);
+
+
+	fclose(fBohm); //??????
 
 	free(Q_i);
 	free(vpar_e_cut);

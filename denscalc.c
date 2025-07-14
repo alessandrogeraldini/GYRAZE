@@ -1025,7 +1025,7 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 	printf("phi[0] = %f\tphi_grid[0] = %f\n", phi[0], phi_grid[0]);
 
 	// Introduce a cap in energy (U, Uperp) high enough that we can safely assume F = 0
-	Ucap = 10.0 + 10.0/Ti;
+	Ucap = 12.0 + 10.0/Ti;
 	if (bilin_interp(0.0, Ucap, FF, mumu, UU, sizemumu, sizeUU, -1, -1) > 1e-6) printf("ERROR in densfinorb_renorm.c: increase Ucap please\n");
 	else if (bilin_interp(Ucap, 0.0, FF, mumu, UU, sizemumu, sizeUU, -1, -1) > 1e-6) printf("ERROR in densfinorb_renorm.c: increase Ucap please\n");
 	else printf("Ucap has been checked to be large enough\n");
@@ -1653,17 +1653,15 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 					intdU += 0.0;
 				} 
 			}
-
 			intdUantycal = exp(-chiinf[k])*(1.0/(2.0*M_PI));// result with phi =0
-			if (DEBUG == 1) printf("Analytical intdU is %f, numerical one is %f\n", intdUantycal, intdU);
+			if ( (j==0) && (DEBUG == 1) ) printf("Analytical intdU is %f, numerical one is %f\n", intdUantycal, intdU);
 			if (k!=j) {
 				dvx = vxnew - vxold; 
 				//printf("intdU = %f\tintdUold = %f\nvx = %f\tvxold = %f\n", intdU, intdUold, vxnew, vxold);
 				intdvx += 2.0*0.5*dvx*(intdU+intdUold);
 			}
-			intdvxantycal = (2.0/(2.0*sqrt(M_PI)))*exp(-0.5*deltax_inf*j*deltax_inf*j);//*erf(sqrt(xbar[j]*xbar[j]-(pos-xbar[j])*(pos-xbar[j])));
+			//intdvxantycal = (2.0/(2.0*sqrt(M_PI)))*exp(-0.5*deltax_inf*j*deltax_inf*j);//*erf(sqrt(xbar[j]*xbar[j]-(pos-xbar[j])*(pos-xbar[j])));
 			intdvxantycal = sqrt(1.0/(2.0*M_PI))*exp(-0.5*deltax_inf*j*deltax_inf*j);//*erf(sqrt(xbar[j]*xbar[j]-(pos-xbar[j])*(pos-xbar[j])));
-			//intdvx = intdvxantycal;
 		}
 		if (DEBUG == 1)	printf("intdvx is %f, analytical one is %f\n", intdvx, intdvxantycal); 
 		//printf("intdvx is %f, while the analytical one is %f\n", intdvx, intdvxantycal);
@@ -1917,6 +1915,7 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 								Fold = F;
 								Fold_ref = F;
 								vz = dvz*l;
+								//vz = sqrt(2.0*(munew - Uperpnew)) + dvz*l;
 								U = Uperpnew + 0.5*vz*vz;
 								if ( (U > munew) && (U - 0.5*vz*vz + 0.5*(vz-dvz)*(vz-dvz) < munew) ) {
 									frac = (vz - sqrt(2.0*(munew - Uperpnew+TINY)))/dvz;
@@ -2026,10 +2025,10 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 			printf("flux evaluated at x=0 is %f\n", flux0);
 		}
 		if ( (ic != size_xlim) && ( ( 1.0 - n_grid[ic]/n_inf <= margin ) || ( ( (charge < 0.0) && ( - phi_grid[ic] < margin ) ) && ( - phi_grid[0] < 0.2 ) ) ) ) {	
-			printf("ic = %d/%d\n", ic, size_phigrid);
+			printf("ic = %d/%d, size_xlim = %d, margin = %f, condition (< margin?) = %f\n", ic, size_phigrid, size_xlim, margin, 1.0 - n_grid[ic]/n_inf);
 			stop = 1;
 			*size_ngrid = ic; 
-			printf("stopping density evaluation at x = %f, density = %f*n_inf, because either the potential or the charge density perturbation are too small\n", x_grid[ic], n_grid[ic]);
+			printf("stopping density evaluation at x = %f, density = %f*n_inf, because either the potential or the charge density perturbation are too small\n", x_grid[ic], n_grid[ic]/n_inf);
 		}
 		//else if (xx[i] > xx[size_finegrid-1] - limit_rho) {
 		//	printf("ic = %d/%d\n", ic, size_phigrid);
@@ -2094,7 +2093,7 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 		mu_op[j] = muopen[j];
 		chiMax_op[j] = chiMopen[j];
 		dmudvy_op[j] = openorbitopen[j];
-		if (DEBUG == 0) 
+		if (DEBUG == 1) 
 			printf("%d/%d %f %f %f %f\n", j, sizemumu, mu_op[j], vy_op[j], chiMax_op[j], dmudvy_op[j]);
 	}
 	*size_op = maxj/2;
@@ -2103,47 +2102,26 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 
 	// If you love your variables (and your memory) set them free // wise words Robbie
 	free(chiMopen);//
-	printf("1\n");
 	free(openorbitopen);//
-	printf("2\n");
 	free(xbaropen);//
-	printf("3\n");
 	free(Ucritf);//
-	printf("4\n");
 	free(muopen);//
-	printf("5\n");
 	free(xx);//
-	printf("6\n");
 	free(jmclosed);//
-	printf("7\n");
 	free(jmopen);//
-	printf("8\n");
 	free(xifunction);//
-	printf("9\n");
 	free(xbar);//
-	printf("10\n");
 	free(chimin);//
-	printf("11\n");
 	free(chiMax);//
-	printf("12\n");
 	free(chimpp);//
-	printf("13\n");
 	free(crossed_min);//
-	printf("13\n");
 	free(crossed_max);//
-	printf("13\n");
 	free(openorbit);//
-	printf("13\n");
 	free(upperlimit);//
-	printf("13\n");
 	free(lowerlimit);//
-	printf("14\n");
 	free(xtop);//
-	printf("14\n");
 	free(imax);//
-	printf("14\n");
 	free(imin);//
-	printf("14\n");
 
 	for (w = 0; w < sizexbar; w++) {
 		free(chi[w]);//
@@ -2154,32 +2132,23 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 			free(vx[w][s]);//
 		free(vx[w]);//
 	}
-	printf("14\n");
 	free(chi);//
-	printf("15\n");
 	free(Uperp);//
-	printf("15\n");
 	free(mu);//
-	printf("15\n");
 	free(upper);//
-	printf("15\n");
 	free(vx);//
-	printf("15\n");
 
 	free(phi);//
 	free(gg);//
 	free(ff);//
 	free(phip);//
 	free(kdrop);//
-	printf("16\n");
 
 	for (j=0; j<j_inf; j++) {
 		free(vxinf[j]);//
 	}
 	free(vxinf); //
-	printf("17\n");
 	free(chiinf); //
-	printf("18\n");
 	free(muinf);//
 
 	clock_t end = clock(); // finds the end time of the computation

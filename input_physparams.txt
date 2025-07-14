@@ -17,7 +17,7 @@ ADHOC
 1.0
 #set mioverme
 3600
-#set set_current
+#set set_current (flag)
 1
 #set target_current or phi_wall
 0.0
