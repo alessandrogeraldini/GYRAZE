@@ -11,6 +11,9 @@
 #include <gsl/gsl_errno.h>
 #include <gsl/gsl_linalg.h>
 
+/* 
+	CALCULATE THE NEW TOTAL POTENTIAL DROP ACROSS THE COMBINED MAGNETIC PRESHEATH AND DEBYE SHEATH
+*/
 void newvcut(double *v_cut, double v_cutDS, double u_i, double u_e, double current, double error_current, double weight) {
 	double old_v_cut = *v_cut;// u_etilde;
 	//u_etilde = u_e - sqrt(mioverme/M_PI)*0.5*exp(-0.5*old_v_cut*old_v_cut);
@@ -31,6 +34,10 @@ void newvcut(double *v_cut, double v_cutDS, double u_i, double u_e, double curre
 	printf("phi_wall after = %f --> \t", 0.5*(*v_cut)*(*v_cut));
 }
 
+
+/* 
+	CALCULATE THE ERROR IN POISSON'S EQUATION OR QUASINEUTRALITY (if invgammasq = 0)
+*/
 void error_Poisson(double *error, double *x_grid, double *ne_grid, double *ni_grid, double *nioverne, double *phi_grid, int size_phigrid, int size_ngrid, double invgammasq) {
 	int i;
 	double *phip, *phipp;
@@ -76,6 +83,9 @@ void error_Poisson(double *error, double *x_grid, double *ne_grid, double *ni_gr
 	return;
 }
 
+/* 
+	CALCULATE THE NEW POTENTIAL PROFILE ACROSS THE MAGNETIC PRESHEATH (if invgammasq=0) OR DEBYE SHEATH
+*/
 // The function below is momentarily only valid for Ti = Te, so TiovTe = 1 in the physical input file
 void newguess(double *x_grid, double* ne_grid, double *ni_grid, double* phi_grid, int size_phigrid, int size_ngridin, double invgammasq, double v_cutDS, double pfac, double weight) {
 //attempt_at_adapting_grid failed. It was an attempt at refining grid near x=0 using a maximum Delta x maximum Delta phi gridding
@@ -117,7 +127,7 @@ deltaxsq = x_grid[1]*x_grid[1];
 for (i=0;i<size_phigrid;i++)
 	oldphi[i] = phi_grid[i];
 
-if ( invgammasq > TINY ) {
+if ( invgammasq > TINY ) { // DEBYE SHEATH ITERATION
 	phi0 = (ne_grid[size_ngrid-1] - ni_grid[size_ngrid-1])/(pow(phi_grid[size_ngrid-1], pfac));
 	gsl_vector *newphi_gsl = gsl_vector_alloc (size_phigrid-2);
 	gsl_matrix * m = gsl_matrix_alloc (size_phigrid-2, size_phigrid-2);
@@ -214,7 +224,7 @@ if ( invgammasq > TINY ) {
 	gsl_vector_free (newphi_gsl);
 	free(phipp_red);
 }
-else {
+else { // MAGNETIC PRESHEATH ITERATION
 	for (i=0; i< size_phigrid; i++) {
 		if (i< size_ngrid-1)
 			//newphi[i] = log( ni_grid[i] - ne_grid[i] + exp(phi_grid[i])); // + phi_grid[i];

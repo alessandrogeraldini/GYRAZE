@@ -12,7 +12,7 @@
 #set SMALLGAMMA
 0.1999
 #set tol_MP[0] tol_MP[1] tol_DS[0] tol_DS[1] tol_j
-0.005 0.02 0.005 0.02 0.005
+0.001 0.005 0.005 0.02 0.005
 #set WEIGHT_MP WEIGHT_DS WEIGHT_j
 0.3 0.3 0.5
 #set MARGIN_MP MARGIN_DS

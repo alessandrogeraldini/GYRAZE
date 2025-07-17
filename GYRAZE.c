@@ -258,8 +258,8 @@ This function evaluates the Bohm integral for the ions: int f d^3v/v_x^2
 		}
 
 	}
-	printf("density = %f\n", nval);
-	printf("true Bohm = %f\n", Bohmval/nval);
+	//printf("density = %f\n", nval);
+	//printf("true Bohm = %f\n", Bohmval/nval);
 	*Bohm= Bohmval/nval;
 	Bohmval = 0.0;
 	Bohmval2 = 0.0;
@@ -560,9 +560,9 @@ void evalBohmshouldbe(double *Bohmshouldbe, double phi0, double **distfunc, doub
 			}
 		}
 	}
-	printf("n_grid[0,1] = %f,%f\n", n_grid[0], n_grid[1]);
+	//printf("n_grid[0,1] = %f,%f\n", n_grid[0], n_grid[1]);
 	*Bohmshouldbe = (n_grid[1]/n_grid[0] - 1.0)/dphi;
-	printf("Bohmshouldbe = %f\n", *Bohmshouldbe);
+	//printf("Bohmshouldbe = %f\n", *Bohmshouldbe);
 
 	free(F); free(Fp); free(Fpp);
 	for (mu_ind=0; mu_ind< size_mu; mu_ind++){
@@ -1087,6 +1087,7 @@ int main() {
 		printf("Problem opening output file for writing\n");
 		exit(1);
 	}
+
 	/* READ INPUT FILE 
 	Contains the values of: 
 	     alpha
@@ -1097,6 +1098,7 @@ int main() {
 	     fix_current = 1 or 0 (fixes potential),
 	     fixed current/potential 
 	*/
+
 	// Note: multiple species not yet implemented
 	FILE *input, *fBohm, *numinput;
 
@@ -1219,6 +1221,7 @@ int main() {
 	//else fprintf(fp, "%f\n", v_cut);
 	fclose(fp);
 
+
 	for (i=0; i< ndirname; i++) {
 		dirname_it[i] = dirname[i];
 	}
@@ -1248,6 +1251,17 @@ int main() {
 	// initial iteration assumes flat potential profile in magnetic presheath
 	// therefore, the parameter v_cutDS is equal to v_cut
 
+/* 
+	FINISHED READING PHYSICAL INPUT FILE 
+	AND GENERATING THE NEW (IF NOT ALREADY EXISTING) 
+	DIRECTORIES WHERE FILES WILL BE STORED
+	INCLUDING ITERATION SUBDIRECTORIES
+*/
+
+/* 
+	READ NUMERICAL INPUT FILE
+	AND GENERATE ARRAYS OF THE CORRECT SIZES
+*/
 
 	//Now open numerical input file
 	if ((numinput = fopen("input_numparams.txt", "r")) == NULL) { 
@@ -1255,13 +1269,11 @@ int main() {
 		fprintf(fout, "Cannot open %s\n", "input_numparams.txt");
 		exit(EXIT_FAILURE); 
 	}
+
 	ncols = 0; // for counting numbers in each row (line) of file
 	i=0;
-	printf("HELLO\n");
 	while (fgets(line_hundred, 100, numinput) != NULL) {
-		printf("HELLO\n");
 		if ( ( (line_hundred[0] != '#') && (line_hundred[0] != ' ') ) && (line_hundred[0] != '\n') ) {
-			printf("HELLO\n");
 			storevals = linetodata(line_hundred, strlen(line_hundred), &ncols);
 			if (i==0) MAX_IT = *storevals;
 			else if (i==1) {
@@ -1339,8 +1351,17 @@ int main() {
 	}
 	printf("lenMP = %f\n", lenMP);
 	printf("zoomfactor = %d\n", zoomfactor);
+	
+/* 
+	FINISHED READING NUMERICAL INPUT FILE 
+*/
 
-	i=0;
+
+/* 
+	PRINT SOME INPUTS, ALSO TO A FILE
+*/
+
+i=0;
 	printf("INPUT PARAMETERS:\n\tmagnetic field angle = α = %f deg (%f rad)\n\telectron gyroradius over Debye length (reference value at MP entrance) = ρ_e/λ_D = %f\n\tnumber of species = %d\n", alpha_deg, alpha, gamma_ref, num_spec);
 	fprintf(fout, "INPUT PARAMETERS:\n\tmagnetic field angle = α = %f deg (%f rad)\n\telectron gyroradius over Debye length  (reference value at MP entrance) = ρ_e/λ_D = %f\n\tnumber of species = %d\n", alpha_deg, alpha, gamma_ref, num_spec);
 	for (i=0; i<num_spec; i++) {
@@ -1366,6 +1387,13 @@ int main() {
 	fprintf(fout, "size of coarse potential grid in magnetic presheath = %d\n", size_phigrid);
 	printf("grid parameter = %f\n", grid_parameter);
 
+/* 
+	FINISHED PRINTING INPUTS
+*/
+
+/* 
+	BEGIN ALLOCATING MEMORY
+*/
 
 	// form x, phi, ne and ni grids for magnetic presheath
 	x_grid = malloc(size_phigrid*sizeof(double));
@@ -1373,11 +1401,18 @@ int main() {
 	ne_grid = malloc(size_phigrid*sizeof(double));
 	sumni_grid = malloc(size_phigrid*sizeof(double));
 	ni_grid = malloc(num_spec*sizeof(double));
-	vy_i_wall = malloc(num_spec*sizeof(double));
-	mu_i_op = malloc(num_spec*sizeof(double));
-	chiM_i = malloc(num_spec*sizeof(double));
-	twopidmudvy_i = malloc(num_spec*sizeof(double));
+	// WALL DISTRIBUSION FUNCTION BELOW
+// gives size of the above arrays for each species
 	size_op_i = malloc(num_spec*sizeof(int));
+// where values of vy will be stored
+	vy_i_wall = malloc(num_spec*sizeof(double));
+// where values of mu corresponding to a given value of vy at the wall will be stored
+	mu_i_op = malloc(num_spec*sizeof(double)); 
+// gives minimum value of U_perp = (1/2)vx^2 + (1/2)vy^2 + phi(x) corresponding to a given value of vy at the wall
+	chiM_i = malloc(num_spec*sizeof(double)); 
+// gives range of values of (1/2)vx^2, upon multiplying by alpha*vz
+	twopidmudvy_i = malloc(num_spec*sizeof(double)); 
+	// WALL DISTRIBUTION FUNCTION ABOVE
 	flux_i = malloc(num_spec*sizeof(double));
 	Q_i = malloc(num_spec*sizeof(double));
 	mu_i = malloc(num_spec*sizeof(double));
@@ -1542,18 +1577,20 @@ int main() {
 		printf("size_mu_e = %d\nsize_vpar_e=%d\n", size_mu_e, size_vpar_e);
 		fclose(file);
 	}
+	// WALL ION DISTRIBUTION FUNCTION BELOW
 	for (n=0; n<num_spec; n++) {
+// gives size of the above arrays for each species
 		sizevxopen[n] = (int) 50*sqrt((1.0+1.0/TioverTe[n])*(1.0+TioverTe[n]));
-		//vy_i_wall[n]  = malloc(size_mu_i[n]*sizeof(double));
-		//mu_i_op[n]  = malloc(size_mu_i[n]*sizeof(double));
-		//chiM_i[n]  = malloc(size_mu_i[n]*sizeof(double));
-		//twopidmudvy_i[n]  = malloc(size_mu_i[n]*sizeof(double));
+// where values of vy will be stored
 		vy_i_wall[n]  = malloc((zoomfactor*size_phigrid+1)*sizeof(double));
+// where values of mu corresponding to a given value of vy at the wall will be stored
 		mu_i_op[n]  = malloc((zoomfactor*size_phigrid+1)*sizeof(double));
+// gives minimum value of U_perp = (1/2)vx^2 + (1/2)vy^2 + phi(x) corresponding to a given value of vy at the wall
 		chiM_i[n]  = malloc((zoomfactor*size_phigrid+1)*sizeof(double));
+// gives range of values of (1/2)vx^2, upon multiplying by alpha*vz
 		twopidmudvy_i[n]  = malloc((zoomfactor*size_phigrid+1)*sizeof(double));
-		//printf("sizevxopen[%d] = %d\n", n, sizevxopen[n]);
 	}
+	// WALL DISTRIBUTION FUNCTION ABOVE
 	U_e_DS  = malloc(size_vpar_e*sizeof(double));
 	vpar_e_DS  = malloc(size_mu_e*sizeof(double));
 	vpar_e_cut  = malloc(size_mu_e*sizeof(double));
@@ -1577,7 +1614,12 @@ int main() {
 		exit(0);
 	}
 
-	if (TEST_EL==1) {
+	/* 
+		THIS PART IS JUST A TEST FOR THE FINITE ELCTRON DENSITY CALCULATION
+		IT SHOULD ALWAYS BE IGNORED
+		TEST_EL = 0 SHOULD BE USED
+	*/
+	if (TEST_EL==1) { //////// IGNORE
 		printf("WARNING: This is just a test for the finite electron orbits. Set flag TEST_EL = 0 to avoid being here...\n"); 
 		if (gamma_ref < TINY) DS_size = SYS_SIZ;
 		else if (gamma_ref < 1.0) DS_size = SYS_SIZ/gamma_ref;
@@ -1585,36 +1627,21 @@ int main() {
 		size_phiDSgrid = (int) ( DS_size/deltaxDS );
 		printf("size of coarse potential grid in Debye sheath = %d\n", size_phiDSgrid);
 		fprintf(fout, "size of coarse potential grid in Debye sheath = %d\n", size_phiDSgrid);
-		x_DSgrid = malloc(size_phiDSgrid*sizeof(double));
-		phi_DSgrid = malloc(size_phiDSgrid*sizeof(double));
-		ne_DSgrid = malloc(size_phiDSgrid*sizeof(double));
-		ni_DSgrid = malloc(num_spec*sizeof(double));
-		sumni_DSgrid = malloc(size_phiDSgrid*sizeof(double));
-		vy_e_wall  = malloc((ZOOM_DS*size_phiDSgrid+1)*size_phiDSgrid*sizeof(double));
-		mu_e_op  = malloc((ZOOM_DS*size_phiDSgrid+1)*sizeof(double));
-		chiM_e  = malloc((ZOOM_DS*size_phiDSgrid+1)*sizeof(double));
+		x_DSgrid = malloc(size_phiDSgrid*sizeof(double)); phi_DSgrid = malloc(size_phiDSgrid*sizeof(double));
+		ne_DSgrid = malloc(size_phiDSgrid*sizeof(double)); ni_DSgrid = malloc(num_spec*sizeof(double));
+		sumni_DSgrid = malloc(size_phiDSgrid*sizeof(double)); vy_e_wall  = malloc((ZOOM_DS*size_phiDSgrid+1)*size_phiDSgrid*sizeof(double));
+		mu_e_op  = malloc((ZOOM_DS*size_phiDSgrid+1)*sizeof(double)); chiM_e  = malloc((ZOOM_DS*size_phiDSgrid+1)*sizeof(double));
 		twopidmudvy_e  = malloc((ZOOM_DS*size_phiDSgrid+1)*sizeof(double));
-		//size_phiDSgrid = (int) ( ( pow(sqrt(grid_parameter) + sqrt(2.0*system_size), 2.0) - 0.3 ) / deltax );
-		//printf("size_phiDSgrid = %d\n", size_phiDSgrid);
 		v_cut = 1.0;
 		make_phigrid(x_grid, phi_grid, size_phigrid, grid_parameter, deltax, 0, -0.0, 1.0, alpha);
 		for (i=0; i < size_phigrid; i++)
 			printf("phi_grid(%f)=%f\n", x_grid[i], phi_grid[i]);
-		//phi_DSgrid[0] = -5.0;
 		v_cutDS = sqrt(v_cut*v_cut + 2.0*phi_grid[0]) ;
 		make_phigrid(x_DSgrid, phi_DSgrid, size_phiDSgrid, 0.0, deltaxDS, 0, -0.5*v_cutDS*v_cutDS, 1.0/gamma_ref, alpha);
-		//for (i=0; i < size_phiDSgrid; i++)
-		//	printf("phi_DSgrid(%f)=%f\n", x_DSgrid[i], phi_DSgrid[i]);
-		//for (i=0; i< size_mu_e; i++) 
-		//	vpar_e_cut[i] = v_cutDS;
 		printf("v_cutDS = %f\nphi_DSgrid[0] = %f\n", v_cutDS, phi_DSgrid[0]);
 		printf("now evaluate electron density in MPS\n");
 		denszeroorb(-1.0, 1.0, phi_grid, ne_grid, size_phigrid, &flux_e, &Q_e, dist_e_DK, vpar_e, mu_e, size_vpar_e, size_mu_e, vpar_e_cut, 0.0, x_grid, &ne_inf);
-		//v_cutDS = sqrt(v_cut*v_cut + 2.0*phi_grid[0]);
-
 		printf("now evaluate ion density in MPS\n");
-		//size_ngrid = 0;
-		//size_ngrid = (int) ( ( pow(sqrt(grid_parameter) + sqrt(system_size - 5.0), 2.0) - grid_parameter ) / deltax );
 		for (n=0; n<num_spec; n++) 
 			densfinorb(TioverTe[n], lenfactor[n], alpha, size_phigrid, size_ngrid+n, ne_grid, x_grid, phi_grid, ioncharge, dist_i_GK[n], mu_i[n], U_i[n], size_mu_i[n], size_U_i[n], grid_parameter, flux_i+n, Q_i+n, zoomfactor, -MARGIN_MP, -999.9, vy_i_wall[n], mu_i_op[n], chiM_i[n], twopidmudvy_i[n], size_op_i+n);
 		for (ncols=0; ncols<size_mu_e; ncols+=1) {
@@ -1623,79 +1650,63 @@ int main() {
 				Uminmu_MPE = sqrt(2.0*U_e_DS[ind] - 2.0*phi_grid[0]);
 				if (ncols == 0) vpar_e_DS[ind] = sqrt(2.0*U_e_DS[ind] - 2.0*phi_grid[0]);
 				dist_e_GK[ncols][ind] = bilin_interp(mu_e[ncols], Uminmu_MPE, dist_e_DK, mu_e, vpar_e, size_mu_e, size_vpar_e, -1, -1)/ne_grid[0];
-				//printf("%f ", dist_e_GK[ncols][ind]);
 			}
-			//printf("\n");
 		}
 		printf("size grid = %d\n", size_phiDSgrid);
 		densfinorb(1.0, 1.0, alpha, size_phiDSgrid, &size_neDSgrid, ne_DSgrid, x_DSgrid, phi_DSgrid, -1.0, dist_e_GK, mu_e, U_e_DS, size_mu_e, size_vpar_e, 0.0, &flux_eDS, &garbage, ZOOM_DS, -0.5, -999.9, vy_e_wall, mu_e_op, chiM_e, twopidmudvy_e, &size_op_e); 
 		printf("size_neDSgrid = %d\n", size_neDSgrid);
-		//for (i=0; i< size_mu_e; i++) 
-		//	vpar_e_cut[i] = 0.0; //sqrt(-2.0*lin_interp(x_DSgrid, phi_DSgrid, sqrt(mue_cut_lookup[i]), size_phiDSgrid, 1234)); 
-		//for (i=0; i<size_phiDSgrid; i++) printf("x=%f\tanalytical density for negligible gyroradius = %f and calculated ne = %f\n", x_DSgrid[i], (1+erf(sqrt(-2.0*(phi_DSgrid[0]-phi_DSgrid[i]))))*exp(phi_DSgrid[i])/((1+erf(sqrt(-2.0*(phi_DSgrid[0]))))), ne_DSgrid[i]);
-		////for (i=0; i< size_phiDSgrid; i++) printf("ne = %f at x = %f\n", ne_DSgrid[i], x_DSgrid[i]);
-		//denszeroorb(-1.0, 1.0, phi_DSgrid, ne_DSgrid, size_phiDSgrid, &flux_eDS, &Q_eDS, dist_e_DK, vpar_e_DS, mu_e, size_vpar_e, size_mu_e, vpar_e_cut, gamma_ref, x_DSgrid, &ne_inf);
 		for (i=0; i< size_phiDSgrid; i++) printf("ne = %f at x = %f\n", ne_DSgrid[i], x_DSgrid[i]);
 		exit(1);
 	}
+	/* 
+		END OF TEST FOR THE FINITE ELECTRON DENSITY CALCULATION
+	*/
 
 
+/*
+		ITERATE MAGNETIC PRESHEATH POTENTIAL TO FIND SOLUTION
+		FIRST WITH SIMPLIFIED ELECTRON REFLECTION (CUTOFF) MODEL
+*/
 
-// ITERATE MAGNETIC PRESHEATH POTENTIAL TO FIND SOLUTION
-// FIRST WITH SIMPLIFIED ELECTRON REFLECTION (CUTOFF) MODEL
-	N=0;
-	make_phigrid(x_grid, phi_grid, size_phigrid, grid_parameter, deltax, N, phi0_init_MP, 1.0, alpha);
-	//if ( (gamma_ref > 5.0) && (gamma_ref < 0.05) ) {
-	error_MP[0] = error_DS[0] = 100000000.0; // just a very large number to start
+	N=0; // set iteration number to zero
+	make_phigrid(x_grid, phi_grid, size_phigrid, grid_parameter, deltax, N, phi0_init_MP, 1.0, alpha); // construct the grid of x and phi (initial guess) values in the magnetic presheath
 	while ( ( (convergence_MP <= 1) || ( convergence_j <= 1 && fix_current == 1 ) ) && (N<MAX_IT) ) {
 		printf("weight_MP = %f\nITERATION # = %d\n", weight_MP, N);
 		fprintf(fout, "weight_MP = %f\nITERATION # = %d\n", weight_MP, N);
-
 		current = target_current;
-
 		if (phi_grid[0] + 0.5*v_cut*v_cut < 0.0) 
 			grid_parameter = 0.0;
 		else if ( (2.0*factor_small_grid_parameter*(phi_grid[0] + 0.5*v_cut*v_cut) < INITIAL_GRID_PARAMETER) )  {
 			grid_parameter = 2.0*factor_small_grid_parameter*(phi_grid[0] + 0.5*v_cut*v_cut);
 			
 		}
-		//grid_parameter = 0.2; // THIS IS A TEST, REMOVE THIS AFTER!
-		printf("grid_parameter = %f\n", grid_parameter);
 		make_phigrid(x_grid, phi_grid, size_phigrid, grid_parameter, deltax, N, phi0_init_MP, 1.0, alpha);
-		//if (x_grid[0] > DXMIN) {
-		//	deltax = DXMIN*(1.0 + 2.0*sqrt(grid_parameter/DXMIN));
-		//	//size_phigrid = (int) ( ( pow(sqrt(grid_parameter) + sqrt(system_size), 2.0) - grid_parameter ) / deltax );
-		//	if (lenMP > 1.0)
-		//		zoomfactor = (int) (deltax / DXMIN);
-		//	else 
-		//		zoomfactor = (int) ( deltax / (DXMIN*lenMP) ); 
-		//	x_grid = realloc(x_grid, size_phigrid*sizeof(double));
-		//	phi_grid = realloc(phi_grid, size_phigrid*sizeof(double));
-		//	ne_grid = realloc(ne_grid, size_phigrid*sizeof(double));
-		//	for (n=0; n<num_spec; n++) {
-		//		ni_grid[n] = realloc(ni_grid[n], size_phigrid*sizeof(double));
-		//	}
-		//	make_phigrid(x_grid, phi_grid, size_phigrid, grid_parameter, deltax, N, phi0_init_MP, 1.0, alpha);
-		//}
-		printf("grid parameter = %f\tdeltax = %f\tzoomfactor = %d\n", grid_parameter, deltax, zoomfactor);
+		printf("grid_parameter = %f\n", grid_parameter);
 		fprintf(fout, "grid parameter = %f\n", grid_parameter);
 		printf("\t(phi_mp0, phi_ds0, phi_wall) = (%f, %f, %f)\n", phi_grid[0], -0.5*v_cut*v_cut - phi_grid[0], -0.5*v_cut*v_cut);
 		fprintf(fout, "\t(phi_mp0, phi_ds0, phi_wall) = (%f, %f, %f)\n", phi_grid[0], -0.5*v_cut*v_cut - phi_grid[0], -0.5*v_cut*v_cut);
+
+/* 	
+		NOW EVALUATE THE ION DENSITY IN THE MAGNETIC PRESHEATH
+*/
 
 		printf("evaluate ion density in MPS\n");
 		for (i=0; i<size_phigrid; i++) sumni_grid[i] = 0.0;
 		sumflux_i = 0.0;
 		sumQ_i = 0.0;
-		for (n=0; n<num_spec; n++) {
+		for (n=0; n<num_spec; n++) { // n is ion species index
+/*	
+		THIS FUNCTION (densfinorb) IS WHERE ALL THE COMPLICATION IS
+		THE DENSITY IS EVALUATED ONLY ASSUMING SMALL MAGNETIC FIELD ANGLE AT THE WALL
+		ARBITRARY ORBIT DISTORTION (NON-CIRCULAR) IS INCLUDED
+*/
 			densfinorb(TioverTe[n], lenfactor[n], alpha, size_phigrid, size_ngrid+n, ni_grid[n], x_grid, phi_grid, ioncharge, dist_i_GK[n], mu_i[n], U_i[n], size_mu_i[n], size_U_i[n], grid_parameter, flux_i+n, Q_i+n, zoomfactor, MARGIN_MP, -999.9, vy_i_wall[n], mu_i_op[n], chiM_i[n], twopidmudvy_i[n], size_op_i+n);
-			//if (size_sumnigrid > size_ngrid[n])	
-			//	size_sumnigrid = size_ngrid[n];
 			do
 				size_sumnigrid = size_ngrid[n] ;
 			while (size_sumnigrid > size_ngrid[n]) ;
 			sumflux_i += (nioverne[n]*sqrt(TioverTe[n]/mioverme[n])*flux_i[n]);
 			sumQ_i += (nioverne[n]*sqrt(TioverTe[n]/mioverme[n])*Q_i[n]);
-			for (i=0; i<size_sumnigrid; i++) {
+			for (i=0; i<size_sumnigrid; i++) { // i is position index
 				sumni_grid[i] += (nioverne[n]*ni_grid[n][i]);
 				//printf("sumni_grid[%d] = %f\n", i, sumni_grid[i]);
 			}
@@ -1704,8 +1715,15 @@ int main() {
 		printf("densfinorb module ran for all ion species\n");
 		printf("size of total ion density grid = %d\n", size_sumnigrid);
 		fprintf(fout, "size of total ion density grid = %d\n", size_sumnigrid);
-		//if (v_cut*v_cut < - 2.0*phi_grid[0]) v_cut = sqrt(-2.0*phi_grid[0]) + TINY;
+
+/*
+		ION DENSITY CALCULATION FINISHED
+*/
+
+		// calculate new electron velocity cutoff (square root of 2 times potential drop across Debye sheath)
 		v_cutDS = sqrt(v_cut*v_cut + 2.0*phi_grid[0]);
+		// if the magnetic presheath potential drop phi_grid[0] exceeds the total potential drop (1/2)vcut^2
+		// set the Debye sheath potential drop to zero
 		if (v_cut*v_cut < - 2.0*phi_grid[0]) v_cutDS = 0.0;
 		printf("v_cutDS = %f\n", v_cutDS);
 		//if ( 0.5*v_cutDS*v_cutDS < 0.02) {
@@ -1723,7 +1741,7 @@ int main() {
 		//	weight_MP = WEIGHT_MP/3.0;
 		//	weight_j = WEIGHT_j/3.0;
 		//}
-		if (0.5*v_cutDS*v_cutDS < 0.5) {
+		if (0.5*v_cutDS*v_cutDS < 0.5) { // adjust weights in the iteration
 			//weight_DS = WEIGHT_DS/3.0;
 			weight_MP = pow(1.0*v_cutDS*v_cutDS, 0.5)*WEIGHT_MP;
 			weight_j = pow(1.0*v_cutDS*v_cutDS, 0.5)*WEIGHT_j;
@@ -1731,18 +1749,20 @@ int main() {
 			if (weight_MP < 0.00001) weight_MP = 0.00001;
 			if (weight_j < 0.00001) weight_j = 0.00001;
 		}
-		if ( (N%100 == 0) && (N!=0) ) {	
+		if ( (N%100 == 0) && (N!=0) ) {	 // adjust weights
 			weight_MP /= 2.0;
 			weight_j /= 2.0;
 		}
-		if (gamma_ref >= TINY) {
-			//vpar_cut_lookup[0] = 1e10;
+		if (gamma_ref >= TINY) { // ELECTRON CUTOFF MODEL
+			// gamma = infinity model
+			//vpar_cut_lookup[0] = 1e10; 
 			//mue_cut_lookup[0] = 0.0;
 			//for (i=1; i< size_cut; i++) {
 			//	vpar_cut_lookup[i] = vparcut(M_PI - i*M_PI/size_cut, v_cutDS);
 			//	mue_cut_lookup[i] = mucut(M_PI - i*M_PI/size_cut, v_cutDS); }
 			//vpar_cut_lookup[size_cut] = 0.0;
 			//mue_cut_lookup[size_cut] = 1e10;
+			// finite gamma model
 			for (i=0; i< size_mu_e; i++) {
 				vpar_e_cut[i] = vparcut_mu(mu_e[i], v_cutDS);
 				if (0.5*v_cutDS*v_cutDS - 0.54*gamma_ref*sqrt(2.0*mu_e[i])*pow(v_cutDS*v_cutDS*0.5,0.7) > 0.001)
@@ -1757,10 +1777,19 @@ int main() {
 		      for (i=0; i< size_mu_e; i++) 
 			vpar_e_cut[i] = v_cutDS;
 		}
+/* 
+		ROBBIE's ELECTRON DENSITY CALCULATION (ADAPTED TO 2D)
+*/
 		denszeroorb(-1.0, 1.0, phi_grid, ne_grid, size_phigrid, &flux_e, &Q_e, dist_e_DK, vpar_e, mu_e, size_vpar_e, size_mu_e, vpar_e_cut, 0.0, x_grid, &ne_inf);
-		//for (i=0; i<size_phigrid; i++) ne_grid[i] = exp(phi_grid[i]);
+
+		// TARGET BOHM CONDITION 
 		Bohmshouldbe = TioverTe[0]*(ne_grid[1] - ne_grid[0])/( 0.5*(ne_grid[0]+ne_grid[1])*v_cutDS*(sqrt(2.0*(phi_grid[1] - phi_grid[0]) + v_cutDS*v_cutDS) - v_cutDS) ); // phi_DSgrid[0])*ne_grid[0]);
 
+/* 		
+		SAVE DATA TO FILES IN ITERATION DIRECTORIES
+		THIS IS JUST TO CREATE GIFS THAT SHOW THE 
+		EVOLUTION AS THE ITERATION GOES
+*/
 		snprintf(dirnameit, 150, "%s%d", dirname_it, N);
 		mkdir(dirnameit, S_IRWXU);
 		printf("%s%d/phi_n_MP.txt\n", dirname_it, N);
@@ -1778,67 +1807,60 @@ int main() {
 		if (fp == NULL) {
 			printf("error when opening file\n");
 		}
-		for (i=0; i<size_op_i[0]; i++) {
+		// SAVE TARGET DISTRIBUTION FUNCTION INFORMATION
+		for (i=0; i<size_op_i[0]; i++) { // at the moment assumes 1 ion species, hence index 0
 			fprintf(fp, "%f %f %f %f\n", vy_i_wall[0][i], mu_i_op[0][i], chiM_i[0][i], twopidmudvy_i[0][i]);
 		}
 		fclose(fp);
+		// SAVE IMPORTANT MISCELLANEOUS OUTPUT
 		snprintf(fpstr, 150, "%s%d/misc_output.txt", dirname_it, N);
 		fp = fopen(fpstr, "w");
 		if (fp == NULL) {
 			printf("error when opening file\n");
 		}
-		fprintf(fp, "%f\n", sumflux_i-flux_e);
-		fprintf(fp, "%f\n", 0.5*v_cut*v_cut);
-		fprintf(fp, "%f\n", Q_e);
-		fprintf(fp, "%f\n", sumQ_i);
-		fprintf(fp, "%f\n", flux_e);
-		fprintf(fp, "%f\n", sumflux_i);
+		current = sumflux_i - flux_e;
+		fprintf(fp, "%f\n", current); // current at target
+		fprintf(fp, "%f\n", 0.5*v_cut*v_cut); // potential drop across magnetic presheath + Debye sheath
+		fprintf(fp, "%f\n", Q_e); // electron heat flux
+		fprintf(fp, "%f\n", sumQ_i); // ion heat flux
+		fprintf(fp, "%f\n", flux_e); // electron particle flux/current
+		fprintf(fp, "%f\n", sumflux_i); // total ion particle flux/current (although must include Z in sumflux for multiple species)
 
+		/* 
+			HAVE ION AND ELECTRON DENSITY
+			CALCULATE THE ERROR IN QUASINEUTRALITY
+			BASED ON ERROR, DECIDE WHAT TO DO
+		*/
 		error_Poisson(error_MP, x_grid, ne_grid, sumni_grid, nioverne, phi_grid, size_phigrid, size_sumnigrid, 0.0);
 		printf("error_av = %f\terror_max = %f\n", error_MP[0], error_MP[1]);
-		if ( (error_MP[0] < tol_MP[0]) && (error_MP[1] < tol_MP[1]) ) convergence_MP += 1 ;
+		// if error thresholds are satisfied, increase convergence_MP flag by 1
+		if ( (error_MP[0] < tol_MP[0]) && (error_MP[1] < tol_MP[1]) ) convergence_MP += 1 ; 
 		else convergence_MP = 0;
-		if (convergence_MP == 0) {
+		if (convergence_MP == 0) { // calculate new guess
 			printf("MP not converged --> calculate new MP potential guess\n");
 			fprintf(fout, "MP not converged --> calculate new MP potential guess\n");
 			newguess(x_grid, ne_grid, sumni_grid, phi_grid, size_phigrid, size_sumnigrid, 0.0, 0.0, 1.5, weight_MP);// p, m);
 		}
-		else if (convergence_MP == 1) {
-			weight_MP /= 2.0;
+		else { // don't calculate new guess, potential is converged
 			printf("MP converged --> no iteration needed\n");
 			fprintf(fout, "MP converged --> no iteration needed\n");
-			//newguess(x_grid, ne_grid, sumni_grid, phi_grid, size_phigrid, size_sumnigrid, 0.0, 0.0, 1.5, weight_MP);// p, m);
 		}
-		else {
-			printf("MP converged --> no iteration needed\n");
-			fprintf(fout, "MP converged --> no iteration needed\n");
-			//newguess(x_grid, ne_grid, sumni_grid, phi_grid, size_phigrid, size_sumnigrid, 0.0, 0.0, 1.5, weight_MP);// p, m);
-		}
-		current = sumflux_i - flux_e;
-		if (fix_current == 1) {
+		if (fix_current == 1) { // calculate new guess for total potential drop
 			if (fabs(target_current - current) > tol_current*sumflux_i) convergence_j = 0;
 			else convergence_j += 1;
 			printf("target current = %f +/- %f\n", target_current, tol_current*sumflux_i);
 			fprintf(fout, "target current = %f +/- %f\n", target_current, tol_current*sumflux_i);
 			printf("current = %f = ion current (%f) - electron current (%f) = %f x electron current\n", current, sumflux_i, flux_e, current/flux_e);
 			fprintf(fout, "current = %f = ion current (%f) - electron current (%f) = %f x electron current\n", current, sumflux_i, flux_e, current/flux_e);
-			//if (convergence_MP >= 1) {
 			if (convergence_j == 0) {
 				fprintf(fout, "new WALL potential guess\n");
 				printf("new WALL potential guess\n");
 				newvcut(&v_cut, v_cutDS, sumflux_i, flux_e, target_current, tol_current, weight_j);
 			}
-			else if (convergence_j == 1) {
-				//if (weight_j > WEIGHT_j/10.0)
-				//	weight_j *= 0.95;
-				printf("current converged, NO wall potential iteration\n");
-				fprintf(fout, "current converged, NO wall potential iteration\n");
-			}
 			else {
 				printf("current converged, NO wall potential iteration\n");
 				fprintf(fout, "current converged, NO wall potential iteration\n");
 			}
-			//}
 		}
 		else {
 			printf("current = %f = ion current (%f) - electron current (%f) = %f x electron current\n", current, sumflux_i, flux_e, current/flux_e);
@@ -1848,35 +1870,37 @@ int main() {
 		fprintf(fout, "\tcurrent = %f (target = %f)\n", current, target_current);
 		printf("convergence (MP, j) = (%d, %d)\n", convergence_MP, convergence_j);
 
-
-		if ( (convergence_MP > 1) && ( convergence_j > 1 || fix_current == 0) ) {
-			for (i=0; i<size_sumnigrid; i++) sumni_grid[i] = 0.0;
-			sumflux_i = 0.0;
-			sumQ_i = 0.0;
-			for (n=0; n<num_spec; n++) {
-				densfinorb(TioverTe[n], lenfactor[n], alpha, size_phigrid, size_ngrid+n, ni_grid[n], x_grid, phi_grid, ioncharge, dist_i_GK[n], mu_i[n], U_i[n], size_mu_i[n], size_U_i[n], grid_parameter, flux_i+n, Q_i+n, zoomfactor, MARGIN_MP, -999.9, vy_i_wall[n], mu_i_op[n], chiM_i[n], twopidmudvy_i[n], size_op_i+n);
-				//if (size_sumnigrid > size_ngrid[n])	
-				//	size_sumnigrid = size_ngrid[n];
-				do
-					size_sumnigrid = size_ngrid[n] ;
-				while (size_sumnigrid > size_ngrid[n]) ;
-				sumflux_i += (nioverne[n]*sqrt(TioverTe[n]/mioverme[n])*flux_i[n]);
-				sumQ_i += (nioverne[n]*sqrt(TioverTe[n]/mioverme[n])*Q_i[n]);
-				for (i=0; i<size_sumnigrid; i++)
-					sumni_grid[i] += (nioverne[n]*ni_grid[n][i]);
-			}
-			for (n=0; n<num_spec; n++) 
-				densfinorb(TioverTe[n], lenfactor[n], alpha, size_phigrid, size_ngrid+n, ni_grid[n], x_grid, phi_grid, ioncharge, dist_i_GK[n], mu_i[n], U_i[n], size_mu_i[n], size_U_i[n], grid_parameter, flux_i+n, Q_i+n, zoomfactor, MARGIN_MP, -999.9, vy_i_wall[n], mu_i_op[n], chiM_i[n], twopidmudvy_i[n], size_op_i+n);
-			error_Poisson(error_MP, x_grid, ne_grid, sumni_grid, nioverne, phi_grid, size_phigrid, size_sumnigrid, 0.0);
-			printf("error_av = %f\terror_max = %f\n", error_MP[0], error_MP[1]);
-			Bohmeval(&Bohm, alpha, TioverTe[0], phi_grid[0], dist_i_GK[0], mu_i[0], U_i[0], vy_i_wall[0], mu_i_op[0], chiM_i[0], twopidmudvy_i[0], size_phigrid, size_mu_i[0], size_U_i[0], dist_e_DK, mu_e, vpar_e, size_mu_e, size_vpar_e, vpar_e_cut, size_op_i[0]); 
-			printf("Bohm integral should be %f\n", Bohmshouldbe);
-			evalBohmshouldbe(&Bohmshouldbe, phi_grid[0], dist_e_DK, vpar_e, mu_e, size_vpar_e, size_mu_e, vpar_e_cut);
-			printf("Bohm integral should be %f\n", Bohmshouldbe);
-			fprintf(fBohm, "%f %f\n", Bohm, Bohmshouldbe);
-			fprintf(fout, "Bohm integral of converged MP solution should be %f\n", Bohmshouldbe);
-		} 
-		else N++;
+		//if ( (convergence_MP > 1) && ( convergence_j > 1 || fix_current == 0) ) {
+		//	for (i=0; i<size_sumnigrid; i++) sumni_grid[i] = 0.0;
+		//	sumflux_i = 0.0;
+		//	sumQ_i = 0.0;
+		//	for (n=0; n<num_spec; n++) {
+		//		densfinorb(TioverTe[n], lenfactor[n], alpha, size_phigrid, size_ngrid+n, ni_grid[n], x_grid, phi_grid, ioncharge, dist_i_GK[n], mu_i[n], U_i[n], size_mu_i[n], size_U_i[n], grid_parameter, flux_i+n, Q_i+n, zoomfactor, MARGIN_MP, -999.9, vy_i_wall[n], mu_i_op[n], chiM_i[n], twopidmudvy_i[n], size_op_i+n);
+		//		do
+		//			size_sumnigrid = size_ngrid[n] ;
+		//		while (size_sumnigrid > size_ngrid[n]) ;
+		//		sumflux_i += (nioverne[n]*sqrt(TioverTe[n]/mioverme[n])*flux_i[n]);
+		//		sumQ_i += (nioverne[n]*sqrt(TioverTe[n]/mioverme[n])*Q_i[n]);
+		//		for (i=0; i<size_sumnigrid; i++)
+		//			sumni_grid[i] += (nioverne[n]*ni_grid[n][i]);
+		//	}
+		//	for (n=0; n<num_spec; n++) 
+		//		densfinorb(TioverTe[n], lenfactor[n], alpha, size_phigrid, size_ngrid+n, ni_grid[n], x_grid, phi_grid, ioncharge, dist_i_GK[n], mu_i[n], U_i[n], size_mu_i[n], size_U_i[n], grid_parameter, flux_i+n, Q_i+n, zoomfactor, MARGIN_MP, -999.9, vy_i_wall[n], mu_i_op[n], chiM_i[n], twopidmudvy_i[n], size_op_i+n);
+		//	error_Poisson(error_MP, x_grid, ne_grid, sumni_grid, nioverne, phi_grid, size_phigrid, size_sumnigrid, 0.0);
+		//	printf("error_av = %f\terror_max = %f\n", error_MP[0], error_MP[1]);
+		//	Bohmeval(&Bohm, alpha, TioverTe[0], phi_grid[0], dist_i_GK[0], mu_i[0], U_i[0], vy_i_wall[0], mu_i_op[0], chiM_i[0], twopidmudvy_i[0], size_phigrid, size_mu_i[0], size_U_i[0], dist_e_DK, mu_e, vpar_e, size_mu_e, size_vpar_e, vpar_e_cut, size_op_i[0]); 
+		//	printf("Bohm integral should be %f\n", Bohmshouldbe);
+		//	evalBohmshouldbe(&Bohmshouldbe, phi_grid[0], dist_e_DK, vpar_e, mu_e, size_vpar_e, size_mu_e, vpar_e_cut);
+		//	printf("Bohm integral should be %f\n", Bohmshouldbe);
+		//	fprintf(fBohm, "%f %f\n", Bohm, Bohmshouldbe);
+		//	fprintf(fout, "Bohm integral of converged MP solution should be %f\n", Bohmshouldbe);
+		//} 
+		//else N++;
+		N++;
+		Bohmeval(&Bohm, alpha, TioverTe[0], phi_grid[0], dist_i_GK[0], mu_i[0], U_i[0], vy_i_wall[0], mu_i_op[0], chiM_i[0], twopidmudvy_i[0], size_phigrid, size_mu_i[0], size_U_i[0], dist_e_DK, mu_e, vpar_e, size_mu_e, size_vpar_e, vpar_e_cut, size_op_i[0]); 
+		printf("Bohm integral is %f\n", Bohm);
+		evalBohmshouldbe(&Bohmshouldbe, phi_grid[0], dist_e_DK, vpar_e, mu_e, size_vpar_e, size_mu_e, vpar_e_cut);
+		printf("Bohm integral should be %f\n", Bohmshouldbe);
 		printf("electron heat flux Q_e = %f\n", Q_e);
 		printf("electron particle flux Phi = %f\n", flux_e);
 		printf("electron sheath heat transmission coefficient??? = %f\n", Q_e/flux_e);
@@ -1891,6 +1915,8 @@ int main() {
 	sumflux_i = 0.0;
 	sumQ_i = 0.0;
 	for (n=0; n<num_spec; n++) {
+		// CALCULATE DENSITY OVER ENTIRE DOMAIN 
+		// UNTIL 6 or 7 rho_i FROM THE DOMAIN CEILING
 		densfinorb(TioverTe[n], lenfactor[n], alpha, size_phigrid, size_ngrid+n, ni_grid[n], x_grid, phi_grid, ioncharge, dist_i_GK[n], mu_i[n], U_i[n], size_mu_i[n], size_U_i[n], grid_parameter, flux_i+n, Q_i+n, zoomfactor, -1.0, -999.9, vy_i_wall[n], mu_i_op[n], chiM_i[n], twopidmudvy_i[n], size_op_i+n);
 		do
 			size_sumnigrid = size_ngrid[n] ;

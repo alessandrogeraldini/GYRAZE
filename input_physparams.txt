@@ -7,7 +7,7 @@
 ADHOC
 #set alphadeg
 3.0
-#set gamma_ref
+#set gamma_ref (keep zero to solve only magnetic presheath)
 0.0
 #set nspec
 1
