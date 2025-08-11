@@ -27,204 +27,94 @@
 const char *strqty[8] = {"alpha=","gamma=","nspec=", "ni:ne=", "Ti:Te=","mi:me=","jwall=","pwall="};
 const int lenstrqty = 6;
 
-void densionDS(double alpha, double TiovTe, double *ni_DS, double *phi_DS, double phi0, double **FF, double *mu, double *Uminmu, double *vy, double *mu_op, double *chiM, double *twopidmudvy, int size_phi, int size_mu, int size_U, int size_op_i) {
+void densionDS(double alpha, double TiovTe, double *Bohm, double *ni_DS, double *phi_DS, double phi0, double **FF, double *mu, double *Uminmu, double *vy, double *mu_op, double *chiM, double *twopidmudvy, int size_phi, int size_mu, int size_U, int size_op_i) {
 /* 
 This function calculates the ion density in the Debye sheath, which exploits a 1D acceleration of ions in the direction normal to the wall.
 It is not a particularly accurate density calculation; a trapezium rule is used.
-Two different alternative methods are includeded (method 1 and method 2 are the same, method 2 will be deleted, method 3 is different but lessa ccurate)
+Two different alternative methods are includeded (method 1 and method 2 are the same, method 2 will be deleted, method 3 is different but less accurate)
 INPUTS: alpha, temperature ratio TiovTe, potential in Debye sheath phi_DS, potential at the Debye sheath entrance relative to the magnetic presheath phi0 = phi_mp(0),
         distribution function entering the magnetised sheath, its arguments mu and Uminmu, vy at x=0 in the magnetic presheath which is effectively xbar, effective potential maximum chiM, 
         open orbit integral twopidmudvy, and the size of the phi grid, the size of the mu grid, the size of the Uminmu grid.
 OUTPUT: density profile ni_DS
 */
-	int l, i, j, k, count, sizevx=490, method = 1;
-	double Bohm, fvx[sizevx], vx[sizevx];
-	double deltaUperp, halfVx0sq, intgrd, intgrdold, vzk, vzkm, n_inf;
+	int i, j, k, count;
+	double Bohm1, deltaUperp, halfVx0sq, intgrd, intgrdold, vzk, vzkm, n_inf;
 	double intgrdBohmold, intgrdBohm;
 	double Fk, Fkm1;
-	if (method == 1) { // this is the default method used, it works better
-		n_inf = 0.0;
-		Bohm = 0.0;
-		intgrd = 0.0;
-		intgrdBohm = 0.0;
+	n_inf = 0.0;
+	Bohm1 = 0.0;
+	intgrd = 0.0;
+	intgrdBohm = 0.0;
+	for (j=0; j< size_op_i; j++) { // the open orbit integral in vy = Omega * xbar 
+		//printf("vy = %f\tmuop = %f\tchiM = %f\tdmudvy=%f\n", vy[j], mu_op[j], chiM[j], twopidmudvy[j]);
+		intgrdold = intgrd;
+		intgrdBohmold = intgrdBohm;
+		intgrd=0.0;
+		intgrdBohm=0.0;
+		for (k=1; k < size_U; k++) { // the open orbit integral in vz or U
+			halfVx0sq = chiM[j] - 0.5*vy[j]*vy[j] - phi0/TiovTe;
+			deltaUperp = mu_op[j] - chiM[j] ;
+			vzk = sqrt(2.0*(deltaUperp + Uminmu[k]));
+			vzkm = sqrt(2.0*(deltaUperp + Uminmu[k-1]));
+			Fk = bilin_interp(mu_op[j], Uminmu[k], FF, mu, Uminmu, size_mu, size_U, -1, -1);
+			Fkm1 = bilin_interp(mu_op[j], Uminmu[k-1], FF, mu, Uminmu, size_mu, size_U, -1, -1);
+			// intgrd is adding contributions of F * Delta vx
+			intgrd += ( (sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - sqrt(2.0*halfVx0sq)) * Fk + (sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - sqrt(2.0*halfVx0sq)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+			// intgrdBohm is adding contributions of F * Delta (1/vx) 
+			intgrdBohm += ( (-1.0/sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) + 1.0/sqrt(2.0*halfVx0sq)) * Fk + (-1.0/sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) + 1.0/sqrt(2.0*halfVx0sq)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+		}
+		if (j > 0) {
+			n_inf += (intgrd + intgrdold)*0.5*(vy[j] - vy[j-1]);
+			Bohm1 += (intgrdBohm + intgrdBohmold)*0.5*(vy[j] - vy[j-1]);
+		}
+		else if (j==0) {
+			intgrd = 0.0;
+			intgrdBohm = 0.0;
+		}
+	}
+	printf("n_inf = %f\n", n_inf);
+	*Bohm = Bohm1/n_inf;
+	printf("Bohm = %f\n", *Bohm);
+	for (i=0; i < size_phi; i++) { 
+		ni_DS[i] = 0.0;
 		for (j=0; j< size_op_i; j++) {
-			//printf("vy = %f\tmuop = %f\tchiM = %f\tdmudvy=%f\n", vy[j], mu_op[j], chiM[j], twopidmudvy[j]);
 			intgrdold = intgrd;
-			intgrdBohmold = intgrdBohm;
-			intgrd=0.0;
-			intgrdBohm=0.0;
+			intgrd = 0.0;
+			count = 0;
 			for (k=1; k < size_U; k++) {
-				halfVx0sq = chiM[j] - 0.5*vy[j]*vy[j] - phi0/TiovTe;
-				deltaUperp = mu_op[j] - chiM[j] ;
+				halfVx0sq = chiM[j] - 0.5*vy[j]*vy[j] - phi_DS[i]/TiovTe - phi0/TiovTe;
+				deltaUperp = mu_op[j] - chiM[j];
+				if (phi0 == 0.0) {
+					halfVx0sq = -phi_DS[i]; 
+					deltaUperp = 0.0;
+				}
 				vzk = sqrt(2.0*(deltaUperp + Uminmu[k]));
 				vzkm = sqrt(2.0*(deltaUperp + Uminmu[k-1]));
 				Fk = bilin_interp(mu_op[j], Uminmu[k], FF, mu, Uminmu, size_mu, size_U, -1, -1);
 				Fkm1 = bilin_interp(mu_op[j], Uminmu[k-1], FF, mu, Uminmu, size_mu, size_U, -1, -1);
 				intgrd += ( (sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - sqrt(2.0*halfVx0sq)) * Fk + (sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - sqrt(2.0*halfVx0sq)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
-				intgrdBohm += ( (-1.0/sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) + 1.0/sqrt(2.0*halfVx0sq)) * Fk + (-1.0/sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) + 1.0/sqrt(2.0*halfVx0sq)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+				if ((count == 0) && (intgrd != intgrd) ) {
+					count = 1;
+					//printf("???%f %f %f %f\n", halfVx0sq, deltaUperp, vzk, vzkm);
+				}
 			}
-			if (j > 1) {
-				n_inf += (intgrd + intgrdold)*0.5*(vy[j] - vy[j-1]);
-				Bohm += (intgrdBohm + intgrdBohmold)*0.5*(vy[j] - vy[j-1]);
+			if (j > 0) {
+				ni_DS[i] += (intgrd + intgrdold)*0.5*(vy[j] - vy[j-1]);
 			}
-			else if (j==1) {
+			else if (j==0) {
 				intgrd = 0.0;
-				intgrdBohm = 0.0;
 			}
 		}
-		printf("n_inf = %f\n", n_inf);
-		printf("Bohm = %f\n", Bohm/n_inf);
-		for (i=0; i < size_phi; i++) { 
-			ni_DS[i] = 0.0;
-			for (j=0; j< size_op_i; j++) {
-				intgrdold = intgrd;
-				intgrd = 0.0;
-				count = 0;
-				for (k=1; k < size_U; k++) {
-					halfVx0sq = chiM[j] - 0.5*vy[j]*vy[j] - phi_DS[i]/TiovTe - phi0/TiovTe;
-					deltaUperp = mu_op[j] - chiM[j];
-					if (phi0 == 0.0) {
-						halfVx0sq = -phi_DS[i]; 
-						deltaUperp = 0.0;
-					}
-					vzk = sqrt(2.0*(deltaUperp + Uminmu[k]));
-					vzkm = sqrt(2.0*(deltaUperp + Uminmu[k-1]));
-					Fk = bilin_interp(mu_op[j], Uminmu[k], FF, mu, Uminmu, size_mu, size_U, -1, -1);
-					Fkm1 = bilin_interp(mu_op[j], Uminmu[k-1], FF, mu, Uminmu, size_mu, size_U, -1, -1);
-					intgrd += ( (sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - sqrt(2.0*halfVx0sq)) * Fk + (sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - sqrt(2.0*halfVx0sq)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
-					if ((count == 0) && (intgrd != intgrd) ) {
-						count = 1;
-						//printf("???%f %f %f %f\n", halfVx0sq, deltaUperp, vzk, vzkm);
-					}
-				}
-				if (j > 1) {
-					ni_DS[i] += (intgrd + intgrdold)*0.5*(vy[j] - vy[j-1]);
-				}
-				else if (j==1) {
-					intgrd = 0.0;
-				}
-			}
-			ni_DS[i] /= n_inf;
-			//printf("ni_DS[i] = %f, phi_DS[i] = %f\n", ni_DS[i], phi_DS[i]);
-			//printf("ni_DS = %f\tphi_DS = %f\n", ni_DS[i], phi_DS[i]);
-			if (i == size_phi-1) 
-				printf("in densionDS: derivative wrt phi is dndphi = %f\n", (ni_DS[i] - ni_DS[i-1])/(phi_DS[i] - phi_DS[i-1]));
-		}
-	}
-	else if (method == 2) { 
-		n_inf = 0.0;
-		Bohm = 0.0;
-		intgrd = 0.0;
-		intgrdBohm = 0.0;
-		for (j=0; j< size_mu; j++) {
-			intgrdold = intgrd;
-			intgrdBohmold = intgrdBohm;
-			intgrd=0.0;
-			intgrdBohm=0.0;
-			for (k=1; k < size_U; k++) {
-				halfVx0sq = chiM[j] - 0.5*vy[j]*vy[j] - phi0/TiovTe;
-				deltaUperp = mu[j] - chiM[j] ;
-				vzk = sqrt(2.0*(deltaUperp + Uminmu[k]));
-				vzkm = sqrt(2.0*(deltaUperp + Uminmu[k-1]));
-				intgrd += ( (sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - sqrt(2.0*halfVx0sq)) * FF[j][k] + (sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - sqrt(2.0*halfVx0sq)) * FF[j][k-1] ) * 0.5 * ( vzk - vzkm );
-				intgrdBohm += ( (-1.0/sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) + 1.0/sqrt(2.0*halfVx0sq)) * FF[j][k] + (-1.0/sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) + 1.0/sqrt(2.0*halfVx0sq)) * FF[j][k-1] ) * 0.5 * ( vzk - vzkm );
-			}
-			if (j > 1) {
-				n_inf += (intgrd + intgrdold)*0.5*(vy[j] - vy[j-1]);
-				Bohm += (intgrdBohm + intgrdBohmold)*0.5*(vy[j] - vy[j-1]);
-			}
-			else if (j==1) {
-				intgrd = 0.0;
-				intgrdBohm = 0.0;
-			}
-		}
-		printf("n_inf = %f\n", n_inf);
-		printf("Bohm = %f\n", Bohm/n_inf);
-		for (i=0; i < size_phi; i++) { 
-			ni_DS[i] = 0.0;
-			for (j=0; j< size_mu; j++) {
-				intgrdold = intgrd;
-				intgrd = 0.0;
-				count = 0;
-				for (k=1; k < size_U; k++) {
-					halfVx0sq = chiM[j] - 0.5*vy[j]*vy[j] - phi_DS[i]/TiovTe - phi0/TiovTe;
-					deltaUperp = mu[j] - chiM[j];
-					if (phi0 == 0.0) {
-						halfVx0sq = -phi_DS[i]; 
-						deltaUperp = 0.0;
-					}
-					vzk = sqrt(2.0*(deltaUperp + Uminmu[k]));
-					vzkm = sqrt(2.0*(deltaUperp + Uminmu[k-1]));
-					intgrd += ( (sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - sqrt(2.0*halfVx0sq)) * FF[j][k] + (sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - sqrt(2.0*halfVx0sq)) * FF[j][k-1] ) * 0.5 * ( vzk - vzkm );
-					if ((count == 0) && (intgrd != intgrd) ) {
-						count = 1;
-						printf("???%f %f %f %f\n", halfVx0sq, deltaUperp, vzk, vzkm);
-					}
-				}
-				if (j > 1) {
-					ni_DS[i] += (intgrd + intgrdold)*0.5*(vy[j] - vy[j-1]);
-				}
-				else if (j==1) {
-					intgrd = 0.0;
-				}
-			}
-			ni_DS[i] /= n_inf;
-			printf("ni_DS[i] = %f\n", ni_DS[i]);
-			//printf("ni_DS = %f\tphi_DS = %f\n", ni_DS[i], phi_DS[i]);
-			if (i == size_phi-1) 
-				printf("in densionDS: derivative wrt phi is dndphi = %f\n", (ni_DS[i] - ni_DS[i-1])/(phi_DS[i] - phi_DS[i-1]));
-		}
-		printf("ni_DS = %f\tphi_DS = %f\n", (ni_DS[size_phi-1] - ni_DS[size_phi-2])/(phi_DS[size_phi-1] - phi_DS[size_phi-2]) , phi_DS[i]);
-	}
-	else { // method == 3
-		n_inf = 0.0;
-		Bohm = 0.0;
-		intgrd = 0.0;
-		for (i=0; i<sizevx; i+=1) {
-			vx[i] = sqrt(i*49.0/sizevx);
-			fvx[i] = 0.0;
-			for (j=0; j< size_mu; j++) {
-				intgrdold = intgrd;
-				intgrd = 0.0;
-				for (k=1; k < size_U; k++) {
-					halfVx0sq = chiM[j] - 0.5*vy[j]*vy[j] - phi0/TiovTe;
-					deltaUperp = mu[j] - chiM[j] - 0.5*vx[i]*vx[i] + halfVx0sq;
-					deltaUperp = mu[j] - chiM[j];
-					vzk = sqrt(2.0*(deltaUperp + Uminmu[k]));
-					vzkm = sqrt(2.0*(deltaUperp + Uminmu[k-1]));
-					if ( (0.5*vx[i]*vx[i] > halfVx0sq) && (0.5*vx[i]*vx[i] < halfVx0sq +  alpha*vzk*twopidmudvy[j]) && (0.5*vx[i]*vx[i] < halfVx0sq +  alpha*vzkm*twopidmudvy[j]) ) 
-						intgrd += 0.5*( (FF[j][k] + FF[j][k-1])*(vzk - vzkm) );
-					else if ( (0.5*vx[i]*vx[i] > halfVx0sq) && (0.5*vx[i]*vx[i] < halfVx0sq +  alpha*vzk*twopidmudvy[j]) && (0.5*vx[i]*vx[i] > halfVx0sq +  alpha*vzkm*twopidmudvy[j]) ) 
-						intgrd += 0.5*( (FF[j][k] + 0.0)*(vzk - sqrt((0.5*vx[i]*vx[i]-halfVx0sq)/(alpha*twopidmudvy[j])) ) );
-				}
-				if (j > 1) 
-					fvx[i] += (intgrd + intgrdold)*0.5*(vy[j] - vy[j-1]);
-				else if (j==1) {
-					intgrd = 0.0;
-				}
-				//if (fvx[i] > maxf)
-				//	maxf = fvx[i];
-			}
-			if (i > 1) {
-				Bohm += ( 2.0*(fvx[i] - fvx[i-1])/(vx[i] + vx[i-1])) ;
-				n_inf += ( 0.5*(fvx[i] + fvx[i-1])*(vx[i] - vx[i-1]) );
-			}
-		}
-		for (l=0; l< size_phi; l++) {
-			ni_DS[l] = 0.0;
-			for (i=0; i<sizevx; i+=1) {
-				vx[i] = sqrt(i*49.0/sizevx - 2.0*phi_DS[l]);
-				if (i>1)
-					ni_DS[l] += ( 0.5 * ( fvx[i] + fvx[i-1] ) * (vx[i] - vx[i-1]) );
-			}
-			ni_DS[l] /= n_inf;
-			printf("ni_DS[l] = %f\n", ni_DS[l]);
-		}	
+		ni_DS[i] /= n_inf;
+		//printf("ni_DS[i] = %f, phi_DS[i] = %f\n", ni_DS[i], phi_DS[i]);
+		//printf("ni_DS = %f\tphi_DS = %f\n", ni_DS[i], phi_DS[i]);
+		if (i == size_phi-1) 
+			printf("in densionDS: derivative wrt phi is dndphi = %f\n", (ni_DS[i] - ni_DS[i-1])/(phi_DS[i] - phi_DS[i-1]));
 	}
 	return;
 }
 
-void Bohmeval(double *Bohm, double alpha, double TiovTe, double phi0, double **FF, double *mu, double *Uminmu, double *vy, double *mu_op, double *chiM, double *twopidmudvy, int size_phi, int size_mu, int size_U, double **FF_e, double *mu_e, double *vpar_e, int size_mu_e, int size_vpar_e, double *vpar_e_cut, int sizemuop) {
+void Bohmeval(double *Bohm, double alpha, double TiovTe, double phi0, double **FF, double *mu, double *Uminmu, double *vy, double *mu_op, double *chiM, double *twopidmudvy, int size_mu, int size_U, int sizemuop) {
 /*
 This function evaluates the Bohm integral for the ions: int f d^3v/v_x^2
 */
@@ -278,10 +168,6 @@ This function evaluates the Bohm integral for the ions: int f d^3v/v_x^2
 				halfVx0sq = chiM[j] - 0.5*vy[j]*vy[j] - phi0/TiovTe;
 				deltaUperp = mu_op[j] - chiM[j] - 0.5*vx[i]*vx[i] + halfVx0sq;
 				deltaUperp = mu_op[j] - chiM[j];
-				////if (phi0 == 0.0) {
-				////	halfVx0sq = -phi_DS[i]; 
-				////	deltaUperp = 0.0;
-				////}
 				vzk = sqrt(2.0*(deltaUperp + Uminmu[k]));
 				vzkm = sqrt(2.0*(deltaUperp + Uminmu[k-1]));
 				Fk = bilin_interp(mu_op[j], Uminmu[k], FF, mu, Uminmu, size_mu, size_U, -1, -1);
@@ -1020,7 +906,7 @@ double vparcut_mu(double mu, double vcut) {
 }
 
 // The main function of MAGSHEATH
-int main() {
+int main(void) {
 // computation time
 	int MAX_IT, ZOOM_DS, ZOOM_MP;
 	double INITIAL_GRID_PARAMETER, SYS_SIZ, MAXMU, DMU, MAXVPAR, MAXVPAR_I, DVPAR, DVPAR_I, SMALLGAMMA, tol_MP[2], tol_DS[2], tol_current, WEIGHT_MP, WEIGHT_DS, WEIGHT_j, MARGIN_MP, MARGIN_DS, GRIDSIZE_MP, GRIDSIZE_DS; // DXMIN
@@ -1210,15 +1096,6 @@ int main() {
 	}
 	
 	fclose(input);
-	//fprintf(fp, "%f\n", alpha_deg);
-	//fprintf(fp, "%f\n", gamma_ref);
-	//fprintf(fp, "%d\n", num_spec);
-	//fprintf(fp, "%f\n", nioverne[0]);
-	//fprintf(fp, "%f\n", TioverTe[0]);
-	//fprintf(fp, "%f\n", mioverme[0]);
-	//fprintf(fp, "%d\n", fix_current);
-	//if (fix_current == 1) fprintf(fp, "%f\n", target_current);
-	//else fprintf(fp, "%f\n", v_cut);
 	fclose(fp);
 
 
@@ -1455,7 +1332,7 @@ i=0;
 			}
 		}
 		Figen(dist_i_GK, U_i, mu_i, num_spec, nioverne, mioverme, TioverTe, size_U_i, size_mu_i, DVPAR_I, DMU);
-		Figenerate(FiGK, num_spec, nioverne, mioverme, TioverTe, DVPAR_I, DMU);
+		//Figenerate(FiGK, num_spec, nioverne, mioverme, TioverTe, DVPAR_I, DMU);
 		//for (i=0; i < size_mu_i[0]; i++) {
 		//	printf("mu = %f\n", mu_i[0][i]);
 		//	for (j=0; j < size_U_i[0]; j++) {
@@ -1592,7 +1469,7 @@ i=0;
 	}
 	// WALL DISTRIBUTION FUNCTION ABOVE
 	U_e_DS  = malloc(size_vpar_e*sizeof(double));
-	vpar_e_DS  = malloc(size_mu_e*sizeof(double));
+	vpar_e_DS  = malloc(size_vpar_e*sizeof(double));
 	vpar_e_cut  = malloc(size_mu_e*sizeof(double));
 
 	/*
@@ -1888,7 +1765,7 @@ i=0;
 		//		densfinorb(TioverTe[n], lenfactor[n], alpha, size_phigrid, size_ngrid+n, ni_grid[n], x_grid, phi_grid, ioncharge, dist_i_GK[n], mu_i[n], U_i[n], size_mu_i[n], size_U_i[n], grid_parameter, flux_i+n, Q_i+n, zoomfactor, MARGIN_MP, -999.9, vy_i_wall[n], mu_i_op[n], chiM_i[n], twopidmudvy_i[n], size_op_i+n);
 		//	error_Poisson(error_MP, x_grid, ne_grid, sumni_grid, nioverne, phi_grid, size_phigrid, size_sumnigrid, 0.0);
 		//	printf("error_av = %f\terror_max = %f\n", error_MP[0], error_MP[1]);
-		//	Bohmeval(&Bohm, alpha, TioverTe[0], phi_grid[0], dist_i_GK[0], mu_i[0], U_i[0], vy_i_wall[0], mu_i_op[0], chiM_i[0], twopidmudvy_i[0], size_phigrid, size_mu_i[0], size_U_i[0], dist_e_DK, mu_e, vpar_e, size_mu_e, size_vpar_e, vpar_e_cut, size_op_i[0]); 
+		//	Bohmeval(&Bohm, alpha, TioverTe[0], phi_grid[0], dist_i_GK[0], mu_i[0], U_i[0], vy_i_wall[0], mu_i_op[0], chiM_i[0], twopidmudvy_i[0], size_mu_i[0], size_U_i[0],  size_op_i[0]); 
 		//	printf("Bohm integral should be %f\n", Bohmshouldbe);
 		//	evalBohmshouldbe(&Bohmshouldbe, phi_grid[0], dist_e_DK, vpar_e, mu_e, size_vpar_e, size_mu_e, vpar_e_cut);
 		//	printf("Bohm integral should be %f\n", Bohmshouldbe);
@@ -1897,7 +1774,7 @@ i=0;
 		//} 
 		//else N++;
 		N++;
-		Bohmeval(&Bohm, alpha, TioverTe[0], phi_grid[0], dist_i_GK[0], mu_i[0], U_i[0], vy_i_wall[0], mu_i_op[0], chiM_i[0], twopidmudvy_i[0], size_phigrid, size_mu_i[0], size_U_i[0], dist_e_DK, mu_e, vpar_e, size_mu_e, size_vpar_e, vpar_e_cut, size_op_i[0]); 
+		//Bohmeval(&Bohm, alpha, TioverTe[0], phi_grid[0], dist_i_GK[0], mu_i[0], U_i[0], vy_i_wall[0], mu_i_op[0], chiM_i[0], twopidmudvy_i[0], size_mu_i[0], size_U_i[0], size_op_i[0]); 
 		printf("Bohm integral is %f\n", Bohm);
 		evalBohmshouldbe(&Bohmshouldbe, phi_grid[0], dist_e_DK, vpar_e, mu_e, size_vpar_e, size_mu_e, vpar_e_cut);
 		printf("Bohm integral should be %f\n", Bohmshouldbe);
@@ -2004,37 +1881,19 @@ i=0;
 				for (i=0; i<size_sumnigrid; i++)
 					sumni_grid[i] += (nioverne[n]*ni_grid[n][i]);
 			}
-			//clock_t gsl_t = clock(); 
-			//m = gsl_matrix_alloc (size_neDSgrid-2, size_neDSgrid-2);
-			//p = gsl_permutation_alloc (size_neDSgrid-2);
-			//for (i = 0; i < size_neDSgrid-2; i++) {
-			//	for (j = 0; j < size_neDSgrid-2; j++) {
-			//		if (i == j) 
-			//			gsl_matrix_set (m, i, j, -2.0);
-			//      //gsl_matrix_set (m, i, j, -2.0 - deltaxsq*exp(phi_grid[i])/gammasq);
-			//		else if ( (i==j+1) || (i==j-1) )
-			//		      gsl_matrix_set (m, i, j, 1.0);
-			//		else 
-			//		      gsl_matrix_set (m, i, j, 0.0);
-			//	}
-			//}
-			//gsl_linalg_LU_decomp (m, p, &s);
-			//clock_t gsl_t_end = clock(); 
-			//printf("time for LU decomp is %f\n",  (double) (gsl_t_end - gsl_t) / CLOCKS_PER_SEC);
 			printf("flux_eDS = (%f, %f)\tflux_i = %f\n", flux_eDS*ne_grid[0], flux_e, sumflux_i);
 			if (phi_grid[0] + 0.5*v_cut*v_cut < 0.0) 
 				grid_parameter = 0.0;
 			else if ( (2.0*factor_small_grid_parameter*(phi_grid[0] + 0.5*v_cut*v_cut) < INITIAL_GRID_PARAMETER) )  {// && (phi_grid[0] + 0.5*v_cut*v_cut >1.0e-13 ) )   
 				grid_parameter = 2.0*factor_small_grid_parameter*(phi_grid[0] + 0.5*v_cut*v_cut);
 			}
-			//grid_parameter = 0.2; // THIS IS A TEST, REMOVE THIS AFTER!
 			make_phigrid(x_grid, phi_grid, size_phigrid, grid_parameter, deltax, N, phi0_init_MP, 1.0, alpha);
 			printf("grid_parameter = %f\n", grid_parameter);
 			printf("evaluate ion density in DS\n");
 			for (i=0; i<size_phiDSgrid; i++) sumni_DSgrid[i] = 0.0;
 			for (n=0; n<num_spec; n++) {
 				//printf("n (species index) = %d\n", n);
-				densionDS(alpha, TioverTe[n], ni_DSgrid[n], phi_DSgrid, phi_grid[0], dist_i_GK[n], mu_i[n], U_i[n], vy_i_wall[n], mu_i_op[n], chiM_i[n], twopidmudvy_i[n], size_phiDSgrid, size_mu_i[n], size_U_i[n], size_op_i[n]);
+				densionDS(alpha, TioverTe[n], &Bohm, ni_DSgrid[n], phi_DSgrid, phi_grid[0], dist_i_GK[n], mu_i[n], U_i[n], vy_i_wall[n], mu_i_op[n], chiM_i[n], twopidmudvy_i[n], size_phiDSgrid, size_mu_i[n], size_U_i[n], size_op_i[n]);
 				//printf("nioverne[0]=%f\n", nioverne[n]);
 				for (i=0; i<size_phiDSgrid; i++){
 					sumni_DSgrid[i] += (nioverne[n]*ni_DSgrid[n][i]);
@@ -2093,7 +1952,8 @@ i=0;
 			error_Poisson(error_MP, x_grid, ne_grid, sumni_grid, nioverne, phi_grid, size_phigrid, size_sumnigrid, 0.0);
 			printf("error_av = %f\terror_max = %f\n", error_MP[0], error_MP[1]);
 			if ( (error_MP[0] < tol_MP[0]) && (error_MP[1] < tol_MP[1]) ) convergence_MP += 1 ;
-			else convergence_MP = 0;
+			else 
+				convergence_MP = 0;
 			if (convergence_MP == 0) { // || (convergence_j == 0) ) 
 				newguess(x_grid, ne_grid, sumni_grid, phi_grid, size_phigrid, size_sumnigrid, 0.0, 0.0, 1.5, weight_MP);
 				printf("MP not converged\n");
@@ -2101,7 +1961,7 @@ i=0;
 			}
 			else if (convergence_MP == 1) {
 				//newguess(x_grid, ne_grid, sumni_grid, phi_grid, size_phigrid, size_sumnigrid, 0.0, 0.0, 1.5, weight_MP);
-				weight_MP/=2.0;
+				//weight_MP/=2.0;
 				printf("MP converged\n");
 				fprintf(fout, "MP converged\n");
 			}
@@ -2113,13 +1973,14 @@ i=0;
 			
 			current = sumflux_i - flux_e; 
 			if (fix_current == 1) {
-				if (fabs(target_current - current) > tol_current*sumflux_i) convergence_j = 0;
+				if (fabs(target_current - current) > tol_current*sumflux_i) 
+					convergence_j = 0;
 				else convergence_j += 1;
 				printf("target current = %f +/- %f\n", target_current, tol_current*sumflux_i);
 				fprintf(fout, "target current = %f +/- %f\n", target_current, tol_current*sumflux_i);
 				printf("current = %f = ion current (%f) - electron current (%f) = %f x electron current\n", current, sumflux_i, flux_e, current/flux_e);
 				fprintf(fout, "current = %f = ion current (%f) - electron current (%f) = %f x electron current\n", current, sumflux_i, flux_e, current/flux_e);
-				if ( (convergence_MP >= 1) && (convergence_DS >= 1) ) {
+				//if ( (convergence_MP >= 1) && (convergence_DS >= 1) ) {
 				if (convergence_j == 0) {
 					printf("new WALL potential guess\n");
 					fprintf(fout, "new WALL potential guess\n");
@@ -2135,7 +1996,7 @@ i=0;
 					printf("current converged, NO wall potential iteration\n");
 					fprintf(fout, "current converged, NO wall potential iteration\n");
 				}
-				}
+				//}
 			}
 			else {
 				printf("current = %f = %f x ion current", current, current/flux_e);
@@ -2231,20 +2092,20 @@ i=0;
 
 			if ( (error_DS[0] < tol_DS[0]) && (error_DS[1] < tol_DS[1]) ) convergence_DS += 1 ;
 			else convergence_DS = 0;
-			if (convergence_DS == 0) { 
+			if (convergence_DS == 0 || convergence_MP == 0 || convergence_j == 0) { 
 				printf("phi_DSgrid[0] = %f\n", phi_DSgrid[0]);
 				newguess(x_DSgrid, ne_DSgrid, sumni_DSgrid, phi_DSgrid, size_phiDSgrid, size_neDSgrid, 1.0/(gamma_ref*gamma_ref), v_cutDS, 2.0, weight_DS);// p, m);
 				printf("DS not converged\n");
 				fprintf(fout, "DS not converged\n");
 			}
 			else if (convergence_DS == 1) {
-				newguess(x_DSgrid, ne_DSgrid, sumni_DSgrid, phi_DSgrid, size_phiDSgrid, size_neDSgrid, 1.0/(gamma_ref*gamma_ref), v_cutDS, 2.0, weight_DS);// p, m);
+				//newguess(x_DSgrid, ne_DSgrid, sumni_DSgrid, phi_DSgrid, size_phiDSgrid, size_neDSgrid, 1.0/(gamma_ref*gamma_ref), v_cutDS, 2.0, weight_DS);// p, m);
 				//weight_DS /= 2.0;
 				printf("DS converged\n");
 				fprintf(fout, "DS converged\n");
 			}
 			else {
-				newguess(x_DSgrid, ne_DSgrid, sumni_DSgrid, phi_DSgrid, size_phiDSgrid, size_neDSgrid, 1.0/(gamma_ref*gamma_ref), v_cutDS, 2.0, weight_DS);// p, m);
+				//newguess(x_DSgrid, ne_DSgrid, sumni_DSgrid, phi_DSgrid, size_phiDSgrid, size_neDSgrid, 1.0/(gamma_ref*gamma_ref), v_cutDS, 2.0, weight_DS);// p, m);
 				printf("DS converged\n");
 				fprintf(fout, "DS converged\n");
 			}
@@ -2279,7 +2140,7 @@ i=0;
 			//printf("chiM mu\n");
 			for (i=0; i<size_op_e; i++) {
 				vpar_e_cut_lookup[i] = sqrt(2.0*(chiM_e[i] - mu_e_op[i]));
-				//printf("%f %f \n", chiM_e[i], mu_e[i]);
+				//printf("%f %f  %f\n", chiM_e[i], mu_e[i], vpar_e_cut_lookup[i]);
 			} 
 			for (i=0; i<size_mu_e; i++) {
 				vpar_e_cut[i] = lin_interp(mu_e_op, vpar_e_cut_lookup, mu_e[i], size_op_e, -1);
@@ -2323,7 +2184,7 @@ i=0;
 			exit(-1);
 		}
 		//printf("FINAL CHECK passed. HURRAY!\n");
-		Bohmeval(&Bohm, alpha, TioverTe[0], phi_grid[0], dist_i_GK[0], mu_i[0], U_i[0], vy_i_wall[0], mu_i_op[0], chiM_i[0], twopidmudvy_i[0], size_phigrid, size_mu_i[0], size_U_i[0], dist_e_DK, mu_e, vpar_e, size_mu_e, size_vpar_e, vpar_e_cut, size_op_i[0]); 
+		//Bohmeval(&Bohm, alpha, TioverTe[0], phi_grid[0], dist_i_GK[0], mu_i[0], U_i[0], vy_i_wall[0], mu_i_op[0], chiM_i[0], twopidmudvy_i[0], size_mu_i[0], size_U_i[0], size_op_i[0]); 
 		evalBohmshouldbe(&Bohmshouldbe, phi_grid[0], dist_e_DK, vpar_e, mu_e, size_vpar_e, size_mu_e, vpar_e_cut);
 		printf("?Bohm integral should be %f\n", Bohmshouldbe);
 		fprintf(fout, "Bohm integral should be %f\n", Bohmshouldbe);
@@ -2462,58 +2323,7 @@ i=0;
 		}
 	}
 	fclose(fp);
-	//fp = fopen("Fi_mpe_args.txt", "w");
-	//if (fp == NULL) {
-	//	printf("error when opening file\n");
-	//}
-	//for (i=0; i<size_mu_i[0]; i++) {
-	//	fprintf(fp, "%f ", mu_i[0][i]);
-	//}
-	//fprintf(fp, "\n");
-	//for (j=0; j<size_U_i[0]; j++) {
-	//	fprintf(fp, "%f ", U_i[0][j]);
-	//}
-	//fclose(fp);
-	//fp = fopen("Fi_mpe.txt", "w");
-	//if (fp == NULL) {
-	//	printf("error when opening file\n");
-	//}
-	//for (i=0; i<size_mu_i[0]; i++) {
-	//	for (j=0; j<size_U_i[0]; j++) {
-	//		fprintf(fp, "%f ", dist_i_GK[0][i][j]);
-	//		if (j == size_U_i[0] - 1)	
-	//			fprintf(fp, "\n");
-	//	}
-	//}
-	//fclose(fp);
-	//fp = fopen("Fe_mpe_args.txt", "w");
-	//if (fp == NULL) {
-	//	printf("error when opening file\n");
-	//}
-	//for (i=0; i<size_mu_e; i++) {
-	//	fprintf(fp, "%f ", mu_e[i]);
-	//}
-	//fprintf(fp, "\n");
-	//for (j=0; j<size_vpar_e; j++) {
-	//	fprintf(fp, "%f ", vpar_e[j]);
-	//}
-	//fclose(fp);
-	//fp = fopen("Fe_mpe.txt", "w");
-	//if (fp == NULL) {
-	//	printf("error when opening file\n");
-	//}
-	//for (i=0; i<size_mu_e; i++) {
-	//	for (j=0; j<size_vpar_e; j++) {
-	//		fprintf(fp, "%f ", dist_e_DK[i][j]);
-	//		if (j == size_vpar_e - 1)	
-	//			fprintf(fp, "\n");
-	//	}
-	//}
-	//fclose(fp);
-
-
 	fclose(fBohm); //??????
-
 	free(Q_i);
 	free(vpar_e_cut);
 	free(x_grid);

@@ -1,3 +1,4 @@
+
 // Authors: Aessandro Geraldini and Robbie Ewart
 /* This script calculates the density profiles of charged particles in the magnetised sheath for a given potential profile and entrance distribution function: denszeroorb neglects gyro-orbit size; densfinorb includes distorted gyro-orbits for magnetic field angle α<<1. 
  * */
@@ -59,7 +60,7 @@ double smallrhoefrac(double x, double mu) {
 
 void denszeroorb(double charge, double TeovTs, double *phi_real, double *n_grid, int p_size, double *Phi_point, double *Qe_point, double **distfunc, double *vpar, double *mu, int size_vpar, int size_mu, double *vpar_cut_lookup, double gamma, double *x_grid, double *n_infp) {
 	//define variables
-	int count = 0;
+	//int count = 0;
 	int vi, vi_1, p, len_F; //vi is a counting variable that will be saved for sums over velocity space, vi_1 is a special value in velocity space devoted to the first point, p is a counting variable that will be saved for counting over phi space, len_F saves the number of entries in the distribution;
 	double *phi, *vparacc, phip = -0.000000001 ;
 	double Phi=0.0, Qe=0.0, n_inf = 0.0;
@@ -83,9 +84,8 @@ void denszeroorb(double charge, double TeovTs, double *phi_real, double *n_grid,
 	for (p=0; p<p_size; p++) {
 		phi[p] = -phi_real[p]*charge*TeovTs;
 	}
-
-
 	ddistdvpar = malloc(size_mu * sizeof(double));
+	nepart = malloc(size_mu*sizeof(double));
 	ddistdvpartwo = malloc(size_mu * sizeof(double));
 	in_err = malloc(p_size * sizeof(double));
 	af_err = malloc(p_size * sizeof(double));
@@ -142,20 +142,18 @@ void denszeroorb(double charge, double TeovTs, double *phi_real, double *n_grid,
 	*/
 	if (size_mu > 1) {
 		printf("In 2D integration\n");
-		nepart = malloc(size_mu*sizeof(double));
 		// for finite electron gyroradius effects, we need to integrate in mu as well
 		// cutoff function for large rhoe
-
 		// Normalization at infinity
 		n_inf = 0.0;
 		v_min = 0.0;
 		for (mu_ind=0; mu_ind<size_mu; mu_ind++) {
-			count = 0;
+			//count = 0;
 			nepart[mu_ind] = 0.0;
 			vpar_cut = vpar_cut_lookup[mu_ind]; 
-			//lin_interp(mue_cut_lookup, vpar_cut_lookup, mu[mu_ind], size_cut, 205);
-			//printf("in makelookup.c: mu = %f and vpar_cut_DSE = %f\n", mu[mu_ind], vpar_cut);
+			////lin_interp(mue_cut_lookup, vpar_cut_lookup, mu[mu_ind], size_cut, 205);
 			vpar_cut = sqrt(vpar_cut*vpar_cut + 2.0*(-phi[0]) + TINY);
+			//printf("mu_ind = %d/%d\n", mu_ind, size_mu);
 			for (vi = 0; vi < len_F - 1; vi++) {
 				F[vi]     = distfunc[mu_ind][vi];
 				Fp[vi]    = ddistdvpar[mu_ind][vi];
@@ -165,7 +163,7 @@ void denszeroorb(double charge, double TeovTs, double *phi_real, double *n_grid,
 			{
 				for (vi = 0; vi < len_F - 2; vi++)
 					nepart[mu_ind] += (F[vi] + F[vi + 1]) * v_s;
-				count++;
+				//count++;
 			}
 			else { // now there is a cut-off
 				vi_1 = 0;
@@ -425,7 +423,6 @@ void denszeroorb(double charge, double TeovTs, double *phi_real, double *n_grid,
 		}
 	//n_pre[p] = 0.5 * exp(phi[p]) * (1 + erf(sqrt(phi[p] -phi[0] )));
 	//printf("n_grid[%d] = %f, n_pre = %f\n", p, n_grid[p], n_pre[p]);
-	//}
 
 		// ELECTRON FLUX electron flux
 		for (mu_ind=0; mu_ind<size_mu; mu_ind++) {
@@ -815,7 +812,6 @@ void denszeroorb(double charge, double TeovTs, double *phi_real, double *n_grid,
 			if (p== p_size-1)
 				printf("in denszeroorb: charge = %f, derivative wrt phi is dndphi = %f\n", charge, (n_grid[p] - n_grid[p-1])/(phi[p] - phi[p-1]));
 		}
-		free(nepart);
 	}
 	else {
 		printf("In 1D ion integration\n");
@@ -827,14 +823,11 @@ void denszeroorb(double charge, double TeovTs, double *phi_real, double *n_grid,
 		}
 		for (p=0; p<p_size;p++) {
 			n_grid[p] = 0.0;
-			//if (phi[p] < 0.0) n_grid[p] = 1.0;
-			//else {
-				for (vi = 0; vi < len_F - 1; vi++) {
-					vparacc[vi] = sqrt(vpar[vi]*vpar[vi] + 2.0*phi[p]);
-					if (vi != 0)
-						n_grid[p] += 0.5*(F[vi] + F[vi-1])*(vparacc[vi] - vparacc[vi-1]);
-				}
-			//}
+			for (vi = 0; vi < len_F - 1; vi++) {
+				vparacc[vi] = sqrt(vpar[vi]*vpar[vi] + 2.0*phi[p]);
+				if (vi != 0)
+					n_grid[p] += 0.5*(F[vi] + F[vi-1])*(vparacc[vi] - vparacc[vi-1]);
+			}
 		}
 	}
 
@@ -874,12 +867,6 @@ void denszeroorb(double charge, double TeovTs, double *phi_real, double *n_grid,
 			fprintf(fptr1, "%.15f\n", in_err[p]);
 		}
 		fclose(fptr1);
-		//fptr1 = fopen("phi.txt", "w");
-		//for (p = 0; p < p_size; p++)
-		//{
-		//	fprintf(fptr1, "%.15f\n", phi[p]);
-		//}
-		//fclose(fptr1);
 		fptr1 = fopen("OUTPUT/Edens.txt", "w");
 		for (p = 0; p < p_size; p++)
 		{
@@ -903,6 +890,7 @@ void denszeroorb(double charge, double TeovTs, double *phi_real, double *n_grid,
 	free(n_res);
 	free(n_pre);
 	free(phi);
+	free(nepart);
 
 	*Phi_point = Phi;
 	*Qe_point = Qe;
