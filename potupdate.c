@@ -22,12 +22,14 @@ void newvcut(double *v_cut, double v_cutDS, double u_i, double u_e, double curre
 	*v_cut = sqrt( 2.0*( (1.0-weight)*0.5*old_v_cut*old_v_cut + weight* ( 0.5*old_v_cut*old_v_cut + (current - u_i + u_e)/( 0.5*exp(-0.5*old_v_cut*old_v_cut) ) ) ) );
 	//*v_cut = sqrt( 2.0*( (1.0-weight)*0.5*old_v_cut*old_v_cut - weight* log(sqrt(2.0*M_PI)*(current + u_i - u_e) + exp(-0.5*old_v_cut*old_v_cut) ) ) );
 	//*v_cut = sqrt( - 2.0*( log( 1.0*sqrt(2.0*M_PI)*(current + u_i - u_e) + 1.0*exp(-0.5*old_v_cut*old_v_cut) ) ) );
-	if ( (*v_cut*(*v_cut)*0.5 < 0.5*v_cutDS*v_cutDS ) )  {
-		printf("WARNING: v_cutDS > v_cut\n");
-		*v_cut = v_cutDS;
-	}
+	//if ( (*v_cut*(*v_cut)*0.5 < 0.5*v_cutDS*v_cutDS ) )  {
+	//	printf("WARNING: v_cutDS > v_cut\n");
+	//	*v_cut = v_cutDS;
+	//}
 	if ( (*v_cut*(*v_cut)*0.5 < 0.5*old_v_cut*old_v_cut - 0.5*v_cutDS*v_cutDS ) )  {
-		*v_cut = sqrt(old_v_cut*old_v_cut - v_cutDS*v_cutDS) - TINY;
+		printf("WARNING: old_v_cut= %f\tnewv_cut = %f\t", old_v_cut, *v_cut);
+		*v_cut = sqrt(old_v_cut*old_v_cut - v_cutDS*v_cutDS) + TINY;
+		printf("new new_v_cut = %f\n", *v_cut);
 	}
 
 	printf("v_cut after = %f\n", *v_cut);
@@ -217,7 +219,7 @@ if ( invgammasq > TINY ) { // DEBYE SHEATH ITERATION
 	res /= size_phigrid;
 	gsl_permutation_free(p);
 	printf("res = %f\n", res);
-	//res = 0.00001;
+	res = 0.00001;
 	}
 	//printf("%f last\n", newphi[size_phigrid-1]);
 	gsl_matrix_free (m);
@@ -232,7 +234,7 @@ else { // MAGNETIC PRESHEATH ITERATION
 			newphi[i] = ( ni_grid[i] - ne_grid[i] )*exp(-phi_grid[i]) + phi_grid[i];
 			//newphi[i] = (1.0/ne_grid[i]) * ( ni_grid[i] - ne_grid[i] ) + phi_grid[i];
 		else if (i== size_ngrid-1) {
-			newphi[i] = log( ni_grid[i] - ne_grid[i] + exp(phi_grid[i])); // + phi_grid[i];
+			//newphi[i] = log( ni_grid[i] - ne_grid[i] + exp(phi_grid[i])); // + phi_grid[i];
 			//newphi[i] = phi_grid[i] + 1.0* ( ni_grid[i] - ne_grid[i] ); // + exp(phi_grid[i])); // + phi_grid[i];
 			newphi[i] = ( ni_grid[i] - ne_grid[i] )*exp(-phi_grid[i]) + phi_grid[i];
 			//newphi[i] = (1.0/ne_grid[i]) * ( ni_grid[i] - ne_grid[i] ) + phi_grid[i];

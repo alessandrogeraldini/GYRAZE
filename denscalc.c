@@ -62,8 +62,8 @@ void denszeroorb(double charge, double TeovTs, double *phi_real, double *n_grid,
 	//define variables
 	//int count = 0;
 	int vi, vi_1, p, len_F; //vi is a counting variable that will be saved for sums over velocity space, vi_1 is a special value in velocity space devoted to the first point, p is a counting variable that will be saved for counting over phi space, len_F saves the number of entries in the distribution;
-	double *phi, *vparacc, phip = -0.000000001 ;
-	double Phi=0.0, Qe=0.0, n_inf = 0.0;
+	double *phi, *vparacc;// phip = -0.000000001 ;
+	double Phi=0.0, Qe=0.0, n_inf = 0.0, momfluxinf=0.0, momflux0=0.0;
 	double v_max, v_s, v_min;//v_max is the maximum velocity the distribution function will go up to before effectively just reading 0 from there on, v_s is the separation in velocity space between ajacent points. v_cut is the velocity that would be require in order to just reach the plasma wall boundary, v_min is the minimum velocity (the entrance to the presheath) required to reach a given x
 	double sqrt_up, sqrt_lo, theta_up, theta_lo, sqrt_cut, theta_cut; //sqrt_up/lo reprresent the upper and lower limits of one strip integral, theta_up/lo are related to the hyperbolic arcsinh of some specific values (see document that hopefully exists)
 
@@ -211,218 +211,75 @@ void denszeroorb(double charge, double TeovTs, double *phi_real, double *n_grid,
 			//printf("count=%d\n", count);
 		}
 		printf("n_inf = %f\n", n_inf);
-		
-		n_inf = 0.0;
-		v_min = sqrt(-2.0 * phip);
+
+
+		// ELECTRON MOMENTUM FLUX electron momentum flux
+		momfluxinf = 0.0;
+		v_min = 0.0;
 		for (mu_ind=0; mu_ind<size_mu; mu_ind++) {
+			//count = 0;
 			nepart[mu_ind] = 0.0;
-			//vpar_cut = lin_interp(mue_cut_lookup, vpar_cut_lookup, mu[mu_ind], size_cut, 205);
-			vpar_cut = vpar_cut_lookup[mu_ind] ; 
-			//vpar_cut = sqrt(vpar_cut*vpar_cut + TINY);
+			vpar_cut = vpar_cut_lookup[mu_ind]; 
+			////lin_interp(mue_cut_lookup, vpar_cut_lookup, mu[mu_ind], size_cut, 205);
 			vpar_cut = sqrt(vpar_cut*vpar_cut + 2.0*(-phi[0]) + TINY);
-			//printf("vpar_cut = %f\n", vpar_cut);
+			//printf("mu_ind = %d/%d\n", mu_ind, size_mu);
 			for (vi = 0; vi < len_F - 1; vi++) {
-				//F[vi]   = exp(- mu_ind*mue_s - 0.5*vi*vi*v_s*v_s);
-				//Fp[vi]   = -vi*v_s*exp(- mu_ind*mue_s - 0.5*vi*vi*v_s*v_s);
-				//Fpp[vi]   = (vi*v_s*vi*v_s - 1.0)*exp(- mu_ind*mue_s - 0.5*vi*vi*v_s*v_s);
-				F[vi]     = distfunc[mu_ind][vi];
-				Fp[vi]    = ddistdvpar[mu_ind][vi];
-				Fpp[vi]   = ddistdvpartwo[mu_ind][vi];
+				F[vi]   = vi*v_s*vi*v_s*distfunc[mu_ind][vi];
+				Fp[vi]  = vi*v_s*vi*v_s*ddistdvpar[mu_ind][vi] + 2.0*vi*v_s*distfunc[mu_ind][vi];
+				Fpp[vi] = vi*v_s*vi*v_s*ddistdvpartwo[mu_ind][vi] + 4.0*vi*v_s*ddistdvpar[mu_ind][vi] + 2.0*distfunc[mu_ind][vi];
 			}
 			if (vpar_cut >= v_max) // effectively no cut off
 			{
-				if ((int)floor(v_min / v_s) >= len_F - 1) {
-					//ne[p] = 0;
-					nepart[mu_ind] = 0.0;
-					printf("v_min outside velocity grid");
-				}
-				else {
-					if (fabs(v_min) < 2.0*TINY)//special case where the integration becomes simple
-					{
-						for (vi = 0; vi < len_F - 2; vi++)
-						{
-							nepart[mu_ind] += (F[vi] + F[vi + 1]) * v_s;
-						}
-					}
-					else //regular case
-					{
-
-
-						vi_1 = (int)floor(v_min / v_s);
-						sqrt_up = sqrt(pow(((vi_1 + 1) * v_s), 2.0) + (2.0 * phip));
-						theta_up = asinh(sqrt(pow(((vi_1 + 1) * v_s), 2.0) + (2.0 * phip)) / v_min);
-
-						nepart[mu_ind] += 2.0 * (((F[vi_1 + 1] - (((vi_1 + 1) * v_s) * Fp[vi_1 + 1])) * sqrt_up) + (0.5 * Fp[vi_1 + 1] * ((sqrt_up * ((vi_1 + 1) * v_s)) + (pow(v_min, 2.0) * theta_up))));
-						nepart[mu_ind] += 2.0 * ((0.5 * (pow(((vi_1 + 1) * v_s), 2.0) + pow(v_min, 2.0)) * Fpp[vi_1 + 1] * sqrt_up) + ((1.0 / 6.0) * pow(sqrt_up, 3.0) * Fpp[vi_1 + 1]) - (0.5 * ((vi_1 + 1) * v_s) * Fpp[vi_1 + 1] * ((sqrt_up * ((vi_1 + 1) * v_s)) + (pow(v_min, 2.0) * theta_up))));
-
-						w = ((0.5 * pow((((vi_1 + 1) * v_s) - v_min), 2.0)) + (v_min * (((vi_1 + 1) * v_s) - v_min)));
-
-						for (vi = vi_1 + 1; vi < len_F - 1; vi++)
-						{
-							sqrt_up = sqrt(pow(((vi + 1) * v_s), 2.0) + 2.0 * phip);
-							sqrt_lo = sqrt(pow(((vi)* v_s), 2.0) + 2.0 * phip);
-							theta_up = asinh(sqrt(pow(((vi + 1) * v_s), 2.0) + 2.0 * phip) / (v_min));
-							theta_lo = asinh(sqrt(pow(((vi)* v_s), 2.0) + 2.0 * phip ) / (v_min));
-
-							nepart[mu_ind] += 2.0 * (((F[vi] - ((vi * v_s) * Fp[vi])) * (sqrt_up - sqrt_lo)) + (0.5 * Fp[vi] * (((((vi + 1) * v_s) * sqrt_up) - ((vi * v_s) * sqrt_lo)) + (pow(v_min, 2.0) * (theta_up - theta_lo)))));
-							nepart[mu_ind] += 2.0 * ((0.5 * (pow((vi * v_s), 2.0) + pow(v_min, 2.0)) * Fpp[vi] * (sqrt_up - sqrt_lo)) + ((1.0 / 6.0) * Fpp[vi] * (pow(sqrt_up, 3.0) - pow(sqrt_lo, 3.0))) - (0.5 * (vi * v_s) * Fpp[vi] * (((((vi + 1) * v_s) * sqrt_up) - ((vi * v_s) * sqrt_lo)) + (pow(v_min, 2.0) * (theta_up - theta_lo)))));
-
-							w_up = 0.5 * (pow(((vi + 1) * v_s), 2.0) - pow(v_min, 2.0));
-							w_lo = 0.5 * (pow(((vi)* v_s), 2.0) - pow(v_min, 2.0));
-						}
-					}
-				}
-			//n_res[p] = ne[p] - n_pre[p];
+				for (vi = 0; vi < len_F - 2; vi++)
+					nepart[mu_ind] += (F[vi] + F[vi + 1]) * v_s;
+				//count++;
 			}
 			else { // now there is a cut-off
-				v_min = sqrt(-2.0 * phip);
-				if ((int)floor(v_min / v_s) >= len_F - 1)
-				{
-					nepart[mu_ind] = 0.0;
+				vi_1 = 0;
+				sqrt_up = ((vi_1 + 1) * v_s);
+				nepart[mu_ind] += 2.0 * (((F[vi_1 + 1] - ((vi_1 + 1) * v_s * Fp[vi_1 + 1])) * sqrt_up) + (0.5 * Fp[vi_1 + 1] * (sqrt_up * ((vi_1 + 1) * v_s))));
+				nepart[mu_ind] += 2.0 * (((0.5 * (pow(((vi_1 + 1) * v_s), 2.0) + pow(v_min, 2.0)) * Fpp[vi_1 + 1] * sqrt_up)) + ((1.0 / 6.0) * Fpp[vi_1 + 1] * pow(sqrt_up, 3.0)) - (0.5 * ((vi_1 + 1) * v_s) * Fpp[vi_1 + 1] * ((((vi_1 + 1) * v_s) * sqrt_up))));
+
+				w = 0.5 * pow(v_s, 2.0);
+
+				for (vi = vi_1 + 1; vi < len_F - 1; vi++) {
+					sqrt_up = (vi + 1) * v_s;
+					sqrt_lo = (vi * v_s);
+
+					nepart[mu_ind] += (((F[vi] - ((vi * v_s) * Fp[vi])) * (sqrt_up - sqrt_lo)) + (0.5 * Fp[vi] * (((((vi + 1) * v_s) * sqrt_up) - ((vi * v_s) * sqrt_lo)))));
+					nepart[mu_ind] += ((0.5 * (pow((vi * v_s), 2.0) + pow(v_min, 2.0)) * Fpp[vi] * (sqrt_up - sqrt_lo))) + ((1.0 / 6.0) * Fpp[vi] * (pow(sqrt_up, 3.0) - pow(sqrt_lo, 3.0))) - (0.5 * (vi * v_s) * Fpp[vi] * (((((vi + 1) * v_s) * sqrt_up) - ((vi * v_s) * sqrt_lo))));
+
+					w_up = 0.5 * (pow(((vi + 1) * v_s), 2.0) - pow(v_min, 2.0));
+					w_lo = 0.5 * (pow((vi * v_s), 2.0) - pow(v_min, 2.0));
 				}
-				else
-				{
-					if (fabs(v_min) < 1e-9)
-					{
-						vi_1 = 0;
-						sqrt_up = ((vi_1 + 1) * v_s);
-						nepart[mu_ind] += 2.0 * (((F[vi_1 + 1] - ((vi_1 + 1) * v_s * Fp[vi_1 + 1])) * sqrt_up) + (0.5 * Fp[vi_1 + 1] * (sqrt_up * ((vi_1 + 1) * v_s))));
-						nepart[mu_ind] += 2.0 * (((0.5 * (pow(((vi_1 + 1) * v_s), 2.0) + pow(v_min, 2.0)) * Fpp[vi_1 + 1] * sqrt_up)) + ((1.0 / 6.0) * Fpp[vi_1 + 1] * pow(sqrt_up, 3.0)) - (0.5 * ((vi_1 + 1) * v_s) * Fpp[vi_1 + 1] * ((((vi_1 + 1) * v_s) * sqrt_up))));
 
-						w = 0.5 * pow(v_s, 2.0);
+				for (vi = vi_1 + 1; vi < (int)floor(vpar_cut / v_s); vi++) {
+					sqrt_up = (vi + 1) * v_s;
+					sqrt_lo = (vi * v_s);
 
-						for (vi = vi_1 + 1; vi < len_F - 1; vi++)
-						{
-							sqrt_up = (vi + 1) * v_s;
-							sqrt_lo = (vi * v_s);
+					nepart[mu_ind] += (((F[vi] - ((vi * v_s) * Fp[vi])) * (sqrt_up - sqrt_lo)) + (0.5 * Fp[vi] * (((((vi + 1) * v_s) * sqrt_up) - ((vi * v_s) * sqrt_lo)))));
+					nepart[mu_ind] += ((0.5 * (pow((vi * v_s), 2.0) + pow(v_min, 2.0)) * Fpp[vi] * (sqrt_up - sqrt_lo))) + ((1.0 / 6.0) * Fpp[vi] * (pow(sqrt_up, 3.0) - pow(sqrt_lo, 3.0))) - (0.5 * (vi * v_s) * Fpp[vi] * (((((vi + 1) * v_s) * sqrt_up) - ((vi * v_s) * sqrt_lo))));
 
-							nepart[mu_ind] += (((F[vi] - ((vi * v_s) * Fp[vi])) * (sqrt_up - sqrt_lo)) + (0.5 * Fp[vi] * (((((vi + 1) * v_s) * sqrt_up) - ((vi * v_s) * sqrt_lo)))));
-							nepart[mu_ind] += ((0.5 * (pow((vi * v_s), 2.0) + pow(v_min, 2.0)) * Fpp[vi] * (sqrt_up - sqrt_lo))) + ((1.0 / 6.0) * Fpp[vi] * (pow(sqrt_up, 3.0) - pow(sqrt_lo, 3.0))) - (0.5 * (vi * v_s) * Fpp[vi] * (((((vi + 1) * v_s) * sqrt_up) - ((vi * v_s) * sqrt_lo))));
-
-							w_up = 0.5 * (pow(((vi + 1) * v_s), 2.0) - pow(v_min, 2.0));
-							w_lo = 0.5 * (pow((vi * v_s), 2.0) - pow(v_min, 2.0));
-						}
-
-						for (vi = vi_1 + 1; vi < (int)floor(vpar_cut / v_s); vi++)
-						{
-							sqrt_up = (vi + 1) * v_s;
-							sqrt_lo = (vi * v_s);
-
-							nepart[mu_ind] += (((F[vi] - ((vi * v_s) * Fp[vi])) * (sqrt_up - sqrt_lo)) + (0.5 * Fp[vi] * (((((vi + 1) * v_s) * sqrt_up) - ((vi * v_s) * sqrt_lo)))));
-							nepart[mu_ind] += ((0.5 * (pow((vi * v_s), 2.0) + pow(v_min, 2.0)) * Fpp[vi] * (sqrt_up - sqrt_lo))) + ((1.0 / 6.0) * Fpp[vi] * (pow(sqrt_up, 3.0) - pow(sqrt_lo, 3.0))) - (0.5 * (vi * v_s) * Fpp[vi] * (((((vi + 1) * v_s) * sqrt_up) - ((vi * v_s) * sqrt_lo))));
-
-							w_up = 0.5 * (pow(((vi + 1) * v_s), 2.0) - pow(v_min, 2.0));
-							w_lo = 0.5 * (pow((vi * v_s), 2.0) - pow(v_min, 2.0));
-						}
-						vi_1 = (int)floor(vpar_cut / v_s);
-						sqrt_up = vpar_cut;
-						sqrt_lo = vi_1 * v_s;
-
-						nepart[mu_ind] += (((F[vi_1] - ((vi_1 * v_s) * Fp[vi_1])) * (sqrt_up - sqrt_lo)) + (0.5 * Fp[vi_1] * (((vpar_cut * sqrt_up) - ((vi_1 * v_s) * sqrt_lo)))));
-						nepart[mu_ind] += ((0.5 * (pow(((vi_1)* v_s), 2.0) + pow(v_min, 2.0)) * Fpp[vi_1] * (sqrt_up - sqrt_lo))) + ((1.0 / 6.0) * Fpp[vi_1] * (pow(sqrt_up, 3.0) - pow(sqrt_lo, 3.0))) - (0.5 * (vi_1 * v_s) * Fpp[vi_1] * (((vpar_cut * sqrt_up) - ((vi_1 * v_s) * sqrt_lo))));
-
-						w_up = 0.5 * pow(vpar_cut, 2.0);
-						w_lo = 0.5 * pow((vi_1 * v_s), 2.0);
-					}
-					else
-					{
-						if ((int)floor(v_min / v_s) == (int)floor(vpar_cut / v_s))
-						{
-							vi_1 = (int)floor(v_min / v_s);
-							sqrt_up = sqrt(pow(((vi_1 + 1) * v_s), 2.0) + (2.0 * phip));
-							theta_up = asinh(sqrt(pow(((vi_1 + 1) * v_s), 2.0) + (2.0 * phip)) / (v_min));
-
-							nepart[mu_ind] += 2.0 * (((F[vi_1 + 1] - ((vi_1 + 1) * v_s * Fp[vi_1 + 1])) * sqrt_up) + (0.5 * Fp[vi_1 + 1] * ((sqrt_up * ((vi_1 + 1) * v_s)) + (pow(v_min, 2.0) * theta_up))));
-							nepart[mu_ind] += 2.0 * (((0.5 * (pow(((vi_1 + 1) * v_s), 2.0) + pow(v_min, 2.0)) * Fpp[vi_1 + 1] * sqrt_up)) + ((1.0 / 6.0) * Fpp[vi_1 + 1] * pow(sqrt_up, 3.0)) - (0.5 * ((vi_1 + 1) * v_s) * Fpp[vi_1 + 1] * ((((vi_1 + 1) * v_s) * sqrt_up) + (pow(v_min, 2.0) * theta_up))));
-
-							w_up = 0.5 * (pow(((vi_1 + 1) * v_s), 2.0) - pow(v_min, 2.0));
-
-							sqrt_cut = sqrt(pow(vpar_cut, 2.0) + 2.0 * phip);
-							theta_cut = asinh(sqrt(pow(vpar_cut, 2.0) + 2.0 * phip) / (v_min));
-
-							nepart[mu_ind] -= (((F[vi_1 + 1] - ((vi_1 + 1) * v_s * Fp[vi_1 + 1])) * (sqrt_up - sqrt_cut)) + (0.5 * Fp[vi_1 + 1] * ((sqrt_up * ((vi_1 + 1) * v_s)) - (sqrt_cut * vpar_cut) + (pow(v_min, 2.0) * (theta_up - theta_cut)))));
-							nepart[mu_ind] -= (((0.5 * (pow(((vi_1 + 1) * v_s), 2.0) + pow(v_min, 2.0)) * Fpp[vi_1 + 1] * (sqrt_up - sqrt_cut))) + ((1.0 / 6.0) * Fpp[vi_1 + 1] * (pow(sqrt_up, 3.0) - pow(sqrt_cut, 3.0))) - (0.5 * ((vi_1 + 1) * v_s) * Fpp[vi_1 + 1] * ((((vi_1 + 1) * v_s) * sqrt_up) - (vpar_cut * sqrt_cut) + (pow(v_min, 2.0) * (theta_up - theta_cut)))));
-
-							w_lo = 0.5 * (pow(vpar_cut, 2.0) - pow(v_min, 2.0));
-
-							for (vi = vi_1 + 1; vi < len_F - 1; vi++)
-							{
-								sqrt_up = sqrt(pow(((vi + 1) * v_s), 2.0) + 2.0 * phip);
-								sqrt_lo = sqrt(pow(((vi)* v_s), 2.0) + 2.0 * phip);
-								theta_up = asinh(sqrt(pow(((vi + 1) * v_s), 2.0) + 2.0 * phip) / (v_min));
-								theta_lo = asinh(sqrt(pow(((vi)* v_s), 2.0) + 2.0 * phip) / (v_min));
-
-								nepart[mu_ind] += (((F[vi] - ((vi * v_s) * Fp[vi])) * (sqrt_up - sqrt_lo)) + (0.5 * Fp[vi] * (((((vi + 1) * v_s) * sqrt_up) - ((vi * v_s) * sqrt_lo)) + (pow(v_min, 2.0) * (theta_up - theta_lo)))));
-								nepart[mu_ind] += ((0.5 * (pow((vi * v_s), 2.0) + pow(v_min, 2.0)) * Fpp[vi] * (sqrt_up - sqrt_lo)) + ((1.0 / 6.0) * Fpp[vi] * (pow(sqrt_up, 3.0) - pow(sqrt_lo, 3.0))) - (0.5 * (vi * v_s) * Fpp[vi] * (((((vi + 1) * v_s) * sqrt_up) - ((vi * v_s) * sqrt_lo)) + (pow(v_min, 2.0) * (theta_up - theta_lo)))));
-
-								w_up = 0.5 * (pow(((vi + 1) * v_s), 2.0) - pow(v_min, 2.0));
-								w_lo = 0.5 * (pow(((vi)* v_s), 2.0) - pow(v_min, 2.0));
-							}
-						}
-						else //the most likely case
-						{
-							vi_1 = (int) (floor(v_min / v_s));
-							sqrt_up = sqrt(pow(((vi_1 + 1) * v_s), 2.0) + 2.0 * phip);
-							theta_up = asinh(sqrt(pow(((vi_1 + 1) * v_s), 2.0) + 2.0 * phip) / (v_min));
-							nepart[mu_ind] = 0.0;
-							
-
-							nepart[mu_ind] += 2.0 * (((F[vi_1 + 1] - ((vi_1 + 1) * v_s * Fp[vi_1 + 1])) * sqrt_up) + (0.5 * Fp[vi_1 + 1] * ((sqrt_up * ((vi_1 + 1) * v_s)) + (pow(v_min, 2.0) * theta_up))));
-							nepart[mu_ind] += 2.0 * (((0.5 * (pow(((vi_1 + 1) * v_s), 2.0) + pow(v_min, 2.0)) * Fpp[vi_1 + 1] * sqrt_up)) + ((1.0 / 6.0) * Fpp[vi_1 + 1] * pow(sqrt_up, 3.0)) - (0.5 * ((vi_1 + 1) * v_s) * Fpp[vi_1 + 1] * ((((vi_1 + 1) * v_s) * sqrt_up) + (pow(v_min, 2.0) * theta_up))));
-
-							w = 0.5 * (pow(((vi_1 + 1) * v_s), 2.0) - pow(v_min, 2.0));
-
-							for (vi = vi_1 + 1; vi < len_F - 1; vi++)
-							{
-								sqrt_up = sqrt(pow(((vi + 1) * v_s), 2.0) + 2.0 * phip);
-								sqrt_lo = sqrt(pow(((vi)* v_s), 2.0) + 2.0 * phip);
-								theta_up = asinh(sqrt(pow(((vi + 1) * v_s), 2.0) + 2.0 * phip) / (v_min));
-								theta_lo = asinh(sqrt(pow(((vi)* v_s), 2.0) + 2.0 * phip) / (v_min));
-
-								nepart[mu_ind] += (((F[vi] - ((vi * v_s) * Fp[vi])) * (sqrt_up - sqrt_lo)) + (0.5 * Fp[vi] * (((((vi + 1) * v_s) * sqrt_up) - ((vi * v_s) * sqrt_lo)) + (pow(v_min, 2.0) * (theta_up - theta_lo)))));
-								nepart[mu_ind] += ((0.5 * (pow((vi * v_s), 2.0) + pow(v_min, 2.0)) * Fpp[vi] * (sqrt_up - sqrt_lo)) + ((1.0 / 6.0) * Fpp[vi] * (pow(sqrt_up, 3.0) - pow(sqrt_lo, 3.0))) - (0.5 * (vi * v_s) * Fpp[vi] * (((((vi + 1) * v_s) * sqrt_up) - ((vi * v_s) * sqrt_lo)) + (pow(v_min, 2.0) * (theta_up - theta_lo)))));
-
-								w_up = 0.5 * (pow(((vi + 1) * v_s), 2.0) - pow(v_min, 2.0));
-								w_lo = 0.5 * (pow(((vi)* v_s), 2.0) - pow(v_min, 2.0));
-							}
-
-							for (vi = vi_1 + 1; vi < (int)floor(vpar_cut / v_s); vi++)
-							{
-								sqrt_up = sqrt(pow(((vi + 1) * v_s), 2.0) + 2.0 * phip);
-								sqrt_lo = sqrt(pow(((vi)* v_s), 2.0) + 2.0 * phip);
-								theta_up = asinh(sqrt(pow(((vi + 1) * v_s), 2.0) + 2.0 * phip) / (v_min));
-								theta_lo = asinh(sqrt(pow(((vi)* v_s), 2.0) + 2.0 * phip) / (v_min));
-
-								nepart[mu_ind] += (((F[vi] - ((vi * v_s) * Fp[vi])) * (sqrt_up - sqrt_lo)) + (0.5 * Fp[vi] * (((((vi + 1) * v_s) * sqrt_up) - ((vi * v_s) * sqrt_lo)) + (pow(v_min, 2.0) * (theta_up - theta_lo)))));
-								nepart[mu_ind] += ((0.5 * (pow((vi * v_s), 2.0) + pow(v_min, 2.0)) * Fpp[vi] * (sqrt_up - sqrt_lo)) + ((1.0 / 6.0) * Fpp[vi] * (pow(sqrt_up, 3.0) - pow(sqrt_lo, 3.0))) - (0.5 * (vi * v_s) * Fpp[vi] * (((((vi + 1) * v_s) * sqrt_up) - ((vi * v_s) * sqrt_lo)) + (pow(v_min, 2.0) * (theta_up - theta_lo)))));
-
-								w_up = 0.5 * (pow(((vi + 1) * v_s), 2.0) - pow(v_min, 2.0));
-								w_lo = 0.5 * (pow(((vi)* v_s), 2.0) - pow(v_min, 2.0));
-							}
-
-							vi_1 = (int)floor(vpar_cut / v_s);
-							sqrt_up = sqrt(pow(vpar_cut, 2.0) + 2.0 * phip);
-							sqrt_lo = sqrt(pow(((vi_1)* v_s), 2.0) + 2.0 * phip);
-							theta_up = asinh(sqrt(pow(vpar_cut, 2.0) + 2.0 * phip) / (v_min));
-							theta_lo = asinh(sqrt(pow(((vi_1)* v_s), 2.0) + 2.0 * phip) / (v_min));
-
-							nepart[mu_ind] += (((F[vi_1] - ((vi_1 * v_s) * Fp[vi_1])) * (sqrt_up - sqrt_lo)) + (0.5 * Fp[vi_1] * (((vpar_cut * sqrt_up) - ((vi_1 * v_s) * sqrt_lo)) + (pow(v_min, 2.0) * (theta_up - theta_lo)))));
-							nepart[mu_ind] += ((0.5 * (pow(((vi_1)* v_s), 2.0) + pow(v_min, 2.0)) * Fpp[vi_1] * (sqrt_up - sqrt_lo))) + ((1.0 / 6.0) * Fpp[vi_1] * (pow(sqrt_up, 3.0) - pow(sqrt_lo, 3.0))) - (0.5 * (vi_1 * v_s) * Fpp[vi_1] * (((vpar_cut * sqrt_up) - ((vi_1 * v_s) * sqrt_lo)) + (pow(v_min, 2.0) * (theta_up - theta_lo))));
-
-							w_up = 0.5 * (pow(vpar_cut, 2.0) - pow(v_min, 2.0));
-							w_lo = 0.5 * (pow((vi_1 * v_s), 2.0) - pow(v_min, 2.0));
-						}
-					}
-				//n_res[p] = ne[p] - n_pre[p];
+					w_up = 0.5 * (pow(((vi + 1) * v_s), 2.0) - pow(v_min, 2.0));
+					w_lo = 0.5 * (pow((vi * v_s), 2.0) - pow(v_min, 2.0));
 				}
+				vi_1 = (int)floor(vpar_cut / v_s);
+				sqrt_up = vpar_cut;
+				sqrt_lo = vi_1 * v_s;
+
+				nepart[mu_ind] += (((F[vi_1] - ((vi_1 * v_s) * Fp[vi_1])) * (sqrt_up - sqrt_lo)) + (0.5 * Fp[vi_1] * (((vpar_cut * sqrt_up) - ((vi_1 * v_s) * sqrt_lo)))));
+				nepart[mu_ind] += ((0.5 * (pow(((vi_1)* v_s), 2.0) + pow(v_min, 2.0)) * Fpp[vi_1] * (sqrt_up - sqrt_lo))) + ((1.0 / 6.0) * Fpp[vi_1] * (pow(sqrt_up, 3.0) - pow(sqrt_lo, 3.0))) - (0.5 * (vi_1 * v_s) * Fpp[vi_1] * (((vpar_cut * sqrt_up) - ((vi_1 * v_s) * sqrt_lo))));
+
+				w_up = 0.5 * pow(vpar_cut, 2.0);
+				w_lo = 0.5 * pow((vi_1 * v_s), 2.0);
 			}
+			//printf("in makelookup.c: mu = %f and vpar_cut_DSE = %f, nepart[mu_ind] = %f\n", mu[mu_ind], vpar_cut, nepart[mu_ind]);
 			if (mu_ind != 0) {
-				n_inf += 2.0*M_PI*0.5*(nepart[mu_ind] + nepart[mu_ind -1])*(mu[mu_ind] - mu[mu_ind-1]);
-				//printf("n_grid %f\n", n_grid[p]);
+				momfluxinf += 2.0*M_PI*0.5*(nepart[mu_ind] + nepart[mu_ind -1])*(mu[mu_ind] - mu[mu_ind-1]);
 			}
+			//printf("count=%d\n", count);
 		}
-	//n_pre[p] = 0.5 * exp(phi[p]) * (1 + erf(sqrt(phi[p] -phi[0] )));
-	//printf("n_grid[%d] = %f, n_pre = %f\n", p, n_grid[p], n_pre[p]);
+		//printf("momfluxinf = %f\n", momfluxinf);
 
 		// ELECTRON FLUX electron flux
 		for (mu_ind=0; mu_ind<size_mu; mu_ind++) {
@@ -490,6 +347,66 @@ void denszeroorb(double charge, double TeovTs, double *phi_real, double *n_grid,
 				Phi += 2.0*M_PI*0.5*(nepart[mu_ind] + nepart[mu_ind -1 ])*(mu[mu_ind]-mu[mu_ind-1]);
 		}
 
+		//for (mu_ind=0; mu_ind<size_mu; mu_ind++) {
+		//	nepart[mu_ind] = 0.0;
+		//	vpar_cut = vpar_cut_lookup[mu_ind] ; 
+		//	vpar_cut = sqrt(vpar_cut*vpar_cut + 2.0*(-phi[0]) + TINY);
+		//	for (vi = 0; vi < len_F - 1; vi++) {
+		//		F[vi]   = vi*v_s*vi*v_s*distfunc[mu_ind][vi];
+		//		Fp[vi]  = vi*v_s*vi*v_s*ddistdvpar[mu_ind][vi] + 2.0*vi*v_s*distfunc[mu_ind][vi];
+		//		Fpp[vi] = vi*v_s*vi*v_s*ddistdvpartwo[mu_ind][vi] + 4.0*vi*v_s*ddistdvpar[mu_ind][vi] + 2.0*distfunc[mu_ind][vi];
+		//	}
+		//	//printf("v_max = %f\tvpar_cut = %f\n", v_max, vpar_cut);
+		//	if (vpar_cut >= v_max) // effectively no cut off
+		//		momfluxinf = 0.0;
+		//	else { // now there is a cut-off
+		//		v_min = 0.0;
+		//		if ((int)floor(v_min / v_s) >= len_F - 1)
+		//		{
+		//			nepart[mu_ind] = 0.0;
+		//		}
+		//		else
+		//		{
+		//			vi_1 = -1;
+		//			for (vi = vi_1 + 1; vi < len_F - 1; vi++)
+		//			{
+		//				sqrt_up = (vi + 1) * v_s;
+		//				sqrt_lo = (vi * v_s);
+
+		//				nepart[mu_ind] += (((F[vi] - ((vi * v_s) * Fp[vi])) * (sqrt_up - sqrt_lo)) + (0.5 * Fp[vi] * (((((vi + 1) * v_s) * sqrt_up) - ((vi * v_s) * sqrt_lo)))));
+		//				nepart[mu_ind] += ((0.5 * (pow((vi * v_s), 2.0) + pow(v_min, 2.0)) * Fpp[vi] * (sqrt_up - sqrt_lo))) + ((1.0 / 6.0) * Fpp[vi] * (pow(sqrt_up, 3.0) - pow(sqrt_lo, 3.0))) - (0.5 * (vi * v_s) * Fpp[vi] * (((((vi + 1) * v_s) * sqrt_up) - ((vi * v_s) * sqrt_lo))));
+
+		//				w_up = 0.5 * (pow(((vi + 1) * v_s), 2.0) - pow(v_min, 2.0));
+		//				w_lo = 0.5 * (pow((vi * v_s), 2.0) - pow(v_min, 2.0));
+		//			}
+
+		//			for (vi = vi_1 + 1; vi < (int)floor(vpar_cut / v_s); vi++)
+		//			{
+		//				sqrt_up = (vi + 1) * v_s;
+		//				sqrt_lo = (vi * v_s);
+
+		//				nepart[mu_ind] -= (((F[vi] - ((vi * v_s) * Fp[vi])) * (sqrt_up - sqrt_lo)) + (0.5 * Fp[vi] * (((((vi + 1) * v_s) * sqrt_up) - ((vi * v_s) * sqrt_lo)))));
+		//				nepart[mu_ind] -= ( ((0.5 * (pow((vi * v_s), 2.0) + pow(v_min, 2.0)) * Fpp[vi] * (sqrt_up - sqrt_lo))) + ((1.0 / 6.0) * Fpp[vi] * (pow(sqrt_up, 3.0) - pow(sqrt_lo, 3.0))) - (0.5 * (vi * v_s) * Fpp[vi] * (((((vi + 1) * v_s) * sqrt_up) - ((vi * v_s) * sqrt_lo)))) );
+
+		//				w_up = 0.5 * (pow(((vi + 1) * v_s), 2.0) - pow(v_min, 2.0));
+		//				w_lo = 0.5 * (pow((vi * v_s), 2.0) - pow(v_min, 2.0));
+		//			}
+		//			vi_1 = (int)floor(vpar_cut / v_s);
+		//			sqrt_up = vpar_cut;
+		//			sqrt_lo = vi_1 * v_s;
+
+		//			nepart[mu_ind] -= (((F[vi_1] - ((vi_1 * v_s) * Fp[vi_1])) * (sqrt_up - sqrt_lo)) + (0.5 * Fp[vi_1] * (((vpar_cut * sqrt_up) - ((vi_1 * v_s) * sqrt_lo)))));
+		//			nepart[mu_ind] -= ( ((0.5 * (pow(((vi_1)* v_s), 2.0) + pow(v_min, 2.0)) * Fpp[vi_1] * (sqrt_up - sqrt_lo))) + ((1.0 / 6.0) * Fpp[vi_1] * (pow(sqrt_up, 3.0) - pow(sqrt_lo, 3.0))) - (0.5 * (vi_1 * v_s) * Fpp[vi_1] * (((vpar_cut * sqrt_up) - ((vi_1 * v_s) * sqrt_lo)))) );
+
+		//			w_up = 0.5 * pow(vpar_cut, 2.0);
+		//			w_lo = 0.5 * pow((vi_1 * v_s), 2.0);
+		//		}
+		//	}
+		//	if (mu_ind != 0) 
+		//		momfluxinf += 2.0*M_PI*0.5*(nepart[mu_ind] + nepart[mu_ind -1 ])*(mu[mu_ind]-mu[mu_ind-1]);
+		//}
+		//printf("momfluxinf = %f\n", momfluxinf);
+
 		// ELECTRON HEAT FLUX
 		for (mu_ind=0; mu_ind<size_mu; mu_ind++) {
 			nepart[mu_ind] = 0.0;
@@ -501,11 +418,6 @@ void denszeroorb(double charge, double TeovTs, double *phi_real, double *n_grid,
 				F[vi]   = (0.5*vi*v_s*vi*v_s + mu[mu_ind])*vi*v_s*distfunc[mu_ind][vi];
 				Fp[vi]  = (0.5*vi*v_s*vi*v_s + mu[mu_ind])*(vi*v_s*ddistdvpar[mu_ind][vi] + distfunc[mu_ind][vi]) + vi*v_s*vi*v_s*distfunc[mu_ind][vi];
 				Fpp[vi] = (0.5*vi*v_s*vi*v_s + mu[mu_ind])*(vi*v_s*ddistdvpartwo[mu_ind][vi] + 2.0*ddistdvpar[mu_ind][vi]) + (vi*v_s)*(vi*v_s*ddistdvpar[mu_ind][vi] + distfunc[mu_ind][vi]) + 2.0*vi*v_s*distfunc[mu_ind][vi] + vi*v_s*vi*v_s*ddistdvpar[mu_ind][vi];
-				//F[vi]   = (0.5*vi*v_s*vi*v_s)*vi*v_s*distfunc[mu_ind][vi];
-				////Fp[vi]  = 1.5*vi*v_s*vi*v_s*distfunc[mu_ind][vi] + 0.5*vi*v_s*vi*v_s*vi*v_s*ddistdvpar[mu_ind][vi];
-				//Fp[vi]  = (0.5*vi*v_s*vi*v_s)*(vi*v_s*ddistdvpar[mu_ind][vi] + distfunc[mu_ind][vi]) + vi*v_s*vi*v_s*distfunc[mu_ind][vi];
-				////Fpp[vi] = 3.0*vi*v_s*distfunc[mu_ind][vi] + 3.0*vi*v_s*vi*v_s*ddistdvpar[mu_ind][vi] + 0.5*vi*v_s*vi*v_s*vi*v_s*ddistdvpartwo[mu_ind][vi]; 
-				//Fpp[vi] = (0.5*vi*v_s*vi*v_s)*(vi*v_s*ddistdvpartwo[mu_ind][vi] + 2.0*ddistdvpar[mu_ind][vi]) + (vi*v_s)*(vi*v_s*ddistdvpar[mu_ind][vi] + distfunc[mu_ind][vi]) + 2.0*vi*v_s*distfunc[mu_ind][vi] + vi*v_s*vi*v_s*ddistdvpar[mu_ind][vi];
 			}
 			//printf("v_max = %f\tvpar_cut = %f\n", v_max, vpar_cut);
 			if (vpar_cut >= v_max) // effectively no cut off
@@ -798,7 +710,7 @@ void denszeroorb(double charge, double TeovTs, double *phi_real, double *n_grid,
 					}
 					//if (nepart[mu_ind] != nepart[mu_ind]) printf("mu_ind = %d, p = %d\n", mu_ind, p);
 
-//piece below is attempt at including first order in gamme effect of density variation --> does not work so well, so leave commented out
+//piece below is attempt at including first order in gamma effect of density variation --> does not work so well, so leave commented out
 					if ( (gamma < SMALLGAMMA) && (gamma > TINY) ) nepart[mu_ind] *= smallrhoefrac(x_grid[p], mu[mu_ind]);
 //instead, use wall electric field to calculate cutoff correction in vparallel --> works better
 					if (mu_ind != 0) {
@@ -807,11 +719,213 @@ void denszeroorb(double charge, double TeovTs, double *phi_real, double *n_grid,
 					}
 				}
 			}
-			//n_pre[p] = 0.5 * exp(phi[p]) * (1 + erf(sqrt(phi[p] -phi[0] )));
-			//printf("n_grid[%d] = %f, n_pre = %f\n", p, n_grid[p], n_pre[p]);
+			n_pre[p] = exp(phi[p]) * (1 + erf(sqrt(phi[p] -phi[0]))) / (1 + erf(sqrt(-phi[0] )));
+			//printf("n_grid[%d] = %f, n_pre = %f\n", p, n_grid[p]/n_inf, n_pre[p]);
 			if (p== p_size-1)
 				printf("in denszeroorb: charge = %f, derivative wrt phi is dndphi = %f\n", charge, (n_grid[p] - n_grid[p-1])/(phi[p] - phi[p-1]));
 		}
+		p=0;
+		momflux0 = 0.0;
+		v_min = sqrt(-2.0 * phi[p]);
+		for (mu_ind=0; mu_ind<size_mu; mu_ind++) {
+			nepart[mu_ind] = 0.0;
+			//vpar_cut = lin_interp(mue_cut_lookup, vpar_cut_lookup, mu[mu_ind], size_cut, 205);
+			vpar_cut = vpar_cut_lookup[mu_ind] ; 
+			vpar_cut = sqrt(vpar_cut*vpar_cut +  (-2.0*phi[0]) + TINY);
+			//printf("HERE: vpar_cut = %f\n", vpar_cut);
+			vpar_cut = TINY;
+			for (vi = 0; vi < len_F - 1; vi++) {
+				F[vi]   = vi*v_s*vi*v_s*distfunc[mu_ind][vi];
+				Fp[vi]  = vi*v_s*vi*v_s*ddistdvpar[mu_ind][vi] + 2.0*vi*v_s*distfunc[mu_ind][vi];
+				Fpp[vi] = vi*v_s*vi*v_s*ddistdvpartwo[mu_ind][vi] + 4.0*vi*v_s*ddistdvpar[mu_ind][vi] + 2.0*distfunc[mu_ind][vi];
+				//F[vi]   = distfunc[mu_ind][vi];
+				//Fp[vi]  = ddistdvpar[mu_ind][vi];
+				//Fpp[vi] = ddistdvpartwo[mu_ind][vi];
+			}
+		//else { // now there is a cut-off
+			v_min = sqrt(-2.0 * phi[p]);
+			if ((int)floor(v_min / v_s) >= len_F - 1) {
+				nepart[mu_ind] = 0.0;
+			}
+			else
+			{
+				if (fabs(v_min) < 1e-9)
+				{
+					vi_1 = 0;
+					sqrt_up = ((vi_1 + 1) * v_s);
+					nepart[mu_ind] += 2.0 * (((F[vi_1 + 1] - ((vi_1 + 1) * v_s * Fp[vi_1 + 1])) * sqrt_up) + (0.5 * Fp[vi_1 + 1] * (sqrt_up * ((vi_1 + 1) * v_s))));
+					nepart[mu_ind] += 2.0 * (((0.5 * (pow(((vi_1 + 1) * v_s), 2.0) + pow(v_min, 2.0)) * Fpp[vi_1 + 1] * sqrt_up)) + ((1.0 / 6.0) * Fpp[vi_1 + 1] * pow(sqrt_up, 3.0)) - (0.5 * ((vi_1 + 1) * v_s) * Fpp[vi_1 + 1] * ((((vi_1 + 1) * v_s) * sqrt_up))));
+
+					w = 0.5 * pow(v_s, 2.0);
+					af_err[p] += 2.0 * (((F[vi_1 + 1] - ((vi_1 + 1) * v_s * Fp[vi_1 + 1])) * sqrt_up) + (0.5 * Fp[vi_1 + 1] * (sqrt_up * ((vi_1 + 1) * v_s)))) - erf(sqrt(w));
+					af_err[p] += 2.0 * (((0.5 * (pow(((vi_1 + 1) * v_s), 2.0) + pow(v_min, 2.0)) * Fpp[vi_1 + 1] * sqrt_up)) + ((1.0 / 6.0) * Fpp[vi_1 + 1] * pow(sqrt_up, 3.0)) - (0.5 * ((vi_1 + 1) * v_s) * Fpp[vi_1 + 1] * ((((vi_1 + 1) * v_s) * sqrt_up))));
+
+					for (vi = vi_1 + 1; vi < len_F - 1; vi++)
+					{
+						sqrt_up = (vi + 1) * v_s;
+						sqrt_lo = (vi * v_s);
+
+						nepart[mu_ind] += (((F[vi] - ((vi * v_s) * Fp[vi])) * (sqrt_up - sqrt_lo)) + (0.5 * Fp[vi] * (((((vi + 1) * v_s) * sqrt_up) - ((vi * v_s) * sqrt_lo)))));
+						nepart[mu_ind] += ((0.5 * (pow((vi * v_s), 2.0) + pow(v_min, 2.0)) * Fpp[vi] * (sqrt_up - sqrt_lo))) + ((1.0 / 6.0) * Fpp[vi] * (pow(sqrt_up, 3.0) - pow(sqrt_lo, 3.0))) - (0.5 * (vi * v_s) * Fpp[vi] * (((((vi + 1) * v_s) * sqrt_up) - ((vi * v_s) * sqrt_lo))));
+
+						w_up = 0.5 * (pow(((vi + 1) * v_s), 2.0) - pow(v_min, 2.0));
+						w_lo = 0.5 * (pow((vi * v_s), 2.0) - pow(v_min, 2.0));
+						af_err[p] += (((F[vi] - ((vi * v_s) * Fp[vi])) * (sqrt_up - sqrt_lo)) + (0.5 * Fp[vi] * (((((vi + 1) * v_s) * sqrt_up) - ((vi * v_s) * sqrt_lo))))) - (0.5 * (erf(sqrt(w_up)) - erf(sqrt(w_lo))));
+						af_err[p] += ((0.5 * (pow((vi * v_s), 2.0) + pow(v_min, 2.0)) * Fpp[vi] * (sqrt_up - sqrt_lo))) + ((1.0 / 6.0) * Fpp[vi] * (pow(sqrt_up, 3.0) - pow(sqrt_lo, 3.0))) - (0.5 * (vi * v_s) * Fpp[vi] * (((((vi + 1) * v_s) * sqrt_up) - ((vi * v_s) * sqrt_lo))));
+					}
+
+					for (vi = vi_1 + 1; vi < (int)floor(vpar_cut / v_s); vi++)
+					{
+						sqrt_up = (vi + 1) * v_s;
+						sqrt_lo = (vi * v_s);
+
+						nepart[mu_ind] += (((F[vi] - ((vi * v_s) * Fp[vi])) * (sqrt_up - sqrt_lo)) + (0.5 * Fp[vi] * (((((vi + 1) * v_s) * sqrt_up) - ((vi * v_s) * sqrt_lo)))));
+						nepart[mu_ind] += ((0.5 * (pow((vi * v_s), 2.0) + pow(v_min, 2.0)) * Fpp[vi] * (sqrt_up - sqrt_lo))) + ((1.0 / 6.0) * Fpp[vi] * (pow(sqrt_up, 3.0) - pow(sqrt_lo, 3.0))) - (0.5 * (vi * v_s) * Fpp[vi] * (((((vi + 1) * v_s) * sqrt_up) - ((vi * v_s) * sqrt_lo))));
+
+						w_up = 0.5 * (pow(((vi + 1) * v_s), 2.0) - pow(v_min, 2.0));
+						w_lo = 0.5 * (pow((vi * v_s), 2.0) - pow(v_min, 2.0));
+						af_err[p] += (((F[vi] - ((vi * v_s) * Fp[vi])) * (sqrt_up - sqrt_lo)) + (0.5 * Fp[vi] * (((((vi + 1) * v_s) * sqrt_up) - ((vi * v_s) * sqrt_lo))))) - (0.5 * (erf(sqrt(w_up)) - erf(sqrt(w_lo))));
+						af_err[p] += ((0.5 * (pow((vi * v_s), 2.0) + pow(v_min, 2.0)) * Fpp[vi] * (sqrt_up - sqrt_lo))) + ((1.0 / 6.0) * Fpp[vi] * (pow(sqrt_up, 3.0) - pow(sqrt_lo, 3.0))) - (0.5 * (vi * v_s) * Fpp[vi] * (((((vi + 1) * v_s) * sqrt_up) - ((vi * v_s) * sqrt_lo))));
+					}
+					vi_1 = (int)floor(vpar_cut / v_s);
+					sqrt_up = vpar_cut;
+					sqrt_lo = vi_1 * v_s;
+
+					nepart[mu_ind] += (((F[vi_1] - ((vi_1 * v_s) * Fp[vi_1])) * (sqrt_up - sqrt_lo)) + (0.5 * Fp[vi_1] * (((vpar_cut * sqrt_up) - ((vi_1 * v_s) * sqrt_lo)))));
+					nepart[mu_ind] += ((0.5 * (pow(((vi_1)* v_s), 2.0) + pow(v_min, 2.0)) * Fpp[vi_1] * (sqrt_up - sqrt_lo))) + ((1.0 / 6.0) * Fpp[vi_1] * (pow(sqrt_up, 3.0) - pow(sqrt_lo, 3.0))) - (0.5 * (vi_1 * v_s) * Fpp[vi_1] * (((vpar_cut * sqrt_up) - ((vi_1 * v_s) * sqrt_lo))));
+
+					w_up = 0.5 * pow(vpar_cut, 2.0);
+					w_lo = 0.5 * pow((vi_1 * v_s), 2.0);
+					af_err[p] += (((F[vi_1] - ((vi_1 * v_s) * Fp[vi_1])) * (sqrt_up - sqrt_lo)) + (0.5 * Fp[vi_1] * (((vpar_cut * sqrt_up) - ((vi_1 * v_s) * sqrt_lo))))) - (0.5 * (erf(sqrt(w_up)) - erf(sqrt(w_lo))));
+					af_err[p] += ((0.5 * (pow(((vi_1)* v_s), 2.0) + pow(v_min, 2.0)) * Fpp[vi_1] * (sqrt_up - sqrt_lo))) + ((1.0 / 6.0) * Fpp[vi_1] * (pow(sqrt_up, 3.0) - pow(sqrt_lo, 3.0))) - (0.5 * (vi_1 * v_s) * Fpp[vi_1] * (((vpar_cut * sqrt_up) - ((vi_1 * v_s) * sqrt_lo))));
+				}
+				else
+				{
+					if ((int)floor(v_min / v_s) == (int)floor(vpar_cut / v_s)) {
+						vi_1 = (int)floor(v_min / v_s);
+						sqrt_up = sqrt(pow(((vi_1 + 1) * v_s), 2.0) + (2.0 * phi[p]));
+						theta_up = asinh(sqrt(pow(((vi_1 + 1) * v_s), 2.0) + (2.0 * phi[p])) / (v_min));
+
+						nepart[mu_ind] += 2.0 * (((F[vi_1 + 1] - ((vi_1 + 1) * v_s * Fp[vi_1 + 1])) * sqrt_up) + (0.5 * Fp[vi_1 + 1] * ((sqrt_up * ((vi_1 + 1) * v_s)) + (pow(v_min, 2.0) * theta_up))));
+						nepart[mu_ind] += 2.0 * (((0.5 * (pow(((vi_1 + 1) * v_s), 2.0) + pow(v_min, 2.0)) * Fpp[vi_1 + 1] * sqrt_up)) + ((1.0 / 6.0) * Fpp[vi_1 + 1] * pow(sqrt_up, 3.0)) - (0.5 * ((vi_1 + 1) * v_s) * Fpp[vi_1 + 1] * ((((vi_1 + 1) * v_s) * sqrt_up) + (pow(v_min, 2.0) * theta_up))));
+
+						w_up = 0.5 * (pow(((vi_1 + 1) * v_s), 2.0) - pow(v_min, 2.0));
+						in_err[p] += 2.0 * ((((F[vi_1 + 1] - ((vi_1 + 1) * v_s * Fp[vi_1 + 1])) * sqrt_up) + (0.5 * Fp[vi_1 + 1] * ((sqrt_up * ((vi_1 + 1) * v_s)) + (pow(v_min, 2.0) * theta_up)))) - (0.5 * exp(phi[p]) * erf(sqrt(w_up))));
+						in_err[p] += 2.0 * (((0.5 * (pow(((vi_1 + 1) * v_s), 2.0) + pow(v_min, 2.0)) * Fpp[vi_1 + 1] * sqrt_up)) + ((1.0 / 6.0) * Fpp[vi_1 + 1] * pow(sqrt_up, 3.0)) - (0.5 * ((vi_1 + 1) * v_s) * Fpp[vi_1 + 1] * ((((vi_1 + 1) * v_s) * sqrt_up) + (pow(v_min, 2.0) * theta_up))));
+
+						sqrt_cut = sqrt(pow(vpar_cut, 2.0) + 2.0 * phi[p]);
+						theta_cut = asinh(sqrt(pow(vpar_cut, 2.0) + 2.0 * phi[p]) / (v_min));
+
+						nepart[mu_ind] -= (((F[vi_1 + 1] - ((vi_1 + 1) * v_s * Fp[vi_1 + 1])) * (sqrt_up - sqrt_cut)) + (0.5 * Fp[vi_1 + 1] * ((sqrt_up * ((vi_1 + 1) * v_s)) - (sqrt_cut * vpar_cut) + (pow(v_min, 2.0) * (theta_up - theta_cut)))));
+						nepart[mu_ind] -= (((0.5 * (pow(((vi_1 + 1) * v_s), 2.0) + pow(v_min, 2.0)) * Fpp[vi_1 + 1] * (sqrt_up - sqrt_cut))) + ((1.0 / 6.0) * Fpp[vi_1 + 1] * (pow(sqrt_up, 3.0) - pow(sqrt_cut, 3.0))) - (0.5 * ((vi_1 + 1) * v_s) * Fpp[vi_1 + 1] * ((((vi_1 + 1) * v_s) * sqrt_up) - (vpar_cut * sqrt_cut) + (pow(v_min, 2.0) * (theta_up - theta_cut)))));
+
+						w_lo = 0.5 * (pow(vpar_cut, 2.0) - pow(v_min, 2.0));
+						in_err[p] -= (((F[vi_1 + 1] - ((vi_1 + 1) * v_s * Fp[vi_1 + 1])) * (sqrt_up - sqrt_cut)) + (0.5 * Fp[vi_1 + 1] * ((sqrt_up * ((vi_1 + 1) * v_s)) - (sqrt_cut * vpar_cut) + (pow(v_min, 2.0) * (theta_up - theta_cut))))) - (0.5 * exp(phi[p]) * (erf(sqrt(w_up)) - erf(sqrt(w_lo))));
+						in_err[p] -= (((0.5 * (pow(((vi_1 + 1) * v_s), 2.0) + pow(v_min, 2.0)) * Fpp[vi_1 + 1] * (sqrt_up - sqrt_cut))) + ((1.0 / 6.0) * Fpp[vi_1 + 1] * (pow(sqrt_up, 3.0) - pow(sqrt_cut, 3.0))) - (0.5 * ((vi_1 + 1) * v_s) * Fpp[vi_1 + 1] * ((((vi_1 + 1) * v_s) * sqrt_up) - (vpar_cut * sqrt_cut) + (pow(v_min, 2.0) * (theta_up - theta_cut)))));
+
+						for (vi = vi_1 + 1; vi < len_F - 1; vi++)
+						{
+							sqrt_up = sqrt(pow(((vi + 1) * v_s), 2.0) + 2.0 * phi[p]);
+							sqrt_lo = sqrt(pow(((vi)* v_s), 2.0) + 2.0 * phi[p]);
+							theta_up = asinh(sqrt(pow(((vi + 1) * v_s), 2.0) + 2.0 * phi[p]) / (v_min));
+							theta_lo = asinh(sqrt(pow(((vi)* v_s), 2.0) + 2.0 * phi[p]) / (v_min));
+
+							nepart[mu_ind] += (((F[vi] - ((vi * v_s) * Fp[vi])) * (sqrt_up - sqrt_lo)) + (0.5 * Fp[vi] * (((((vi + 1) * v_s) * sqrt_up) - ((vi * v_s) * sqrt_lo)) + (pow(v_min, 2.0) * (theta_up - theta_lo)))));
+							nepart[mu_ind] += ((0.5 * (pow((vi * v_s), 2.0) + pow(v_min, 2.0)) * Fpp[vi] * (sqrt_up - sqrt_lo)) + ((1.0 / 6.0) * Fpp[vi] * (pow(sqrt_up, 3.0) - pow(sqrt_lo, 3.0))) - (0.5 * (vi * v_s) * Fpp[vi] * (((((vi + 1) * v_s) * sqrt_up) - ((vi * v_s) * sqrt_lo)) + (pow(v_min, 2.0) * (theta_up - theta_lo)))));
+
+							w_up = 0.5 * (pow(((vi + 1) * v_s), 2.0) - pow(v_min, 2.0));
+							w_lo = 0.5 * (pow(((vi)* v_s), 2.0) - pow(v_min, 2.0));
+							af_err[p] += ((((F[vi] - ((vi * v_s) * Fp[vi])) * (sqrt_up - sqrt_lo)) + (0.5 * Fp[vi] * (((((vi + 1) * v_s) * sqrt_up) - ((vi * v_s) * sqrt_lo)) + (pow(v_min, 2.0) * (theta_up - theta_lo))))) - (0.5 * exp(phi[p]) * (erf(sqrt(w_up)) - erf(sqrt(w_lo)))));
+							af_err[p] += ((0.5 * (pow((vi * v_s), 2.0) + pow(v_min, 2.0)) * Fpp[vi] * (sqrt_up - sqrt_lo)) + ((1.0 / 6.0) * Fpp[vi] * (pow(sqrt_up, 3.0) - pow(sqrt_lo, 3.0))) - (0.5 * (vi * v_s) * Fpp[vi] * (((((vi + 1) * v_s) * sqrt_up) - ((vi * v_s) * sqrt_lo)) + (pow(v_min, 2.0) * (theta_up - theta_lo)))));
+						}
+					}
+					else //the most likely case
+					{
+						vi_1 = (int) (floor(v_min / v_s));
+						sqrt_up = sqrt(pow(((vi_1 + 1) * v_s), 2.0) + 2.0 * phi[p]);
+						theta_up = asinh(sqrt(pow(((vi_1 + 1) * v_s), 2.0) + 2.0 * phi[p]) / (v_min));
+						nepart[mu_ind] = 0.0;
+						
+
+						nepart[mu_ind] += 2.0 * (((F[vi_1 + 1] - ((vi_1 + 1) * v_s * Fp[vi_1 + 1])) * sqrt_up) + (0.5 * Fp[vi_1 + 1] * ((sqrt_up * ((vi_1 + 1) * v_s)) + (pow(v_min, 2.0) * theta_up))));
+						nepart[mu_ind] += 2.0 * (((0.5 * (pow(((vi_1 + 1) * v_s), 2.0) + pow(v_min, 2.0)) * Fpp[vi_1 + 1] * sqrt_up)) + ((1.0 / 6.0) * Fpp[vi_1 + 1] * pow(sqrt_up, 3.0)) - (0.5 * ((vi_1 + 1) * v_s) * Fpp[vi_1 + 1] * ((((vi_1 + 1) * v_s) * sqrt_up) + (pow(v_min, 2.0) * theta_up))));
+
+						w = 0.5 * (pow(((vi_1 + 1) * v_s), 2.0) - pow(v_min, 2.0));
+						in_err[p] += 2.0 * ((((F[vi_1 + 1] - ((vi_1 + 1) * v_s * Fp[vi_1 + 1])) * sqrt_up) + (0.5 * Fp[vi_1 + 1] * ((sqrt_up * ((vi_1 + 1) * v_s)) + (pow(v_min, 2.0) * theta_up)))) - (0.5 * exp(phi[p]) * erf(sqrt(w))));
+						in_err[p] += 2.0 * (((0.5 * (pow(((vi_1 + 1) * v_s), 2.0) + pow(v_min, 2.0)) * Fpp[vi_1 + 1] * sqrt_up)) + ((1.0 / 6.0) * Fpp[vi_1 + 1] * pow(sqrt_up, 3.0)) - (0.5 * ((vi_1 + 1) * v_s) * Fpp[vi_1 + 1] * ((((vi_1 + 1) * v_s) * sqrt_up) + (pow(v_min, 2.0) * theta_up))));
+
+						for (vi = vi_1 + 1; vi < len_F - 1; vi++)
+						{
+							sqrt_up = sqrt(pow(((vi + 1) * v_s), 2.0) + 2.0 * phi[p]);
+							sqrt_lo = sqrt(pow(((vi)* v_s), 2.0) + 2.0 * phi[p]);
+							theta_up = asinh(sqrt(pow(((vi + 1) * v_s), 2.0) + 2.0 * phi[p]) / (v_min));
+							theta_lo = asinh(sqrt(pow(((vi)* v_s), 2.0) + 2.0 * phi[p]) / (v_min));
+
+							nepart[mu_ind] += (((F[vi] - ((vi * v_s) * Fp[vi])) * (sqrt_up - sqrt_lo)) + (0.5 * Fp[vi] * (((((vi + 1) * v_s) * sqrt_up) - ((vi * v_s) * sqrt_lo)) + (pow(v_min, 2.0) * (theta_up - theta_lo)))));
+							nepart[mu_ind] += ((0.5 * (pow((vi * v_s), 2.0) + pow(v_min, 2.0)) * Fpp[vi] * (sqrt_up - sqrt_lo)) + ((1.0 / 6.0) * Fpp[vi] * (pow(sqrt_up, 3.0) - pow(sqrt_lo, 3.0))) - (0.5 * (vi * v_s) * Fpp[vi] * (((((vi + 1) * v_s) * sqrt_up) - ((vi * v_s) * sqrt_lo)) + (pow(v_min, 2.0) * (theta_up - theta_lo)))));
+
+							w_up = 0.5 * (pow(((vi + 1) * v_s), 2.0) - pow(v_min, 2.0));
+							w_lo = 0.5 * (pow(((vi)* v_s), 2.0) - pow(v_min, 2.0));
+							af_err[p] += ((((F[vi] - ((vi * v_s) * Fp[vi])) * (sqrt_up - sqrt_lo)) + (0.5 * Fp[vi] * (((((vi + 1) * v_s) * sqrt_up) - ((vi * v_s) * sqrt_lo)) + (pow(v_min, 2.0) * (theta_up - theta_lo))))) - (0.5 * exp(phi[p]) * (erf(sqrt(w_up)) - erf(sqrt(w_lo)))));
+							af_err[p] += ((0.5 * (pow((vi * v_s), 2.0) + pow(v_min, 2.0)) * Fpp[vi] * (sqrt_up - sqrt_lo)) + ((1.0 / 6.0) * Fpp[vi] * (pow(sqrt_up, 3.0) - pow(sqrt_lo, 3.0))) - (0.5 * (vi * v_s) * Fpp[vi] * (((((vi + 1) * v_s) * sqrt_up) - ((vi * v_s) * sqrt_lo)) + (pow(v_min, 2.0) * (theta_up - theta_lo)))));
+						}
+
+						for (vi = vi_1 + 1; vi < (int)floor(vpar_cut / v_s); vi++)
+						{
+							sqrt_up = sqrt(pow(((vi + 1) * v_s), 2.0) + 2.0 * phi[p]);
+							sqrt_lo = sqrt(pow(((vi)* v_s), 2.0) + 2.0 * phi[p]);
+							theta_up = asinh(sqrt(pow(((vi + 1) * v_s), 2.0) + 2.0 * phi[p]) / (v_min));
+							theta_lo = asinh(sqrt(pow(((vi)* v_s), 2.0) + 2.0 * phi[p]) / (v_min));
+
+							nepart[mu_ind] += (((F[vi] - ((vi * v_s) * Fp[vi])) * (sqrt_up - sqrt_lo)) + (0.5 * Fp[vi] * (((((vi + 1) * v_s) * sqrt_up) - ((vi * v_s) * sqrt_lo)) + (pow(v_min, 2.0) * (theta_up - theta_lo)))));
+							nepart[mu_ind] += ((0.5 * (pow((vi * v_s), 2.0) + pow(v_min, 2.0)) * Fpp[vi] * (sqrt_up - sqrt_lo)) + ((1.0 / 6.0) * Fpp[vi] * (pow(sqrt_up, 3.0) - pow(sqrt_lo, 3.0))) - (0.5 * (vi * v_s) * Fpp[vi] * (((((vi + 1) * v_s) * sqrt_up) - ((vi * v_s) * sqrt_lo)) + (pow(v_min, 2.0) * (theta_up - theta_lo)))));
+
+							w_up = 0.5 * (pow(((vi + 1) * v_s), 2.0) - pow(v_min, 2.0));
+							w_lo = 0.5 * (pow(((vi)* v_s), 2.0) - pow(v_min, 2.0));
+							af_err[p] += ((((F[vi] - ((vi * v_s) * Fp[vi])) * (sqrt_up - sqrt_lo)) + (0.5 * Fp[vi] * (((((vi + 1) * v_s) * sqrt_up) - ((vi * v_s) * sqrt_lo)) + (pow(v_min, 2.0) * (theta_up - theta_lo))))) - (0.5 * exp(phi[p]) * (erf(sqrt(w_up)) - erf(sqrt(w_lo)))));
+							af_err[p] += ((0.5 * (pow((vi * v_s), 2.0) + pow(v_min, 2.0)) * Fpp[vi] * (sqrt_up - sqrt_lo)) + ((1.0 / 6.0) * Fpp[vi] * (pow(sqrt_up, 3.0) - pow(sqrt_lo, 3.0))) - (0.5 * (vi * v_s) * Fpp[vi] * (((((vi + 1) * v_s) * sqrt_up) - ((vi * v_s) * sqrt_lo)) + (pow(v_min, 2.0) * (theta_up - theta_lo)))));
+						}
+
+						vi_1 = (int)floor(vpar_cut / v_s);
+						sqrt_up = sqrt(pow(vpar_cut, 2.0) + 2.0 * phi[p]);
+						sqrt_lo = sqrt(pow(((vi_1)* v_s), 2.0) + 2.0 * phi[p]);
+						theta_up = asinh(sqrt(pow(vpar_cut, 2.0) + 2.0 * phi[p]) / (v_min));
+						theta_lo = asinh(sqrt(pow(((vi_1)* v_s), 2.0) + 2.0 * phi[p]) / (v_min));
+
+						nepart[mu_ind] += (((F[vi_1] - ((vi_1 * v_s) * Fp[vi_1])) * (sqrt_up - sqrt_lo)) + (0.5 * Fp[vi_1] * (((vpar_cut * sqrt_up) - ((vi_1 * v_s) * sqrt_lo)) + (pow(v_min, 2.0) * (theta_up - theta_lo)))));
+						nepart[mu_ind] += ((0.5 * (pow(((vi_1)* v_s), 2.0) + pow(v_min, 2.0)) * Fpp[vi_1] * (sqrt_up - sqrt_lo))) + ((1.0 / 6.0) * Fpp[vi_1] * (pow(sqrt_up, 3.0) - pow(sqrt_lo, 3.0))) - (0.5 * (vi_1 * v_s) * Fpp[vi_1] * (((vpar_cut * sqrt_up) - ((vi_1 * v_s) * sqrt_lo)) + (pow(v_min, 2.0) * (theta_up - theta_lo))));
+
+						w_up = 0.5 * (pow(vpar_cut, 2.0) - pow(v_min, 2.0));
+						w_lo = 0.5 * (pow((vi_1 * v_s), 2.0) - pow(v_min, 2.0));
+						in_err[p] += (((F[vi_1] - ((vi_1 * v_s) * Fp[vi_1])) * (sqrt_up - sqrt_lo)) + (0.5 * Fp[vi_1] * (((vpar_cut * sqrt_up) - ((vi_1 * v_s) * sqrt_lo)) + (pow(v_min, 2.0) * (theta_up - theta_lo))))) - (0.5 * exp(phi[p]) * (erf(sqrt(w_up)) - erf(sqrt(w_lo))));
+						in_err[p] += ((0.5 * (pow(((vi_1)* v_s), 2.0) + pow(v_min, 2.0)) * Fpp[vi_1] * (sqrt_up - sqrt_lo))) + ((1.0 / 6.0) * Fpp[vi_1] * (pow(sqrt_up, 3.0) - pow(sqrt_lo, 3.0))) - (0.5 * (vi_1 * v_s) * Fpp[vi_1] * (((vpar_cut * sqrt_up) - ((vi_1 * v_s) * sqrt_lo)) + (pow(v_min, 2.0) * (theta_up - theta_lo))));
+					}
+				}
+			}
+		//}
+			//if (nepart[mu_ind] != nepart[mu_ind]) printf("mu_ind = %d, p = %d\n", mu_ind, p);
+
+//piece below is attempt at including first order in gamme effect of density variation --> does not work so well, so leave commented out
+			if ( (gamma < SMALLGAMMA) && (gamma > TINY) ) nepart[mu_ind] *= smallrhoefrac(x_grid[p], mu[mu_ind]);
+//instead, use wall electric field to calculate cutoff correction in vparallel --> works better
+			if (mu_ind != 0) {
+				momflux0 += 2.0*M_PI*0.5*(nepart[mu_ind] + nepart[mu_ind -1])*(mu[mu_ind] - mu[mu_ind-1]);
+				//printf("n_grid %f\n", n_grid[p]);
+			}
+		}
+		//n_pre[p] = 0.5 * exp(phi[p]) * (1 + erf(sqrt(phi[p] -phi[0] )));
+		printf("n_grid[%d] = %f, n_pre = %f\n", p, n_grid[p], n_pre[p]);
+		//if (p== p_size-1)
+		//	printf("in denszeroorb: charge = %f, derivative wrt phi is dndphi = %f\n", charge, (n_grid[p] - n_grid[p-1])/(phi[p] - phi[p-1]));
+	//}
+		momflux0 /= n_inf;
+		momfluxinf /= n_inf;
+		momflux0 = exp(phi[0])/(1.0+erf(sqrt(-phi[0]))) ;
+		momfluxinf = 1.0 - (2.0/sqrt(M_PI))*exp(phi[0])*sqrt(-phi[0])/(1.0+erf(sqrt(-phi[0]))) ;
+		printf("YOLO\n");	
+		printf("momfluxinf = %f\n", momfluxinf);
+		printf("momflux0 = %f\n", momflux0);
+		printf("2*(momflux0 - momfluxinf) = %f\n", 2.0*(momflux0-momfluxinf));
 	}
 	else {
 		printf("In 1D ion integration\n");
@@ -832,8 +946,10 @@ void denszeroorb(double charge, double TeovTs, double *phi_real, double *n_grid,
 	}
 
 	Phi =  Phi / n_inf;
+	momfluxinf =  momfluxinf / n_inf;
 	Qe /= n_inf;
 	printf("Phi = %f\n", Phi);
+	printf("momfluxinf = %f\n", momfluxinf);
 	printf("n_inf = %f\n", n_inf);
 	*n_infp = n_inf;
 	for (p = 0;p < p_size; p++)
@@ -931,9 +1047,9 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 		/* vz used in the density integral; U is the total energy, used in the density integral; dvz is the thickness of the vz grid used to take the integral over U (which is taken over vz in practice), dvzopen is the same for the open orbit piece; dvx is the thickness of the vx grid used to take the integral over Uperp ( which is taken over vx in practice). It must be evaluated because it depends on stored values of vx[j][i][k]; dxbar is the thickness of the xbar grid; intdU is the value of the integral over U in the closed orbit density integration process; intdUopen is the same as above, for the open orbit integral  */
 	double intdUold=0.0, intdvx=0.0, intdvxold = 0.0, intdxbar=0.0, intdxbaropen=0.0, F, Fold=0.0, Fold_ref=0.0, Ucap;
 		/* intdUold is a variable which stores the old intdU, so that the trapezium rule of integration can be applied (intdUold + intdU)*dvz; intdvx stores the integral over Uperp (hence over vx) in the closed orbit integral; intdxbar stores the value of the integral over xbar (which is the final result!), intdxbaropen does the same in the open orbit density integral; intdxbaropenBohm does the same for the Bohm integral; idealBohm is what the Bohm integral shoult be if Bohm condition is marginally satisfied; F is the value of the distribution function evaluated in the density integrals by interpolating FF, and Fold is the `old' needed to apply the trapezium rule; Fprime is the bilinearly interpolated value of FFprime, and Fprimeold is the same at the previous grid point (needed for trapezium rule); used in INTEGRALS OF DISTRIBUTION FUNCTION AT INFINITY; Ucap is the topmost total energy integrated to */
-	double intdUopenflow = 0.0, intdUopenflowold = 0.0, intdxbaropenflow = 0.0, oorbintgrdflow = 0.0, oorbintgrdflowold = 0.0;
+	double intdUopenflow = 0.0, intdUopenflowold = 0.0, intdxbaropenflow = 0.0, oorbintgrdflow = 0.0, oorbintgrdflowold = 0.0, oorbintgrdener = 0.0, oorbintgrdenerold = 0.0;
 	// values of various integrals
-	double oorbintgrdold=0.0, Fopen=0.0, intdUopenold=0.0;
+	double oorbintgrdold=0.0, Fopen=0.0, intdUopenold=0.0, intdUopenener=0.0, intdUopenenerold = 0.0, intdxbaropenener = 0.0, Qflux0 = 0.0;
 	double vx0open; 
 	double intdUantycal=0.0, intdvxantycal=0.0, vxnew=0.0, vxold = 0.0, Uperpnew = 0.0, *xtop, intdUopenantycal=0.0;
 	double openorbitnew, chinew, munew = 0.0;
@@ -942,6 +1058,7 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 	double flux0, du, fluxinf1old, fluxinfintgrdold, fluxinfintgrd, Qfluxinf1old, Qfluxinfintgrdold, Qfluxinfintgrd, u, Chodura2, Chodura2old, Chodura1old, Chodura1, Chodura;
 	double fluxinf, Qfluxinf, fluxinf1, Qfluxinf1, densinf1, densinf, densinf1old; 
 	double musmall, muell, Omegaell, minphiformucalc = 0.3;
+	FILE *fp, *filellip;
 
 	//printf("charge = %f\n", charge);
 	//for (i=0; i<size_phigrid;i++) printf("index %d\tx = %f\tphi = %f\n", i, x_grid[i], phi_grid[i]);
@@ -962,7 +1079,6 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 	//printf("size_finegrid = %d\n", size_finegrid);
 	xx = (double*)calloc(size_finegrid,sizeof(double)); // xx = x has correct size
 	phi = (double*)calloc(size_finegrid,sizeof(double)); // phi now has correct size
-	FILE *fp, *filellip;
 	filellip = fopen("checkellip.txt", "w");
 	if (filellip == NULL) {	
 		printf("Cannot open filellip.txt");
@@ -1685,7 +1801,9 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 			vxnew = 0.0;
 			intdUopenold = intdUopen;
 			intdUopenflowold = intdUopenflow; //intdUopenBohmold = intdUopenBohm;
+			intdUopenenerold = intdUopenener; //intdUopenBohmold = intdUopenBohm;
 			intdUopen = 0.0;
+			intdUopenener = 0.0;
 			intdUopenflow = 0.0; //intdUopenBohm = 0.0;
 			//intdUopenxbar = 0.0; //intdUopensquare = 0.0;
 			if (j == jmopen[i]) {
@@ -1765,10 +1883,12 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 			else if (j > jmopen[i]) {
 				oorbintgrd = oorbintgrdold = 0.0;
 				oorbintgrdflow = oorbintgrdflowold = 0.0;
+				oorbintgrdener = oorbintgrdenerold = 0.0;
 				sizeU = (int) sqrt(2.0*(Ucap - chiMax[j]))/dvzopen;
 				for (l=0; l < sizeU; l++) {
 					oorbintgrdold = oorbintgrd;
 					oorbintgrdflowold = oorbintgrdflow;
+					oorbintgrdenerold = oorbintgrdener;
 					vz = dvzopen*l;
 					U = chiMax[j] + 0.5*pow(vz, 2.0);
 					//vx0open = sqrt(TINY + chiMax[j] - chi[j][i]);
@@ -1782,15 +1902,18 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 						Fopen = bilin_interp(mu[j][0], 0.0, FF, mumu, UU, sizemumu, sizeUU, -1, -1); 
 						oorbintgrdold = sqrt(2.0*alpha*sqrt(2.0*(mu[j][0] - chiMax[j]))*openorbit[j])*Fopen;
 						oorbintgrdflowold = alpha*sqrt(2.0*(mu[j][0] - chiMax[j]))*openorbit[j]*Fopen;
+						oorbintgrdenerold = 0.125*pow(2.0*alpha*sqrt(2.0*(mu[j][0] - chiMax[j]))*openorbit[j], 2.0)*Fopen + U*oorbintgrdflowold;
 						Fopen = bilin_interp(mu[j][0], U-mu[j][0], FF, mumu, UU, sizemumu, sizeUU, -1, -1); 
 						oorbintgrd = sqrt(2.0*alpha*vz*openorbit[j])*Fopen;
 						oorbintgrdflow = alpha*vz*openorbit[j]*Fopen;
+						oorbintgrdenerold = 0.125*pow(2.0*alpha*vz*openorbit[j], 2.0)*Fopen + U*oorbintgrdflow;
 					}
 					else {
 						frac = 1.0;
 						Fopen = bilin_interp(mu[j][0], U-mu[j][0], FF, mumu, UU, sizemumu, sizeUU, -1, -1); 
 						oorbintgrd = (sqrt(vx0open*vx0open + 2.0*alpha*vz*openorbit[j]) - vx0open)*Fopen;
 						oorbintgrdflow = alpha*vz*openorbit[j]*Fopen;
+						oorbintgrdener = 0.125*pow(2.0*alpha*vz*openorbit[j], 2.0)*Fopen + U*oorbintgrdflow;
 						//if (oorbintgrd != oorbintgrd) 
 						if (frac != frac) 
 							printf("AHA\n\n\n\n\n");
@@ -1815,10 +1938,12 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 					if (l!=0) {
 						intdUopen += 0.5*frac*dvzopen*(oorbintgrd+oorbintgrdold);
 						intdUopenflow += 0.5*frac*dvzopen*(oorbintgrdflow+oorbintgrdflowold);
+						intdUopenener += 0.5*frac*dvzopen*(oorbintgrdener+oorbintgrdenerold);
 					}
 					else {
 						intdUopen += 0.0;
 						intdUopenflow += 0.0;
+						intdUopenener += 0.0;
 					} 
 				}
 				if (intdUopen != intdUopen)  {
@@ -1841,6 +1966,7 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 	//(chi[j][k]-chi[j][i])/(2.0*(xx[i]-xx[k])); 
 				intdxbaropen += 0.5*(intdUopen+intdUopenold)*dxbar;
 				intdxbaropenflow += 0.5*(intdUopenflow+intdUopenflowold)*dxbar;
+				intdxbaropenener += 0.5*(intdUopenener+intdUopenenerold)*dxbar;
 				//intdxbaropenBohm += 0.5*(intdUopenBohm+intdUopenBohmold)*dxbar;
 				if (intdxbaropen != intdxbaropen) {
 					printf("PROBLEM HERE, j is %d\n", j); 
@@ -2007,12 +2133,13 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 		n_grid[ic] = intdxbar + intdxbaropen;
 		if (ic == 0) {
 			flux0 = intdxbaropenflow/(n_inf*alpha);
+			Qflux0 = intdxbaropenener/(n_inf*alpha);
 			if (charge < 0.0) 
 				*flux = flux0;  
 			printf("flow velocity at x=0 = %f\n", flux0/n_grid[0]);
-			printf("flux evaluated at x=0 is %f\n", flux0);
+			printf("flux evaluated at x=0 is %f\theat flux = %f\n", flux0, Qflux0);
 		}
-		if ( (ic != size_xlim) && ( ( 1.0 - n_grid[ic]/n_inf <= margin ) || ( ( (charge < 0.0) && ( - phi_grid[ic] < margin ) ) && ( - phi_grid[0] < 0.2 ) ) ) ) {	
+		if ( (ic != size_xlim) && ( ( 1.0 - n_grid[ic]/n_inf <= margin ) ) ) { //|| ( ( (charge < 0.0) && ( - phi_grid[ic] < margin ) ) && ( - phi_grid[0] < 0.2 ) ) ) ) {	
 			printf("ic = %d/%d, size_xlim = %d, margin = %f, condition (< margin?) = %f\n", ic, size_phigrid, size_xlim, margin, 1.0 - n_grid[ic]/n_inf);
 			stop = 1;
 			*size_ngrid = ic; 
