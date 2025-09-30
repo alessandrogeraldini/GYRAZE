@@ -1977,7 +1977,7 @@ i=0;
 	//printf("FINAL CHECK passed. HURRAY!\n");
 	//}
 
-	if ( (gamma_ref <= 5.0) && (gamma_ref >= 0.0) ) {
+	if ( (gamma_ref <= 5.0) && (gamma_ref >= 0.3) ) {
 	// FULL DEBYE SHEATH SOLUTION CALCULATED WITH FINITE (DISTORTED) ELECTRON GYROORBITS
 		// form x, phi, ne and ni grids for Debye sheath
 		if (gamma_ref < TINY) DS_size = SYS_SIZ;
@@ -2077,6 +2077,7 @@ i=0;
 			EW = phi_DSgrid[1] - phi_DSgrid[0]; EW/=(x_DSgrid[1] - x_DSgrid[0]);
 			printf("wall electric field EW = %f\n", EW/gamma_ref);
 			if (gamma_ref > SMALLGAMMA) {
+				printf("gamma = %f > SMALLGAMMA = %f : use parallel velocity cutoff from full Debye sheath solution\n", gamma_ref, SMALLGAMMA);
 				densfinorb(1.0, 1.0, alpha, size_phiDSgrid, &size_neDSgrid, ne_DSgrid, x_DSgrid, phi_DSgrid, -1.0, dist_e_GK, mu_e, U_e_DS, size_mu_e, size_vpar_e, 0.0, &flux_eDS, &garbage, ZOOM_DS, MARGIN_DS, -999.9, vy_e_wall, mu_e_op, chiM_e, twopidmudvy_e, &size_op_e); 
 				//for (i=0; i<size_neDSgrid; i++)
 				//	ne_DSgrid[i] *= (sumni_DSgrid[size_neDSgrid-1]/ne_DSgrid[size_neDSgrid-1]);
@@ -2093,6 +2094,7 @@ i=0;
 				printf("flux_eDS = %f\n", flux_eDS);
 			}
 			else {
+				printf("gamma = %f < SMALLGAMMA = %f : use model parallel velocity cutoff\n", gamma_ref, SMALLGAMMA);
 				for (i=0; i< size_mu_e; i++) 
 					vpar_e_cut[i] = 0.0; //sqrt(-2.0*lin_interp(x_DSgrid, phi_DSgrid, sqrt(mue_cut_lookup[i]), size_phiDSgrid, 1234)); 
 				denszeroorb(-1.0, 1.0, phi_DSgrid, ne_DSgrid, size_phiDSgrid, &flux_eDS, &Q_eDS, dist_e_GK, vpar_e_DS, mu_e, size_vpar_e, size_mu_e, vpar_e_cut, gamma_ref, x_DSgrid, &ne_inf); // needs dist_e_GK which in this case acts like dist_e_DK_DS
@@ -2201,6 +2203,10 @@ i=0;
 				printf("error when opening file %s\n", fpstr);
 			for (i=0; i<size_phiDSgrid; i++) {
 				fprintf(fp, "%f %f %f %f\n", x_DSgrid[i], phi_DSgrid[i], sumni_DSgrid[i], ne_DSgrid[i]);
+			}
+			if (gamma_ref < SMALLGAMMA) {
+				fprintf(fp, "0.0 %f\n", -0.5*v_cutDS*v_cutDS);
+				fprintf(fp, "1.0 %f\n", -0.5*v_cutDS*v_cutDS+EW);
 			}
 			fclose(fp);
 			snprintf(fpstr, 150, "%s%d/vparcut.txt", dirname_it, N);
@@ -2345,6 +2351,18 @@ i=0;
 		printf("electron heat flux Q_e = %f\n", Q_e);
 		printf("electron particle flux Phi = %f\n", flux_e);
 		printf("electron sheath heat transmission coefficient = %f (classical value = 2 + |phiDS+phiMP| = %f\n", Q_e/flux_e, 2 + 0.5*v_cut*v_cut);
+		phiDS0corr = -0.5*v_cutDS*v_cutDS;// + 1.5*gamma_ref*gamma_ref*exp(-0.5*v_cutDS*v_cutDS)/(1.0+erf(sqrt(0.5)*v_cutDS));
+		ionfluxes(alpha, TioverTe[0], &ionmomfluxDSinf, &ionmomfluxDS0, &Bohm, phiDS0corr, phi_grid[0], dist_i_GK[0], mu_i[0], U_i[0], vy_i_wall[0], mu_i_op[0], chiM_i[0], twopidmudvy_i[0], size_mu_i[0], size_U_i[0], size_op_i[0]); 
+		elmomfluxDS0 = exp(-0.5*v_cutDS*v_cutDS)/(1.0+erf(sqrt(-phiDS0corr)));
+		elmomfluxDSinf = 1.0 - (2.0/sqrt(M_PI))*exp(phiDS0corr)*sqrt(-phiDS0corr)/(1.0+erf(sqrt(-phiDS0corr))) ;
+		EW = gamma_ref*sqrt( (M_PI/2.0) )*gamma_ref*exp(phiDS0corr)/(1.0+erf(sqrt(-phiDS0corr))) + gamma_ref*sqrt(2.0*(ionmomfluxDS0 + elmomfluxDS0 - ionmomfluxDSinf - elmomfluxDSinf)); // + gamma_ref*1.25*exp(-0.5*v_cutDS*v_cutDS)/(1.0+erf(sqrt(0.5)*v_cutDS));
+		snprintf(fpstr, 150, "%s/modwallEfield.txt", dirname);
+		fp = fopen(fpstr, "w");
+		if (fp == NULL) {
+			printf("error when opening file %s\n", fpstr);
+		}
+		fprintf(fp, "%f %f\n", EW/gamma_ref, sqrt(2.0*(ionmomfluxDS0 + elmomfluxDS0 - ionmomfluxDSinf - elmomfluxDSinf)));
+		fclose(fp);
 	// Print potential and density profiles to files
 	}
 
