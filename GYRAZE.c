@@ -2448,11 +2448,16 @@ i=0;
 		printf("error when opening file\n");
 	}
 	for (i=0; i<size_mu_i[0]; i++) {
-		fprintf(fp, "%f ", mu_i[0][i]);
+		if (i!= size_mu_i[0]-1)
+			fprintf(fp, "%f ", mu_i[0][i]);
+		else
+			fprintf(fp, "%f\n", mu_i[0][i]);
 	}
-	fprintf(fp, "\n");
 	for (j=0; j<size_U_i[0]; j++) {
-		fprintf(fp, "%f ", U_i[0][j]);
+		if (j!= size_U_i[0]-1)
+			fprintf(fp, "%f ", U_i[0][j]);
+		else
+			fprintf(fp, "%f\n", U_i[0][j]);
 	}
 	fclose(fp);
 	snprintf(fpstr, 150, "%s/Fi_mpe.txt", dirname);
@@ -2462,9 +2467,10 @@ i=0;
 	}
 	for (i=0; i<size_mu_i[0]; i++) {
 		for (j=0; j<size_U_i[0]; j++) {
-			fprintf(fp, "%f ", dist_i_GK[0][i][j]);
-			if (j == size_U_i[0] - 1)	
-				fprintf(fp, "\n");
+			if (j != size_U_i[0] - 1) 	
+				fprintf(fp, "%f ", dist_i_GK[0][i][j]);
+			else 
+				fprintf(fp, "%f\n", dist_i_GK[0][i][j]);
 		}
 	}
 	fclose(fp);
@@ -2474,11 +2480,17 @@ i=0;
 		printf("error when opening file\n");
 	}
 	for (i=0; i<size_mu_e; i++) {
-		fprintf(fp, "%f ", mu_e[i]);
+		if (i!=size_mu_e-1)
+			fprintf(fp, "%f ", mu_e[i]);
+		else 
+			fprintf(fp, "%f\n", mu_e[i]);
 	}
 	fprintf(fp, "\n");
 	for (j=0; j<size_vpar_e; j++) {
-		fprintf(fp, "%f ", vpar_e[j]);
+		if (j!=size_vpar_e-1)
+			fprintf(fp, "%f ", vpar_e[j]);
+		else
+			fprintf(fp, "%f\n", vpar_e[j]);
 	}
 	fclose(fp);
 	snprintf(fpstr, 150, "%s/Fe_mpe.txt", dirname);
@@ -2488,9 +2500,10 @@ i=0;
 	}
 	for (i=0; i<size_mu_e; i++) {
 		for (j=0; j<size_vpar_e; j++) {
-			fprintf(fp, "%f ", dist_e_DK[i][j]);
-			if (j == size_vpar_e - 1)	
-				fprintf(fp, "\n");
+			if (j != size_vpar_e - 1)	
+				fprintf(fp, "%f ", dist_e_DK[i][j]);
+			else
+				fprintf(fp, "%f\n", dist_e_DK[i][j]);
 		}
 	}
 	fclose(fp);
