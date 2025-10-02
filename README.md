@@ -13,25 +13,27 @@ Above such angles, a solver which does not hard-wire grazing incidence is needed
 
 ## Input file
 
-The file input_physparams.txt contains the physical parameters of the simulation: 1 string and 8 numerical parameters:
+The file input_physparams.txt contains the physical parameters of the simulation: 1 string and 9 numerical parameters:
 
 string parameter = type_dist_func: this can be "ADHOC" to tell the code to use analytical ad hoc distribution functions at the magnetic presheath entrance. If anything other than ADHOC is written here, the code can only run if the files Fi_mpe.txt and Fi_mpe_args.txt (plus the corresponding electron files starting in Fe) are present in the folder. If ADHOC is written here, these files are not necessary because the code has some built-in ad hoc distribution functions (see paper Geraldini, Parra, Militello 2019).
 
 1st numerical parameter = alphadeg: the angle between the magnetic field angle and the wall, measured in degrees
 
-2nd numerical parameter = gamma_ref: the electron gyroradius rho_e normalised by the Debye length lambda_D
+2nd numerical parameter = gammaflag: ( 1 / 0 ) set to 1 if gamma is defined using the Debye length calculated at the Debye sheath entrance, 0 if using Debye sheath at magnetic presheath entrance (0 is ALWAYS the appropriate choice for matching to a code outside of the magnetic presheath, 1 should only be used for specific studies/scans)
 
-3th numerical parameter = nspec: the number of ion species present
+3nd numerical parameter = gamma_ref: the electron gyroradius rho_e normalised by the Debye length lambda_D
 
-4th numerical parameter = nioverne: the ratio of the density of the each species, separated by a space
+4th numerical parameter = nspec: the number of ion species present
 
-5th numerical parameter = TioverTe: the temperature of each species as a fraction of the electron temperature, separated by a space
+5th numerical parameter = nioverne: the ratio of the density of the each species, separated by a space
 
-6th numerical parameter = mioverme: the mass of each ion species as a multiple of the electron mass, separated by a space
+6th numerical parameter = TioverTe: the temperature of each species as a fraction of the electron temperature, separated by a space
 
-7th numerical parameter = set_current: ( 1 / 0 ) if ( wall current / electrostatic potential ) is specified on the next line
+7th numerical parameter = mioverme: the mass of each ion species as a multiple of the electron mass, separated by a space
 
-8th numerical parameter = target_current/phi_wall: the value of current or electrostatic potential at the wall
+8th numerical parameter = set_current: ( 1 / 0 ) if ( wall current / electrostatic potential ) is specified on the next line
+
+9th numerical parameter = target_current/phi_wall: the value of current or electrostatic potential at the wall
 
 To solve only the magnetic presheath (without the full Debye sheath potential profile) with a simplified electron model it is sufficient to set the value of rho_e/lambda_D to 0.0.
 
