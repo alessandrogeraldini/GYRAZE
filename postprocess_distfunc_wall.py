@@ -9,13 +9,39 @@ import matplotlib.pyplot as plt
 import matplotlib as mpl
 import scipy.special as scsp
 import h5py
+import os
 
 plotvx=1
 plotspeedangle= 1
 plotEthetaphi = 1
 wall = 1
 
-alphadeg, gammae, num_spec, niovne, TiovTe, miovme, set_current, jorphi = np.loadtxt('inputfile.txt', unpack = True)
+if (os.path.isfile("inputfile.txt")):
+	alphadeg, gammae, num_spec, niovne, TiovTe, miovme, set_current, jorphi = np.loadtxt('inputfile.txt', unpack = True)
+elif (os.path.isfile("input_physparams.txt")):
+	file = open("input_physparams.txt")
+	gammaflag = 0
+	counter = 0
+	listline = []
+	for line in file:
+		listlineold = listline
+		listline = line.split()
+		if (len(listlineold) > 1) and ( (listlineold[1] == "gamma_ref") or (counter == 2) ):
+			gamma = float(listline[0])
+		if (len(listlineold) > 1) and ( (listlineold[1] == "alphadeg") or ( (counter == 0) and (str.isnumeric(line[0]) == True) ) ):
+			alphadeg = float(listline[0])
+		if (len(listlineold) > 1) and ( (listlineold[1] == "TioverTe") or (counter == 5) ):
+			TiovTe = float(listline[0])
+		if (len(listlineold) > 0) and (str.isnumeric(line[0]) == True):
+			counter += 1
+
+		##print(line)
+else:
+	prinf("ERROR: no input file found. Exit code now")
+	exit(1)
+
+print(gamma)
+
 JW, phiW, Phie, Phii, qe, qi = np.loadtxt('misc_output.txt', unpack = True)
 alpha = alphadeg*np.pi/180
 xMP, phiMP, niMP, neMP = np.loadtxt("phi_n_MP.txt", unpack = True)
@@ -159,7 +185,7 @@ if plotvx==1:
 if plotspeedangle==1:
 	#f_energyangle = open('f-energyangle-alpha'+str(alpha)+'-TiovTe'+str(TiovTe)+'.txt', 'w') 
 	#Earr = np.arange(0.0, 9.0*(1.0+1.0/TiovTe), 0.1)
-	Emax = - phiDS0/TiovTe - phiMP[0]/TiovTe + 10.0
+	Emax = - phiDS0/TiovTe - phiMP[0]/TiovTe + 15.0
 	Emin = - phiDS0/TiovTe - phiMP[0]/TiovTe 
 	dtheta = np.pi/180.0
 	deltaE = 0.4
@@ -176,10 +202,9 @@ if plotspeedangle==1:
 		phiangarr.append([])
 		print("energy = ", E)
 		#vyarr = np.arange(vyDSE[0] , invchiMfunc([E + phiDS0/TiovTe + phiMP[0]/TiovTe])[0], 0.05)
-		j=0
-		
 		thetaarr.append(np.linspace(np.arcsin(vyDSE[0]/np.sqrt(2*E)), np.pi/2, 40))
 		Earrmesh.append([])
+		j=0
 		for theta in thetaarr[i]:
 			fWfull[i].append([])
 			Earrmesh[i].append(Earr[i])
@@ -192,8 +217,6 @@ if plotspeedangle==1:
 			intgrd = []
 			#for vy in vyarr:
 			for phiang in phiangarr[i][j]:
-				#vz = np.sqrt(2.0*E - 2.0*chiMfunc([vy])[0] + 2.0*phiMP[0]/TiovTe)
-				#vz = np.sqrt(2.0*E - vy**2 - vx**2)
 				vz = np.sqrt(2.0*E)*np.sin(theta)*np.cos(phiang)
 				vy = np.sqrt(2.0*E)*np.sin(theta)*np.sin(phiang)
 				#phiang = np.arctan(vy/vz)

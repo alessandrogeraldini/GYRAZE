@@ -3,7 +3,33 @@ import h5py
 import scipy.interpolate as scintpol
 import matplotlib.pyplot as plt
 import matplotlib as mpl
+import os
+
 cbcolor = 'inferno'
+
+if (os.path.isfile("inputfile.txt")):
+	alphadeg, gammae, num_spec, niovne, TiovTe, miovme, set_current, jorphi = np.loadtxt('inputfile.txt', unpack = True)
+elif (os.path.isfile("input_physparams.txt")):
+	file = open("input_physparams.txt")
+	gammaflag = 0
+	counter = 0
+	listline = []
+	for line in file:
+		listlineold = listline
+		listline = line.split()
+		if (len(listlineold) > 1) and ( (listlineold[1] == "gamma_ref") or (counter == 2) ):
+			gamma = float(listline[0])
+		if (len(listlineold) > 1) and ( (listlineold[1] == "alphadeg") or ( (counter == 0) and (str.isnumeric(line[0]) == True) ) ):
+			alphadeg = float(listline[0])
+		if (len(listlineold) > 1) and ( (listlineold[1] == "TioverTe") or (counter == 5) ):
+			TiovTe = float(listline[0])
+		if (len(listlineold) > 0) and (str.isnumeric(line[0]) == True):
+			counter += 1
+
+		##print(line)
+else:
+	prinf("ERROR: no input file found. Exit code now")
+	exit(1)
 
 version_angle = 1
 energy_input = float(input("input the desired energy: "))
@@ -160,7 +186,7 @@ plt.ylabel(r'$E $', fontsize = 20)
 plt.xlabel(r'$\theta (^{\circ})$', fontsize = 20)
 plt.xticks(fontsize = 16)
 plt.yticks(fontsize = 16)
-plt.ylim(0.0, E[len(E)-1])
+plt.ylim(0.0, Ev2[len(Ev2)-1])
 plt.xlim(0.0, 90)
 plt.tight_layout()
 plt.savefig("fig-enangle_v2.pdf")

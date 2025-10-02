@@ -24,7 +24,7 @@
 
 #define TEST_EL 0
 
-const char *strqty[8] = {"alpha=","gamma=","nspec=", "ni:ne=", "Ti:Te=","mi:me=","jwall=","pwall="};
+const char *strqty[9] = {"alpha=","fixMP=", "gamma=", "nspec=", "ni:ne=", "Ti:Te=","mi:me=","jwall=","pwall="};
 const int lenstrqty = 6;
 
 void densionDS(double alpha, double TiovTe, double *Bohm, double *ni_DS, double *phi_DS, double phi0, double **FF, double *mu, double *Uminmu, double *vy, double *mu_op, double *chiM, double *twopidmudvy, int size_phi, int size_mu, int size_U, int size_op_i) {
@@ -92,7 +92,7 @@ OUTPUT: density profile ni_DS
 			intgrdmflold = intgrdmfl;
 			intgrd = 0.0;
 			intgrdmfl = 0.0;
-			count = 0;
+			//count = 0;
 			for (k=1; k < size_U; k++) {
 				halfVx0sq = chiM[j] - 0.5*vy[j]*vy[j] - phi_DS[i]/TiovTe - phi0/TiovTe;
 				deltaUperp = mu_op[j] - chiM[j];
@@ -107,10 +107,9 @@ OUTPUT: density profile ni_DS
 				intgrd += ( (sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - sqrt(2.0*halfVx0sq)) * Fk + (sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - sqrt(2.0*halfVx0sq)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
 				if (i==0)
 					intgrdmfl += (1.0/3.0)*( ( pow(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j]), 1.5) - pow(2.0*halfVx0sq, 1.5) ) * Fk + (pow(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j]), 1.5) - pow(2.0*halfVx0sq, 1.5)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
-				if ((count == 0) && (intgrd != intgrd) ) {
-					count = 1;
-					//printf("???%f %f %f %f\n", halfVx0sq, deltaUperp, vzk, vzkm);
-				}
+				//if ((count == 0) && (intgrd != intgrd) ) {
+				//	count = 1;
+				//}
 			}
 			if (j > 0) {
 				if (i==0) 
@@ -131,58 +130,58 @@ OUTPUT: density profile ni_DS
 	}
 	}
 	else { // method == 2
-			n_inf = 0.0;
-			Bohmval = 0.0;
+	n_inf = 0.0;
+	Bohmval = 0.0;
+	intgrd = 0.0;
+	momflux0 = 0.0;
+	momfluxinf = 0.0;
+	for (i=0; i<sizevx; i+=1) {
+		vx[i] = sqrt(i*5.0/sizevx);
+		fvx[i] = 0.0;
+		for (j=0; j< size_mu; j++) {
+			intgrdold = intgrd;
 			intgrd = 0.0;
-			momflux0 = 0.0;
-			momfluxinf = 0.0;
-			for (i=0; i<sizevx; i+=1) {
-				vx[i] = sqrt(i*5.0/sizevx);
-				fvx[i] = 0.0;
-				for (j=0; j< size_mu; j++) {
-					intgrdold = intgrd;
-					intgrd = 0.0;
-					for (k=1; k < size_U; k++) {
-						halfVx0sq = chiM[j] - 0.5*vy[j]*vy[j] - phi0/TiovTe;
-						deltaUperp = mu[j] - chiM[j] - 0.5*vx[i]*vx[i] + halfVx0sq;
-						deltaUperp = mu[j] - chiM[j];
-						vzk = sqrt(2.0*(deltaUperp + Uminmu[k]));
-						vzkm = sqrt(2.0*(deltaUperp + Uminmu[k-1]));
-						if ( (0.5*vx[i]*vx[i] > halfVx0sq) && (0.5*vx[i]*vx[i] < halfVx0sq +  alpha*vzk*twopidmudvy[j]) && (0.5*vx[i]*vx[i] < halfVx0sq +  alpha*vzkm*twopidmudvy[j]) ) 
-							intgrd += 0.5*( (FF[j][k] + FF[j][k-1])*(vzk - vzkm) );
-						else if ( (0.5*vx[i]*vx[i] > halfVx0sq) && (0.5*vx[i]*vx[i] < halfVx0sq +  alpha*vzk*twopidmudvy[j]) && (0.5*vx[i]*vx[i] > halfVx0sq +  alpha*vzkm*twopidmudvy[j]) ) 
-							intgrd += 0.5*( (FF[j][k] + 0.0)*(vzk - sqrt((0.5*vx[i]*vx[i]-halfVx0sq)/(alpha*twopidmudvy[j])) ) );
-					}
-					if (j > 1) 
-						fvx[i] += (intgrd + intgrdold)*0.5*(vy[j] - vy[j-1]);
-					else if (j==1) {
-						intgrd = 0.0;
-					}
-					//if (fvx[i] > maxf)
-					//	maxf = fvx[i];
-				}
-				if (i > 1) {
-					Bohmval += ( 2.0*(fvx[i] - fvx[i-1])/(vx[i] + vx[i-1])) ;
-					n_inf += ( 0.5*(fvx[i] + fvx[i-1])*(vx[i] - vx[i-1]) );
-					momfluxinf += ( 0.5*(fvx[i]*vx[i]*vx[i] + fvx[i-1]*vx[i-1]*vx[i-1])*(vx[i] - vx[i-1]) );
-				}
+			for (k=1; k < size_U; k++) {
+				halfVx0sq = chiM[j] - 0.5*vy[j]*vy[j] - phi0/TiovTe;
+				deltaUperp = mu[j] - chiM[j] - 0.5*vx[i]*vx[i] + halfVx0sq;
+				deltaUperp = mu[j] - chiM[j];
+				vzk = sqrt(2.0*(deltaUperp + Uminmu[k]));
+				vzkm = sqrt(2.0*(deltaUperp + Uminmu[k-1]));
+				if ( (0.5*vx[i]*vx[i] > halfVx0sq) && (0.5*vx[i]*vx[i] < halfVx0sq +  alpha*vzk*twopidmudvy[j]) && (0.5*vx[i]*vx[i] < halfVx0sq +  alpha*vzkm*twopidmudvy[j]) ) 
+					intgrd += 0.5*( (FF[j][k] + FF[j][k-1])*(vzk - vzkm) );
+				else if ( (0.5*vx[i]*vx[i] > halfVx0sq) && (0.5*vx[i]*vx[i] < halfVx0sq +  alpha*vzk*twopidmudvy[j]) && (0.5*vx[i]*vx[i] > halfVx0sq +  alpha*vzkm*twopidmudvy[j]) ) 
+					intgrd += 0.5*( (FF[j][k] + 0.0)*(vzk - sqrt((0.5*vx[i]*vx[i]-halfVx0sq)/(alpha*twopidmudvy[j])) ) );
 			}
-			momfluxinf /= n_inf;
-			for (l=0; l< size_phi; l++) {
-				ni_DS[l] = 0.0;
-				for (i=0; i<sizevx; i+=1) {
-					vx[i] = sqrt(i*5.0/sizevx - 2.0*phi_DS[l]);
-					if (i>1) {
-						ni_DS[l] += ( 0.5 * ( fvx[i] + fvx[i-1] ) * (vx[i] - vx[i-1]) );
-						if (l==0)
-							momflux0 += ( 0.5 * ( fvx[i]*vx[i]*vx[i] + fvx[i-1]*vx[i-1]*vx[i-1] ) * (vx[i] - vx[i-1]) );
-					}
-				}
-				ni_DS[l] /= n_inf;
-				if (l==0)
-					momflux0 /= n_inf;
-			}	
+			if (j > 1) 
+				fvx[i] += (intgrd + intgrdold)*0.5*(vy[j] - vy[j-1]);
+			else if (j==1) {
+				intgrd = 0.0;
+			}
+			//if (fvx[i] > maxf)
+			//	maxf = fvx[i];
 		}
+		if (i > 1) {
+			Bohmval += ( 2.0*(fvx[i] - fvx[i-1])/(vx[i] + vx[i-1])) ;
+			n_inf += ( 0.5*(fvx[i] + fvx[i-1])*(vx[i] - vx[i-1]) );
+			momfluxinf += ( 0.5*(fvx[i]*vx[i]*vx[i] + fvx[i-1]*vx[i-1]*vx[i-1])*(vx[i] - vx[i-1]) );
+		}
+	}
+	momfluxinf /= n_inf;
+	for (l=0; l< size_phi; l++) {
+		ni_DS[l] = 0.0;
+		for (i=0; i<sizevx; i+=1) {
+			vx[i] = sqrt(i*5.0/sizevx - 2.0*phi_DS[l]);
+			if (i>1) {
+				ni_DS[l] += ( 0.5 * ( fvx[i] + fvx[i-1] ) * (vx[i] - vx[i-1]) );
+				if (l==0)
+					momflux0 += ( 0.5 * ( fvx[i]*vx[i]*vx[i] + fvx[i-1]*vx[i-1]*vx[i-1] ) * (vx[i] - vx[i-1]) );
+			}
+		}
+		ni_DS[l] /= n_inf;
+		if (l==0)
+			momflux0 /= n_inf;
+	}	
+	}
 	*Bohm = Bohmval/n_inf;
 	printf("Bohm = %f\n", *Bohm);
 	printf("momfluxinf = %f\n", momfluxinf);
@@ -988,8 +987,8 @@ void make_phigrid(double *x_grid, double *phi_grid, int size_phigrid, double gri
 			//new_x[i] = pow( pow(grid_parameter+xi, 0.5) - sqrt(grid_parameter), 2.0);
 			new_x[i] = pow( pow(grid_parameter+xi, power) - pow(grid_parameter, power), 2.0);
 			//g = sqrt(new_x[i]);
-			new_phi[i] = phi_jump*pow(len_scale, 2.0)/pow(new_x[i] + len_scale, 2.0);
 			new_phi[i] = phi_jump*exp(-new_x[i]/len_scale);
+			new_phi[i] = phi_jump*pow(len_scale, 2.0)/pow(new_x[i] + len_scale, 2.0);
 			//if (new_x[i] < 10.0/sqrt(2)) 
 			//	new_phi[i] = 3.0*pow((new_x[i]*sqrt(2.0)/10.0 - 1.0), 5.0);
 			//else 
@@ -1063,7 +1062,7 @@ double vparcut_mu(double mu, double vcut) {
 // The main function of MAGSHEATH
 int main(void) {
 // computation time
-	int MAX_IT, ZOOM_DS, ZOOM_MP;
+	int MAX_IT, ZOOM_DS, ZOOM_MP, gammaflag;
 	double INITIAL_GRID_PARAMETER, SYS_SIZ, MAXMU, DMU, MAXVPAR, MAXVPAR_I, DVPAR, DVPAR_I, SMALLGAMMA, tol_MP[2], tol_DS[2], tol_current, WEIGHT_MP, WEIGHT_DS, WEIGHT_j, MARGIN_MP, MARGIN_DS, GRIDSIZE_MP, GRIDSIZE_DS; // DXMIN
 
 	clock_t begin_it = clock(); // Finds the start time of the computation
@@ -1083,7 +1082,7 @@ int main(void) {
 	double deltaxDS; 
 // input parameters set in inputfile.txt
 	int num_spec, fix_current=0;
-	double alpha, *nioverne, *TioverTe, *mioverme, gamma_ref, target_current;
+	double alpha, *nioverne, *TioverTe, *mioverme, gamma_ref=0.0, gamma_DS, target_current;
 // other parameters derived from input ones
 	double alpha_deg, factor_small_grid_parameter=1.0;
 // quantities related to overall current, potential drop or any bump in potential in Debye sheath (not implemented yet)
@@ -1129,171 +1128,14 @@ int main(void) {
 		exit(1);
 	}
 
-	/* READ INPUT FILE 
-	Contains the values of: 
-	     alpha
-	     number of ion species
-	     ni/ne for all species (line to array)
-	     Ti/Te for all species (line to array)
-	     mi/me for all ion species (line to array)
-	     fix_current = 1 or 0 (fixes potential),
-	     fixed current/potential 
-	*/
-
-	// Note: multiple species not yet implemented
-	FILE *input, *fBohm, *numinput;
-
-	if ((input = fopen("inputfile.txt", "r")) == NULL) { 
-		printf("Cannot open inputfile.txt. Try input_physparams.txt");
-		fprintf(fout, "Cannot open inputfile.txt. Try input_physparams.txt");
-		if ((input = fopen("input_physparams.txt", "r")) == NULL) { 
-			printf("Cannot open %s\n", "input_physparams.txt");
-			fprintf(fout, "Cannot open %s\n", "input_physparams.txt");
-			exit(EXIT_FAILURE); 
-		}
-	}
-	i=0; // for counting rows (lines) of file
-	j=0;
-	ncols = 0; // for counting numbers in each row (line) of file
-	ndirname=0;
-	char *outputstr = "OUTPUT/";
-	for (ndirname=0; ndirname<strlen(outputstr);ndirname++) 
-		dirname[ndirname] = outputstr[ndirname];
-	while (fgets(line_hundred, 100, input) != NULL) {	
-		if ( ( (line_hundred[0] != '#') && (line_hundred[0] != ' ') ) && (line_hundred[0] != '\n') ) {
-		storevals = linetodata(line_hundred, strlen(line_hundred), &ncols);
-		//printf("ndirname = %d\n", ndirname);
-		if ( (i!= 7) && (i!=0) ) {
-			for (j=0; j < lenstrqty-1; j++) {
-				dirname[ndirname+j] = strqty[i-fix_current-1][j];
-			}
-			ndirname += (lenstrqty -1);
-			//dirname[0] = 'a'; dirname[1] = 'l'; dirname[2] 
-			for (j=0;j<strlen(line_hundred)-1;j++) {
-				//printf("%c\n", line_hundred[j]);
-				dirname[j+ndirname] = line_hundred[j];
-				printf("%s\n", dirname);
-			}
-		}
-		else if (i==0) {
-			for (j=0;j<strlen(line_hundred)-1;j++) {
-				//printf("%c\n", line_hundred[j]);
-				dirname[j+ndirname] = line_hundred[j];
-				printf("%s\n", dirname);
-			}
-		}
-		if (i==0){
-			type_distfunc_entrance = strncmp(line_hundred, "ADHOC", 5); // type_distfunc_entrance = 0 if the functions are ADHOC
-		}
-		if (i==1)
-			// input in degrees only for convenience
-			// should be below 5 degrees (0.1 rad) for asymptotic theory to be valid
-			alpha_deg = *storevals; 
-		else if (i==2)
-			gamma_ref = *storevals; 
-		else if (i==3)
-			num_spec = (int) (*storevals); 
-		else if (i==4)
-			nioverne = storevals; 
-		else if (i==5)
-			TioverTe = storevals; //linetodata(line_hundred, strlen(line_hundred), &ncols); 
-		else if (i==6)
-			mioverme = storevals; 
-		else if (i==7)
-			fix_current = (int) (*storevals); 
-		else if (i==8) {
-			if (fix_current != 0) {
-				target_current = current = *storevals; // in units of thermal electron velocity 
-				v_cut = 3.0; // set to a reasonable value
-				// we will set v_cut to some value later
-			}
-			else {
-				v_cut = sqrt(2.0*(*storevals)); 
-				target_current = current = 0.0; // gets calculated afterwords
-			}
-		}
-		if (i!=7) {
-			ndirname += strlen(line_hundred)-1;
-			dirname[ndirname] = '/';
-			ndirname += 1;
-		}
-		i += 1; // count the rows in the file
-		//printf("dirname = %s\n", dirname);
-		printf("%s\n", dirname);
-		mkdir(dirname, S_IRWXU);
-		}
-	}
-
-	snprintf(fBohmstr, 150, "%s/Bohmvalues.txt", dirname);
-	fBohm = fopen(fBohmstr, "w");
-	if (fBohm == NULL) { 
-		printf("Cannot open %s\n", fBohmstr);
-		fprintf(fout, "Cannot open %s\n", fBohmstr);
-		exit(EXIT_FAILURE); 
-	}
-	snprintf(fpstr, 150, "%s/inputfile.txt", dirname);
-	fp = fopen(fpstr, "w");
-	if (fp == NULL) {
-		printf("error when opening file\n");
-	}
-	if ((input = fopen("inputfile.txt", "r")) == NULL) { 
-		printf("Cannot open inputfile.txt. Try input_physparams.txt");
-		fprintf(fout, "Cannot open inputfile.txt. Try input_physparams.txt");
-		if ((input = fopen("input_physparams.txt", "r")) == NULL) { 
-			printf("Cannot open %s\n", "input_physparams.txt");
-			fprintf(fout, "Cannot open %s\n", "input_physparams.txt");
-			exit(EXIT_FAILURE); 
-		}
-	}
-	while (fgets(line_hundred, 100, input) != NULL) {
-		if ( (line_hundred[0] != '#') && (isalpha(line_hundred[0]) == 0) )
-			fprintf(fp, "%s", line_hundred);
-	}
-	
-	fclose(input);
-	fclose(fp);
-
-
-	for (i=0; i< ndirname; i++) {
-		dirname_it[i] = dirname[i];
-	}
-	char *strit = "iteration";
-	int nstrit;
-	nstrit = strlen(strit);
-	for (i=0; i< nstrit; i++) {
-		dirname_it[ndirname+i] = strit[i];
-	}
-	printf("dirname for iteration = %s\n", dirname_it);
-	mkdir(dirname, S_IRWXU);
-	for (n=0; n<num_spec; n++) sumni_norm += nioverne[n];
-	for (n=0; n<num_spec; n++) {
-		nioverne[n] /= sumni_norm;
-		printf("nioverne[%d] = %f\n", n, nioverne[n]);
-	}
-	//dirname[ndirname+1] = '\0';
-	//ndirname+=1;
-//<<<<<<< HEAD
-//=======
-//	/*fclose(input);*/
-//>>>>>>> refs/remotes/origin/main
-	if ( (fabs(gamma_ref) < TINY) && (alpha_deg < 1.0) ) deltax = 0.6;
-	//if (TioverTe[0] < 0.4) weight_MP = WEIGHT_MP/6.0;
-	printf("directory where output will be stored is %s\n", dirname);
-	alpha = alpha_deg*M_PI/180; // alpha used in radians from now on
-	// initial iteration assumes flat potential profile in magnetic presheath
-	// therefore, the parameter v_cutDS is equal to v_cut
-
-/* 
-	FINISHED READING PHYSICAL INPUT FILE 
-	AND GENERATING THE NEW (IF NOT ALREADY EXISTING) 
-	DIRECTORIES WHERE FILES WILL BE STORED
-	INCLUDING ITERATION SUBDIRECTORIES
-*/
 
 /* 
 	READ NUMERICAL INPUT FILE
 	AND GENERATE ARRAYS OF THE CORRECT SIZES
 */
+
+	// Note: multiple species not yet implemented
+	FILE *input, *fBohm, *numinput;
 
 	//Now open numerical input file
 	if ((numinput = fopen("input_numparams.txt", "r")) == NULL) { 
@@ -1344,6 +1186,182 @@ int main(void) {
 	}
 	fclose(numinput);
 	printf("SMALLGAMMA = %f\n", SMALLGAMMA);
+	
+/* 
+	FINISHED READING NUMERICAL INPUT FILE 
+*/
+
+	/* READ INPUT FILE 
+	Contains the values of: 
+	     alpha
+	     number of ion species
+	     ni/ne for all species (line to array)
+	     Ti/Te for all species (line to array)
+	     mi/me for all ion species (line to array)
+	     fix_current = 1 or 0 (fixes potential),
+	     fixed current/potential 
+	*/
+
+	if ((input = fopen("inputfile.txt", "r")) == NULL) { 
+		printf("Cannot open inputfile.txt. Try input_physparams.txt");
+		fprintf(fout, "Cannot open inputfile.txt. Try input_physparams.txt");
+		if ((input = fopen("input_physparams.txt", "r")) == NULL) { 
+			printf("Cannot open %s\n", "input_physparams.txt");
+			fprintf(fout, "Cannot open %s\n", "input_physparams.txt");
+			exit(EXIT_FAILURE); 
+		}
+	}
+	i=0; // for counting rows (lines) of file
+	j=0;
+	ncols = 0; // for counting numbers in each row (line) of file
+	ndirname=0;
+	char *outputstr = "OUTPUT/";
+	for (ndirname=0; ndirname<strlen(outputstr);ndirname++) 
+		dirname[ndirname] = outputstr[ndirname];
+	while (fgets(line_hundred, 100, input) != NULL) {	
+		if ( ( (line_hundred[0] != '#') && (line_hundred[0] != ' ') ) && (line_hundred[0] != '\n') ) {
+		storevals = linetodata(line_hundred, strlen(line_hundred), &ncols);
+		//printf("ndirname = %d\n", ndirname);
+		if ( (i!= 8) && (i!=0) ) {
+			for (j=0; j < lenstrqty-1; j++) {
+				dirname[ndirname+j] = strqty[i-fix_current-1][j];
+			}
+			ndirname += (lenstrqty -1);
+			//dirname[0] = 'a'; dirname[1] = 'l'; dirname[2] 
+			for (j=0;j<strlen(line_hundred)-1;j++) {
+				//printf("%c\n", line_hundred[j]);
+				dirname[j+ndirname] = line_hundred[j];
+				printf("%s\n", dirname);
+			}
+		}
+		else if (i==0) {
+			for (j=0;j<strlen(line_hundred)-1;j++) {
+				//printf("%c\n", line_hundred[j]);
+				dirname[j+ndirname] = line_hundred[j];
+				printf("%s\n", dirname);
+			}
+		}
+		if (i==0){
+			type_distfunc_entrance = strncmp(line_hundred, "ADHOC", 5); // type_distfunc_entrance = 0 if the functions are ADHOC
+		}
+		if (i==1)
+			// input in degrees only for convenience
+			// should be below 5 degrees (0.1 rad) for asymptotic theory to be valid
+			alpha_deg = *storevals; 
+		else if (i==2)
+			gammaflag = (int) *storevals;
+		else if (i==3)
+			gamma_ref = *storevals; 
+		else if (i==4)
+			num_spec = (int) (*storevals); 
+		else if (i==5)
+			nioverne = storevals; 
+		else if (i==6)
+			TioverTe = storevals; //linetodata(line_hundred, strlen(line_hundred), &ncols); 
+		else if (i==7)
+			mioverme = storevals; 
+		else if (i==8)
+			fix_current = (int) (*storevals); 
+		else if (i==9) {
+			if (fix_current != 0) {
+				target_current = current = *storevals; // in units of thermal electron velocity 
+				v_cut = 3.0; // set to a reasonable value
+				// we will set v_cut to some value later
+			}
+			else {
+				v_cut = sqrt(2.0*(*storevals)); 
+				target_current = current = 0.0; // gets calculated afterwords
+			}
+		}
+		if (i!=8) {
+			ndirname += strlen(line_hundred)-1;
+			dirname[ndirname] = '/';
+			ndirname += 1;
+		}
+		i += 1; // count the rows in the file
+		//printf("dirname = %s\n", dirname);
+		printf("%s\n", dirname);
+		mkdir(dirname, S_IRWXU);
+		}
+	}
+
+	snprintf(fBohmstr, 150, "%s/Bohmvalues.txt", dirname);
+	fBohm = fopen(fBohmstr, "w");
+	if (fBohm == NULL) { 
+		printf("Cannot open %s\n", fBohmstr);
+		fprintf(fout, "Cannot open %s\n", fBohmstr);
+		exit(EXIT_FAILURE); 
+	}
+	//snprintf(fpstr, 150, "%s/inputfile.txt", dirname);
+	snprintf(fpstr, 150, "%s/input_physparams.txt", dirname);
+	fp = fopen(fpstr, "w");
+	if (fp == NULL) {
+		printf("error when opening file\n");
+	}
+	if ((input = fopen("input_physparams.txt", "r")) == NULL) { 
+		printf("Cannot open %s\n", "input_physparams.txt");
+		fprintf(fout, "Cannot open %s\n", "input_physparams.txt");
+		exit(EXIT_FAILURE); 
+	}
+	while (fgets(line_hundred, 100, input) != NULL) {
+		//if ( (line_hundred[0] != '#') && (isalpha(line_hundred[0]) == 0) )
+		fprintf(fp, "%s", line_hundred);
+	}	
+	fclose(input);
+	fclose(fp);
+	snprintf(fpstr, 150, "%s/input_numparams.txt", dirname);
+	fp = fopen(fpstr, "w");
+	if (fp == NULL) {
+		printf("error when opening file\n");
+	}
+	if ((input = fopen("input_numparams.txt", "r")) == NULL) { 
+		printf("Cannot open %s\n", "input_physparams.txt");
+		fprintf(fout, "Cannot open %s\n", "input_physparams.txt");
+		exit(EXIT_FAILURE); 
+	}
+	while (fgets(line_hundred, 100, input) != NULL) {
+		//if ( (line_hundred[0] != '#') && (isalpha(line_hundred[0]) == 0) )
+		fprintf(fp, "%s", line_hundred);
+	}
+	fclose(input);
+	fclose(fp);
+
+	for (i=0; i< ndirname; i++) {
+		dirname_it[i] = dirname[i];
+	}
+	char *strit = "iteration";
+	int nstrit;
+	nstrit = strlen(strit);
+	for (i=0; i< nstrit; i++) {
+		dirname_it[ndirname+i] = strit[i];
+	}
+	printf("dirname for iteration = %s\n", dirname_it);
+	mkdir(dirname, S_IRWXU);
+	for (n=0; n<num_spec; n++) sumni_norm += nioverne[n];
+	for (n=0; n<num_spec; n++) {
+		nioverne[n] /= sumni_norm;
+		printf("nioverne[%d] = %f\n", n, nioverne[n]);
+	}
+	//dirname[ndirname+1] = '\0';
+	//ndirname+=1;
+//<<<<<<< HEAD
+//=======
+//	/*fclose(input);*/
+//>>>>>>> refs/remotes/origin/main
+	if ( (fabs(gamma_ref) < TINY) && (alpha_deg < 1.0) ) deltax = 0.6;
+	//if (TioverTe[0] < 0.4) weight_MP = WEIGHT_MP/6.0;
+	printf("directory where output will be stored is %s\n", dirname);
+	alpha = alpha_deg*M_PI/180; // alpha used in radians from now on
+	// initial iteration assumes flat potential profile in magnetic presheath
+	// therefore, the parameter v_cutDS is equal to v_cut
+
+/* 
+	FINISHED READING PHYSICAL INPUT FILE 
+	AND GENERATING THE NEW (IF NOT ALREADY EXISTING) 
+	DIRECTORIES WHERE FILES WILL BE STORED
+	INCLUDING ITERATION SUBDIRECTORIES
+*/
+
 
 	lenfactor = malloc(num_spec*sizeof(double));
 	lenMP = 0.0;
@@ -1383,10 +1401,7 @@ int main(void) {
 	}
 	printf("lenMP = %f\n", lenMP);
 	printf("zoomfactor = %d\n", zoomfactor);
-	
-/* 
-	FINISHED READING NUMERICAL INPUT FILE 
-*/
+
 
 
 /* 
@@ -1629,6 +1644,33 @@ i=0;
 	vpar_e_DS  = malloc(size_vpar_e*sizeof(double));
 	vpar_e_cut  = malloc(size_mu_e*sizeof(double));
 
+	// Perhaps introduce an option to read the initial potential profile from a file?
+	///*
+	// if phiguess_MP.txt exists, read the magnetic presheath potential
+	//*/
+	//fp = fopen("phiguess_MP.txt", "r");
+	//if (fp == NULL) {
+	//	printf("phiguess_MP.txt does not exist: the code will cook up a first guess for the MP potential profile\n", "fp.txt"); 
+	//}
+	//else {
+	//	/* The while loop counts the lines in the file to determine the size of the arrays to be created */
+	//	i=0;
+	//	while (fgets(line_hundred, 100, fp) != NULL)
+	//		i += 1;
+	//	n=i; // n is the array size
+	//	rewind(fp); // go back to beginning of file
+	//	/* We initialize all arrays that contain functions of position x with the correct size n */
+	//	// Begin reading potential file here
+	//	i=0;
+	//	while (fgets(line_pot, 200, fp) != NULL) {
+	//		storevals = linetodata(line_hundred, strlen(line_hundred), &ncols);
+	//		x_grid[i] = *storevals;
+	//		phi_grid[i] = *(storevals+1);
+	//		i += 1;
+	//	}
+	//	fclose(fp);
+	//}
+
 	/*
 	CARRY OUT A SINGLE ION DENSITY CALCULATION
 	*/
@@ -1769,76 +1811,49 @@ i=0;
 			weight_MP = WEIGHT_MP/3.0;
 			weight_j = WEIGHT_j/3.0;
 		}
-		//else if ( 0.5*v_cutDS*v_cutDS < 0.1) {
-		//	weight_DS = WEIGHT_DS/10.0;
-		//	weight_MP = WEIGHT_MP/10.0;
-		//	weight_j = WEIGHT_j/10.0;
-		//}
-		//else if (0.5*v_cutDS*v_cutDS < 0.25) {
-		//	weight_DS = WEIGHT_DS/3.0;
-		//	weight_MP = WEIGHT_MP/3.0;
-		//	weight_j = WEIGHT_j/3.0;
-		//}
-		//if (v_cutDS < 0.2) { // adjust weights in the iteration
-		//	weight_MP = 5.0*v_cutDS*WEIGHT_MP;
-		//	weight_j = 5.0*v_cutDS*WEIGHT_j;
-		//	if (weight_MP < 0.05) weight_MP = 0.05;
-		//	if (weight_j < 0.05) weight_j = 0.05;
-		//}
-		//if (0.5*v_cutDS*v_cutDS < 0.02) { // adjust weights in the iteration
-		//	weight_MP = 25.0*v_cutDS*v_cutDS*WEIGHT_MP;
-		//	weight_j = 25.0*v_cutDS*v_cutDS*WEIGHT_j;
-		//	if (weight_MP < 0.001) weight_MP = 0.001;
-		//	if (weight_j < 0.001) weight_j = 0.001;
-		//}
-		//if ( (N%100 == 0) && (N!=0) ) {	 // adjust weights
-		//	//weight_MP /= 2.0;
-		//	//weight_j /= 2.0;
-		//}
+		if ( (N!=0) && (gammaflag ==1) ) 
+			gamma_DS = gamma_ref*sqrt(ne_grid[0]);
+		else
+			gamma_DS = gamma_ref;
 		printf("weight (MP, J) = (%f, %f)\n", weight_MP, weight_j);
-		if (gamma_ref >= TINY) { // ELECTRON CUTOFF MODEL
-			phiDS0corr = -0.5*v_cutDS*v_cutDS;// + 1.5*gamma_ref*gamma_ref*exp(-0.5*v_cutDS*v_cutDS)/(1.0+erf(sqrt(0.5)*v_cutDS));
-			ionfluxes(alpha, TioverTe[0], &ionmomfluxDSinf, &ionmomfluxDS0, &Bohm, phiDS0corr, phi_grid[0], dist_i_GK[0], mu_i[0], U_i[0], vy_i_wall[0], mu_i_op[0], chiM_i[0], twopidmudvy_i[0], size_mu_i[0], size_U_i[0], size_op_i[0]); 
-			elmomfluxDS0 = exp(-0.5*v_cutDS*v_cutDS)/(1.0+erf(sqrt(-phiDS0corr)));
-			elmomfluxDSinf = 1.0 - (2.0/sqrt(M_PI))*exp(phiDS0corr)*sqrt(-phiDS0corr)/(1.0+erf(sqrt(-phiDS0corr))) ;
-			printf("2.0*(elmomfluxDS0 - elmomfluxDSinfty) = %f\n", 2.0*(elmomfluxDS0 - elmomfluxDSinf));
-			printf("2.0*(ionmomfluxDS0 - ionmomfluxDSinfty) = %f\n", 2.0*(ionmomfluxDS0 - ionmomfluxDSinf));
-			//phiDS0corr = -0.5*v_cutDS*v_cutDS + 1.5*gamma_ref*gamma_ref;
-			EW = gamma_ref*sqrt(2.0*(ionmomfluxDS0 + elmomfluxDS0 - ionmomfluxDSinf - elmomfluxDSinf) + pow((5.0/6.0)*0.5*v_cutDS*v_cutDS, 2.0)); // + gamma_ref*1.25*exp(-0.5*v_cutDS*v_cutDS)/(1.0+erf(sqrt(0.5)*v_cutDS));
-			EW = gamma_ref*v_cutDS*v_cutDS*0.5;
-			EW = gamma_ref*sqrt(pow((5.0/6.0)*0.5*v_cutDS*v_cutDS*exp(-0.5*v_cutDS*v_cutDS)/(1.0+erf(sqrt(0.5)*v_cutDS)), 2.0) - 1.0 + exp(-0.5*v_cutDS*v_cutDS) + 0.5*v_cutDS*v_cutDS); // + gamma_ref*1.25*exp(-0.5*v_cutDS*v_cutDS)/(1.0+erf(sqrt(0.5)*v_cutDS));
-			EW = gamma_ref*sqrt((M_PI/2.0)*exp(-0.5*v_cutDS*v_cutDS)/(1.0+erf(sqrt(0.5)*v_cutDS)) - 1.0 + exp(-0.5*v_cutDS*v_cutDS) + 0.5*v_cutDS*v_cutDS); // + gamma_ref*1.25*exp(-0.5*v_cutDS*v_cutDS)/(1.0+erf(sqrt(0.5)*v_cutDS));
-			EW = gamma_ref*sqrt( (M_PI/2.0)*pow(gamma_ref*exp(-0.5*v_cutDS*v_cutDS+1.5*gamma_ref*gamma_ref)/(1.0+erf(sqrt(0.5*v_cutDS*v_cutDS - gamma_ref*gamma_ref*1.5))), 2.0) + 2.0*(ionmomfluxDS0 + elmomfluxDS0 - ionmomfluxDSinf - elmomfluxDSinf)); // + gamma_ref*1.25*exp(-0.5*v_cutDS*v_cutDS)/(1.0+erf(sqrt(0.5)*v_cutDS));
-			EW = gamma_ref*sqrt( (M_PI/2.0)*pow(gamma_ref*exp(phiDS0corr)/(1.0+erf(sqrt(-phiDS0corr))), 2.0) + 2.0*(ionmomfluxDS0 + elmomfluxDS0 - ionmomfluxDSinf - elmomfluxDSinf)); // + gamma_ref*1.25*exp(-0.5*v_cutDS*v_cutDS)/(1.0+erf(sqrt(0.5)*v_cutDS));
-			EW = gamma_ref*sqrt( (M_PI/2.0) )*gamma_ref*exp(phiDS0corr)/(1.0+erf(sqrt(-phiDS0corr))) + gamma_ref*sqrt(2.0*(ionmomfluxDS0 + elmomfluxDS0 - ionmomfluxDSinf - elmomfluxDSinf)); // + gamma_ref*1.25*exp(-0.5*v_cutDS*v_cutDS)/(1.0+erf(sqrt(0.5)*v_cutDS));
-			//EW = gamma_ref*sqrt( (M_PI/2.0)*pow(gamma_ref, 2.0) + 2.0*(ionmomfluxDS0 + elmomfluxDS0 - ionmomfluxDSinf - elmomfluxDSinf)); // + gamma_ref*1.25*exp(-0.5*v_cutDS*v_cutDS)/(1.0+erf(sqrt(0.5)*v_cutDS));
-			//if ( (M_PI/2.0)*pow(gamma_ref, 2.0) > 2.0*(ionmomfluxDS0 + elmomfluxDS0 - ionmomfluxDSinf - elmomfluxDSinf) )  // + gamma_ref*1.25*exp(-0.5*v_cutDS*v_cutDS)/(1.0+erf(sqrt(0.5)*v_cutDS)
-			//	EW = gamma_ref*gamma_ref*sqrt(M_PI/2.0);
-			//else
-			//	EW = gamma_ref*sqrt(2.0*(ionmomfluxDS0 + elmomfluxDS0 - ionmomfluxDSinf - elmomfluxDSinf)); // + gamma_ref*1.25*exp(-0.5*v_cutDS*v_cutDS)/(1.0+erf(sqrt(0.5)*v_cutDS));
-			printf("EW = %f\n", EW/gamma_ref);
-			if (EW != EW)  EW = 0.0;
+		//if (gamma_DS >= TINY) { // ELECTRON CUTOFF MODEL
+		// CALCULATE THE ELECTRON REFLECTION CUTOFF WITH A SMALL-GAMMA ANALYTICAL MODEL
+		phiDS0corr = -0.5*v_cutDS*v_cutDS;// + 1.5*gamma_DS*gamma_DS*exp(-0.5*v_cutDS*v_cutDS)/(1.0+erf(sqrt(0.5)*v_cutDS));
+		ionfluxes(alpha, TioverTe[0], &ionmomfluxDSinf, &ionmomfluxDS0, &Bohm, phiDS0corr, phi_grid[0], dist_i_GK[0], mu_i[0], U_i[0], vy_i_wall[0], mu_i_op[0], chiM_i[0], twopidmudvy_i[0], size_mu_i[0], size_U_i[0], size_op_i[0]); 
+		elmomfluxDS0 = exp(-0.5*v_cutDS*v_cutDS)/(1.0+erf(sqrt(-phiDS0corr)));
+		elmomfluxDSinf = 1.0 - (2.0/sqrt(M_PI))*exp(phiDS0corr)*sqrt(-phiDS0corr)/(1.0+erf(sqrt(-phiDS0corr))) ;
+		printf("2.0*(elmomfluxDS0 - elmomfluxDSinfty) = %f\n", 2.0*(elmomfluxDS0 - elmomfluxDSinf));
+		printf("2.0*(ionmomfluxDS0 - ionmomfluxDSinfty) = %f\n", 2.0*(ionmomfluxDS0 - ionmomfluxDSinf));
+		//phiDS0corr = -0.5*v_cutDS*v_cutDS + 1.5*gamma_DS*gamma_DS;
+		//EW = gamma_DS*sqrt((M_PI/2.0)*exp(-0.5*v_cutDS*v_cutDS)/(1.0+erf(sqrt(0.5)*v_cutDS)) - 1.0 + exp(-0.5*v_cutDS*v_cutDS) + 0.5*v_cutDS*v_cutDS); // + gamma_DS*1.25*exp(-0.5*v_cutDS*v_cutDS)/(1.0+erf(sqrt(0.5)*v_cutDS));
+		EW = gamma_DS*sqrt( (M_PI/2.0) )*gamma_DS*exp(phiDS0corr)/(1.0+erf(sqrt(-phiDS0corr))) + gamma_DS*sqrt(2.0*(ionmomfluxDS0 + elmomfluxDS0 - ionmomfluxDSinf - elmomfluxDSinf)); // + gamma_DS*1.25*exp(-0.5*v_cutDS*v_cutDS)/(1.0+erf(sqrt(0.5)*v_cutDS));
+		printf("EW = %f\n", EW/gamma_DS);
+		if (EW != EW)  {
+			printf("WARNING: the model wall electric field calculation is giving a NaN (from the square root of a negative number). This probably means that the electric field is very close to zero. Therefore, set EW to zero.\n");
+			EW = 0.0;
+		}
+		if (gamma_DS > 3.0) {
+			for (i=0; i< size_mu_e; i++) 
+			// gamma = infinity model 
+			// Have gamma_DS = 3 as a threshold; 
+			// in reality such large gamma at small angle does not give a monotonic solution
+				vpar_e_cut[i] = vparcut_mu(mu_e[i], v_cutDS);
+		}
+		else {
 			for (i=0; i< size_mu_e; i++) {
-			// gamma = infinity model
-				//vpar_e_cut[i] = vparcut_mu(mu_e[i], v_cutDS);
-				vpar_e_cut[i] = v_cutDS;
-			// finite gamma model
-			//	//if (0.5*v_cutDS*v_cutDS - 0.54*gamma_ref*sqrt(2.0*mu_e[i])*pow(v_cutDS*v_cutDS*0.5,0.7) > 0.001)
-			//	//	vpar_e_cut[i] = sqrt( v_cutDS*v_cutDS - 2.0*0.54*gamma_ref*sqrt(2.0*mu_e[i])*pow(v_cutDS*v_cutDS*0.5,0.7) );
-			//	//else vpar_e_cut[i] = 0.0;
-			//	//vpar_e_cut[i] = ( v_cutDS - (1/v_cutDS)*0.54*gamma_ref*sqrt(2.0*mu_e[i])*pow(v_cutDS*v_cutDS*0.5,0.7) );
-				
-				//vpar_e_cut[i] = sqrt((v_cutDS*v_cutDS+EW*EW)*exp(-2.0*EW*sqrt(2.0*mu_e[i])/(v_cutDS*v_cutDS))*(1.0+0.25*pow(2.0*EW*sqrt(2.0*mu_e[i])/(v_cutDS*v_cutDS), 2.0)));
+				//vpar_e_cut[i] = v_cutDS; // effectively setting EW = 0 recovers this constant cutoff
+				//vpar_e_cut[i] = sqrt((v_cutDS*v_cutDS+EW*EW)*exp(-2.0*EW*sqrt(2.0*mu_e[i])/(v_cutDS*v_cutDS))*(1.0+0.25*pow(2.0*EW*sqrt(2.0*mu_e[i])/(v_cutDS*v_cutDS), 2.0))); // form with expanded Bessel
 				vpar_e_cut[i] = sqrt((v_cutDS*v_cutDS+EW*EW)*exp(-2.0*EW*sqrt(2.0*mu_e[i])/(v_cutDS*v_cutDS))*gsl_sf_bessel_I0(2.0*EW*sqrt(2.0*mu_e[i])/(v_cutDS*v_cutDS))); 
-				//vpar_e_cut[i] = v_cutDS;
 				if (DEBUG == 0)
 					printf("vpar = %f for mu = %f\n", vpar_e_cut[i], mu_e[i]);
 			}
 		}
-		else if (gamma_ref < TINY) { // first solve MPS w/ simplified e- reflection
-		      for (i=0; i< size_mu_e; i++) 
-			vpar_e_cut[i] = v_cutDS;
-		}
+		//}
+		// The else loop below is now accounted by the model
+		//else if (gamma_DS < TINY) { // first solve MPS w/ simplified e- reflection
+		//      for (i=0; i< size_mu_e; i++) 
+		//	vpar_e_cut[i] = v_cutDS;
+		//} 
 /* 
 		ROBBIE's ELECTRON DENSITY CALCULATION (ADAPTED TO 2D)
 */
@@ -1977,17 +1992,28 @@ i=0;
 	//printf("FINAL CHECK passed. HURRAY!\n");
 	//}
 
-	if ( (gamma_ref <= 5.0) && (gamma_ref >= 0.3) ) {
+	if (gammaflag ==1)  
+		gamma_DS = gamma_ref*sqrt(ne_grid[0]);
+	printf("gamma_DS = %f\n", gamma_DS);
+	if (gamma_DS < TINY) DS_size = SYS_SIZ;
+	else if (gamma_DS < 1.0) DS_size = SYS_SIZ/gamma_DS;
+	else DS_size = SYS_SIZ;
+	size_phiDSgrid = (int) ( DS_size/deltaxDS );
+	printf("size of coarse potential grid in Debye sheath = %d\n", size_phiDSgrid);
+	fprintf(fout, "size of coarse potential grid in Debye sheath = %d\n", size_phiDSgrid);
+	x_DSgrid = malloc(size_phiDSgrid*sizeof(double));
+	phi_DSgrid = malloc(size_phiDSgrid*sizeof(double));
+	v_cutDS = sqrt(v_cut*v_cut + 2.0*phi_grid[0]);
+	if (gamma_DS < 1.0) 
+		//make_phigrid(x_DSgrid, phi_DSgrid, size_phiDSgrid, 0.0, deltaxDS, 0, -phi_grid[0] - 0.5*v_cut*v_cut, 1.0/gamma_DS, alpha);
+		//make_phigrid(x_DSgrid, phi_DSgrid, size_phiDSgrid, 0.0, deltaxDS, 0, -phi_grid[0] - 0.5*v_cut*v_cut, 0.5*v_cutDS*v_cutDS/EW, alpha);
+		make_phigrid(x_DSgrid, phi_DSgrid, size_phiDSgrid, 0.0, deltaxDS, 0, -phi_grid[0] - 0.5*v_cut*v_cut, 2.0*0.5*v_cutDS*v_cutDS/EW, alpha);
+	else 
+		make_phigrid(x_DSgrid, phi_DSgrid, size_phiDSgrid, 0.0, deltaxDS, 0, -phi_grid[0] - 0.5*v_cut*v_cut, 1.0, alpha);
+
+	if ( (gamma_DS <= 5.0) && (gamma_DS >= SMALLGAMMA) ) {
 	// FULL DEBYE SHEATH SOLUTION CALCULATED WITH FINITE (DISTORTED) ELECTRON GYROORBITS
 		// form x, phi, ne and ni grids for Debye sheath
-		if (gamma_ref < TINY) DS_size = SYS_SIZ;
-		else if (gamma_ref < 1.0) DS_size = SYS_SIZ/gamma_ref;
-		else DS_size = SYS_SIZ;
-		size_phiDSgrid = (int) ( DS_size/deltaxDS );
-		printf("size of coarse potential grid in Debye sheath = %d\n", size_phiDSgrid);
-		fprintf(fout, "size of coarse potential grid in Debye sheath = %d\n", size_phiDSgrid);
-		x_DSgrid = malloc(size_phiDSgrid*sizeof(double));
-		phi_DSgrid = malloc(size_phiDSgrid*sizeof(double));
 		ne_DSgrid = malloc(size_phiDSgrid*sizeof(double));
 		ni_DSgrid = malloc(num_spec*sizeof(double));
 		sumni_DSgrid = malloc(size_phiDSgrid*sizeof(double));
@@ -1998,21 +2024,23 @@ i=0;
 		vpar_e_cut_lookup  = malloc(size_phiDSgrid*sizeof(double));
 		for (n=0; n<num_spec; n++) ni_DSgrid[n] = malloc(size_phiDSgrid*sizeof(double));
 		//make_phigrid(x_grid, phi_grid, size_phigrid, grid_parameter, deltax, N, phi0_init_MP, 1.0, alpha);
-		if (gamma_ref < 1.0) 
-			make_phigrid(x_DSgrid, phi_DSgrid, size_phiDSgrid, 0.0, deltaxDS, 0, -phi_grid[0] - 0.5*v_cut*v_cut, 1.0/gamma_ref, alpha);
+		v_cutDS = sqrt(v_cut*v_cut + 2.0*phi_grid[0]);
+		if (gamma_DS < 1.0) 
+			//make_phigrid(x_DSgrid, phi_DSgrid, size_phiDSgrid, 0.0, deltaxDS, 0, -phi_grid[0] - 0.5*v_cut*v_cut, 1.0/gamma_DS, alpha);
+			//make_phigrid(x_DSgrid, phi_DSgrid, size_phiDSgrid, 0.0, deltaxDS, 0, -phi_grid[0] - 0.5*v_cut*v_cut, 0.5*v_cutDS*v_cutDS/EW, alpha);
+			make_phigrid(x_DSgrid, phi_DSgrid, size_phiDSgrid, 0.0, deltaxDS, 0, -phi_grid[0] - 0.5*v_cut*v_cut, 2.0*0.5*v_cutDS*v_cutDS/EW, alpha);
 		else 
 			make_phigrid(x_DSgrid, phi_DSgrid, size_phiDSgrid, 0.0, deltaxDS, 0, -phi_grid[0] - 0.5*v_cut*v_cut, 1.0, alpha);
-		v_cutDS = sqrt(v_cut*v_cut + 2.0*phi_grid[0]);
-		if (gamma_ref >= TINY) {
+		if (gamma_DS >= TINY) {
 			for (i=0; i< size_mu_e; i++) {
 				vpar_e_cut[i] = vparcut_mu(mu_e[i], v_cutDS);
-				if (0.5*v_cutDS*v_cutDS - 0.54*gamma_ref*sqrt(2.0*mu_e[i])*pow(v_cutDS*v_cutDS*0.5,0.7) > 0.001)
-					vpar_e_cut[i] = sqrt( v_cutDS*v_cutDS - 2.0*0.54*gamma_ref*sqrt(2.0*mu_e[i])*pow(v_cutDS*v_cutDS*0.5,0.7) );
+				if (0.5*v_cutDS*v_cutDS - 0.54*gamma_DS*sqrt(2.0*mu_e[i])*pow(v_cutDS*v_cutDS*0.5,0.7) > 0.001)
+					vpar_e_cut[i] = sqrt( v_cutDS*v_cutDS - 2.0*0.54*gamma_DS*sqrt(2.0*mu_e[i])*pow(v_cutDS*v_cutDS*0.5,0.7) );
 				else vpar_e_cut[i] = 0.0;
-				vpar_e_cut[i] = ( v_cutDS - (1/v_cutDS)*0.54*gamma_ref*sqrt(2.0*mu_e[i])*pow(v_cutDS*v_cutDS*0.5,0.7) );
+				vpar_e_cut[i] = ( v_cutDS - (1/v_cutDS)*0.54*gamma_DS*sqrt(2.0*mu_e[i])*pow(v_cutDS*v_cutDS*0.5,0.7) );
 			}
 		}
-		else if (gamma_ref < TINY) { // first solve MPS w/ simplified e- reflection
+		else if (gamma_DS < TINY) { // first solve MPS w/ simplified e- reflection
 		      for (i=0; i< size_mu_e; i++) 
 			vpar_e_cut[i] = v_cutDS;
 		}
@@ -2023,6 +2051,8 @@ i=0;
 		error_MP[0] = error_DS[0] = 100000.0;
 		if (fix_current == 0) convergence_j=2;
 		while ( ( ( convergence_MP <= 1) || (convergence_DS <= 1) || (convergence_j <= 1) ) && (N_DS < MAX_IT) ) {
+			if (gammaflag == 1)
+				gamma_DS = gamma_ref*sqrt(ne_grid[0]);
 			printf("weight_(MP,DS,j) = (%f, %f, %f)\n", weight_MP, weight_DS, weight_j);
 			make_phigrid(x_grid, phi_grid, size_phigrid, grid_parameter, deltax, N, phi0_init_MP, 1.0, alpha);
 			printf("in while loop for combined DS+MP iteration\n");
@@ -2075,9 +2105,9 @@ i=0;
 			}
 			printf("size_phiDSgrid = %d\n", size_phiDSgrid);
 			EW = phi_DSgrid[1] - phi_DSgrid[0]; EW/=(x_DSgrid[1] - x_DSgrid[0]);
-			printf("wall electric field EW = %f\n", EW/gamma_ref);
-			if (gamma_ref > SMALLGAMMA) {
-				printf("gamma = %f > SMALLGAMMA = %f : use parallel velocity cutoff from full Debye sheath solution\n", gamma_ref, SMALLGAMMA);
+			printf("wall electric field EW = %f\n", EW/gamma_DS);
+			if (gamma_DS > SMALLGAMMA) {
+				printf("gamma = %f > SMALLGAMMA = %f : use parallel velocity cutoff from full Debye sheath solution\n", gamma_DS, SMALLGAMMA);
 				densfinorb(1.0, 1.0, alpha, size_phiDSgrid, &size_neDSgrid, ne_DSgrid, x_DSgrid, phi_DSgrid, -1.0, dist_e_GK, mu_e, U_e_DS, size_mu_e, size_vpar_e, 0.0, &flux_eDS, &garbage, ZOOM_DS, MARGIN_DS, -999.9, vy_e_wall, mu_e_op, chiM_e, twopidmudvy_e, &size_op_e); 
 				//for (i=0; i<size_neDSgrid; i++)
 				//	ne_DSgrid[i] *= (sumni_DSgrid[size_neDSgrid-1]/ne_DSgrid[size_neDSgrid-1]);
@@ -2094,24 +2124,14 @@ i=0;
 				printf("flux_eDS = %f\n", flux_eDS);
 			}
 			else {
-				printf("gamma = %f < SMALLGAMMA = %f : use model parallel velocity cutoff\n", gamma_ref, SMALLGAMMA);
+				printf("gamma = %f < SMALLGAMMA = %f : use model parallel velocity cutoff\n", gamma_DS, SMALLGAMMA);
 				for (i=0; i< size_mu_e; i++) 
-					vpar_e_cut[i] = 0.0; //sqrt(-2.0*lin_interp(x_DSgrid, phi_DSgrid, sqrt(mue_cut_lookup[i]), size_phiDSgrid, 1234)); 
-				denszeroorb(-1.0, 1.0, phi_DSgrid, ne_DSgrid, size_phiDSgrid, &flux_eDS, &Q_eDS, dist_e_GK, vpar_e_DS, mu_e, size_vpar_e, size_mu_e, vpar_e_cut, gamma_ref, x_DSgrid, &ne_inf); // needs dist_e_GK which in this case acts like dist_e_DK_DS
-				//for (i=0; i< size_mu_e; i++) 
-				//	vpar_e_cut[i] = sqrt(-2.0*lin_interp(x_DSgrid, phi_DSgrid, sqrt(2.0*mu_e[i]), size_phiDSgrid, 1234)); 
+					vpar_e_cut[i] = 0.0;
+				// first calculate electron density in Debye sheath with constant cutoff (rho_e->0 limit) 
+				denszeroorb(-1.0, 1.0, phi_DSgrid, ne_DSgrid, size_phiDSgrid, &flux_eDS, &Q_eDS, dist_e_GK, vpar_e_DS, mu_e, size_vpar_e, size_mu_e, vpar_e_cut, gamma_DS, x_DSgrid, &ne_inf); // needs dist_e_GK which in this case acts like dist_e_DK_DS
 				for (i=0; i<size_mu_e; i++) {
-					//vpar_e_cut[i] = sqrt(2.0*(-phi_DSgrid[0]*exp(((phi_DSgrid[1]-phi_DSgrid[0])/(phi_DSgrid[0]*deltaxDS))*sqrt(2.0*mu_e[i]))));
-					//if (-phi_DSgrid[0] - 0.54*gamma_ref*sqrt(mu_e[i])*pow(-phi_DSgrid[0],0.7) < 0.0)
-					//	vpar_e_cut[i] = sqrt(2.0*(-phi_DSgrid[0] - 0.54*gamma_ref*sqrt(mu_e[i])*pow(-phi_DSgrid[0],0.7)));
-					//vpar_e_cut[i] = sqrt(2.0*(-phi_DSgrid[0] + 0.5*EW*EW)*exp(-EW*sqrt(2.0*mu_e[i])/(-phi_DSgrid[0]))*gsl_sf_bessel_I0(EW*sqrt(2.0*mu_e[i])/(-phi_DSgrid[0])));
-					vpar_e_cut[i] = v_cutDS;
-					//vpar_e_cut[i] = sqrt((v_cutDS*v_cutDS+EW*EW)*exp(-2.0*EW*sqrt(2.0*mu_e[i])/(v_cutDS*v_cutDS))*(1.0+0.25*pow(2.0*EW*sqrt(2.0*mu_e[i])/(v_cutDS*v_cutDS), 2.0)));
+					//EW=0 ; // uncomment to achieve constant cutoff by overriding EW = 0
 					vpar_e_cut[i] = sqrt((v_cutDS*v_cutDS+EW*EW)*exp(-2.0*EW*sqrt(2.0*mu_e[i])/(v_cutDS*v_cutDS))*gsl_sf_bessel_I0(2.0*EW*sqrt(2.0*mu_e[i])/(v_cutDS*v_cutDS))); 
-					//if (-phi_DSgrid[0] < ((phi_DSgrid[1]-phi_DSgrid[0])/deltaxDS)*sqrt(2.0*mu_e[i])) 
-					//	vpar_e_cut[i] = 0.0;
-					//else 
-					//	vpar_e_cut[i] = sqrt(2.0*(-phi_DSgrid[0] - ((phi_DSgrid[1]-phi_DSgrid[0])/deltaxDS)*sqrt(2.0*mu_e[i])));
 				}
 				i=0;
 				while (ne_DSgrid[i] < 1.0-MARGIN_DS) i++;
@@ -2190,7 +2210,7 @@ i=0;
 				//weight_j /= 2.0;
 				//weight_DS /= 2.0;
 			}
-			error_Poisson(error_DS, x_DSgrid, ne_DSgrid, sumni_DSgrid, nioverne, phi_DSgrid, size_phiDSgrid, size_neDSgrid, 1.0/(gamma_ref*gamma_ref));
+			error_Poisson(error_DS, x_DSgrid, ne_DSgrid, sumni_DSgrid, nioverne, phi_DSgrid, size_phiDSgrid, size_neDSgrid, 1.0/(gamma_DS*gamma_ref));
 			printf("error_av = %f\terror_max = %f\n", error_DS[0], error_DS[1]);
 
 
@@ -2204,7 +2224,7 @@ i=0;
 			for (i=0; i<size_phiDSgrid; i++) {
 				fprintf(fp, "%f %f %f %f\n", x_DSgrid[i], phi_DSgrid[i], sumni_DSgrid[i], ne_DSgrid[i]);
 			}
-			if (gamma_ref < SMALLGAMMA) {
+			if (gamma_DS < SMALLGAMMA) {
 				fprintf(fp, "0.0 %f\n", -0.5*v_cutDS*v_cutDS);
 				fprintf(fp, "1.0 %f\n", -0.5*v_cutDS*v_cutDS+EW);
 			}
@@ -2252,18 +2272,18 @@ i=0;
 			else convergence_DS = 0;
 			if (convergence_DS == 0 || convergence_MP == 0 || convergence_j == 0) { 
 				printf("phi_DSgrid[0] = %f\n", phi_DSgrid[0]);
-				newguess(x_DSgrid, ne_DSgrid, sumni_DSgrid, phi_DSgrid, size_phiDSgrid, size_neDSgrid, 1.0/(gamma_ref*gamma_ref), v_cutDS, 2.0, weight_DS);// p, m);
+				newguess(x_DSgrid, ne_DSgrid, sumni_DSgrid, phi_DSgrid, size_phiDSgrid, size_neDSgrid, 1.0/(gamma_DS*gamma_DS), v_cutDS, 2.0, weight_DS);// p, m);
 				printf("DS not converged\n");
 				fprintf(fout, "DS not converged\n");
 			}
 			else if (convergence_DS == 1) {
-				//newguess(x_DSgrid, ne_DSgrid, sumni_DSgrid, phi_DSgrid, size_phiDSgrid, size_neDSgrid, 1.0/(gamma_ref*gamma_ref), v_cutDS, 2.0, weight_DS);// p, m);
+				//newguess(x_DSgrid, ne_DSgrid, sumni_DSgrid, phi_DSgrid, size_phiDSgrid, size_neDSgrid, 1.0/(gamma_DS*gamma_DS), v_cutDS, 2.0, weight_DS);// p, m);
 				//weight_DS /= 2.0;
 				printf("DS converged\n");
 				fprintf(fout, "DS converged\n");
 			}
 			else {
-				//newguess(x_DSgrid, ne_DSgrid, sumni_DSgrid, phi_DSgrid, size_phiDSgrid, size_neDSgrid, 1.0/(gamma_ref*gamma_ref), v_cutDS, 2.0, weight_DS);// p, m);
+				//newguess(x_DSgrid, ne_DSgrid, sumni_DSgrid, phi_DSgrid, size_phiDSgrid, size_neDSgrid, 1.0/(gamma_DS*gamma_DS), v_cutDS, 2.0, weight_DS);// p, m);
 				printf("DS converged\n");
 				fprintf(fout, "DS converged\n");
 			}
@@ -2293,7 +2313,7 @@ i=0;
 			for (i=0; i<size_sumnigrid; i++)
 				sumni_grid[i] += (nioverne[n]*ni_grid[n][i]);
 		}
-		if (gamma_ref > SMALLGAMMA) {
+		if (gamma_DS > SMALLGAMMA) {
 			densfinorb(1.0, 1.0, alpha, size_phiDSgrid, &size_neDSgrid, ne_DSgrid, x_DSgrid, phi_DSgrid, -1.0, dist_e_GK, mu_e, U_e_DS, size_mu_e, size_vpar_e, 0.0, &flux_eDS, &garbage, ZOOM_DS, 0.0, -999.9, vy_e_wall, mu_e_op, chiM_e, twopidmudvy_e, &size_op_e); 
 			//printf("chiM mu\n");
 			for (i=0; i<size_op_e; i++) {
@@ -2310,7 +2330,7 @@ i=0;
 		else {
 			for (i=0; i< size_mu_e; i++) 
 				vpar_e_cut[i] = 0.0; //sqrt(-2.0*lin_interp(x_DSgrid, phi_DSgrid, sqrt(mue_cut_lookup[i]), size_phiDSgrid, 1234)); 
-			denszeroorb(-1.0, 1.0, phi_DSgrid, ne_DSgrid, size_phiDSgrid, &flux_eDS, &Q_eDS, dist_e_GK, vpar_e_DS, mu_e, size_vpar_e, size_mu_e, vpar_e_cut, gamma_ref, x_DSgrid, &ne_inf);
+			denszeroorb(-1.0, 1.0, phi_DSgrid, ne_DSgrid, size_phiDSgrid, &flux_eDS, &Q_eDS, dist_e_GK, vpar_e_DS, mu_e, size_vpar_e, size_mu_e, vpar_e_cut, gamma_DS, x_DSgrid, &ne_inf);
 			//for (i=0; i< size_mu_e; i++) 
 			//	vpar_e_cut[i] = sqrt(-2.0*lin_interp(x_DSgrid, phi_DSgrid, sqrt(2.0*mu_e[i]), size_phiDSgrid, 1234)); 
 			for (i=0; i<size_mu_e; i++) {
@@ -2334,7 +2354,7 @@ i=0;
 		//	fprintf(fout, "ERROR: MP solution rejected because it does not satisfy Poisson's equation accurately enough on the extended domain\n");
 		//	exit(-1);
 		//}
-		error_Poisson(error_DS, x_DSgrid, ne_DSgrid, sumni_DSgrid, nioverne, phi_DSgrid, size_phiDSgrid, size_neDSgrid, 1.0/(gamma_ref*gamma_ref));
+		error_Poisson(error_DS, x_DSgrid, ne_DSgrid, sumni_DSgrid, nioverne, phi_DSgrid, size_phiDSgrid, size_neDSgrid, 1.0/(gamma_DS*gamma_DS));
 		printf("error_av = %f\terror_max = %f\n", error_DS[0], error_DS[1]);
 		i=1;
 		if ( error_DS[1] > tol_DS[1]) {
@@ -2351,19 +2371,22 @@ i=0;
 		printf("electron heat flux Q_e = %f\n", Q_e);
 		printf("electron particle flux Phi = %f\n", flux_e);
 		printf("electron sheath heat transmission coefficient = %f (classical value = 2 + |phiDS+phiMP| = %f\n", Q_e/flux_e, 2 + 0.5*v_cut*v_cut);
-		phiDS0corr = -0.5*v_cutDS*v_cutDS;// + 1.5*gamma_ref*gamma_ref*exp(-0.5*v_cutDS*v_cutDS)/(1.0+erf(sqrt(0.5)*v_cutDS));
+		phiDS0corr = -0.5*v_cutDS*v_cutDS;// + 1.5*gamma_DS*gamma_DS*exp(-0.5*v_cutDS*v_cutDS)/(1.0+erf(sqrt(0.5)*v_cutDS));
 		ionfluxes(alpha, TioverTe[0], &ionmomfluxDSinf, &ionmomfluxDS0, &Bohm, phiDS0corr, phi_grid[0], dist_i_GK[0], mu_i[0], U_i[0], vy_i_wall[0], mu_i_op[0], chiM_i[0], twopidmudvy_i[0], size_mu_i[0], size_U_i[0], size_op_i[0]); 
 		elmomfluxDS0 = exp(-0.5*v_cutDS*v_cutDS)/(1.0+erf(sqrt(-phiDS0corr)));
 		elmomfluxDSinf = 1.0 - (2.0/sqrt(M_PI))*exp(phiDS0corr)*sqrt(-phiDS0corr)/(1.0+erf(sqrt(-phiDS0corr))) ;
-		EW = gamma_ref*sqrt( (M_PI/2.0) )*gamma_ref*exp(phiDS0corr)/(1.0+erf(sqrt(-phiDS0corr))) + gamma_ref*sqrt(2.0*(ionmomfluxDS0 + elmomfluxDS0 - ionmomfluxDSinf - elmomfluxDSinf)); // + gamma_ref*1.25*exp(-0.5*v_cutDS*v_cutDS)/(1.0+erf(sqrt(0.5)*v_cutDS));
+		EW = gamma_DS*sqrt( (M_PI/2.0) )*gamma_DS*exp(phiDS0corr)/(1.0+erf(sqrt(-phiDS0corr))) + gamma_DS*sqrt(2.0*(ionmomfluxDS0 + elmomfluxDS0 - ionmomfluxDSinf - elmomfluxDSinf)); // + gamma_DS*1.25*exp(-0.5*v_cutDS*v_cutDS)/(1.0+erf(sqrt(0.5)*v_cutDS));
 		snprintf(fpstr, 150, "%s/modwallEfield.txt", dirname);
 		fp = fopen(fpstr, "w");
 		if (fp == NULL) {
 			printf("error when opening file %s\n", fpstr);
 		}
-		fprintf(fp, "%f %f\n", EW/gamma_ref, sqrt(2.0*(ionmomfluxDS0 + elmomfluxDS0 - ionmomfluxDSinf - elmomfluxDSinf)));
+		fprintf(fp, "%f %f\n", EW/gamma_DS, sqrt(2.0*(ionmomfluxDS0 + elmomfluxDS0 - ionmomfluxDSinf - elmomfluxDSinf)));
 		fclose(fp);
 	// Print potential and density profiles to files
+	}
+	else {
+	
 	}
 
 	if (N== MAX_IT) {

@@ -3,17 +3,35 @@ import matplotlib.pyplot as plt
 import scipy.interpolate as scintpol
 import scipy.integrate as scint
 import matplotlib
+import os
 #plt.rcParams.update({'font.size': 10}) 
 #plt.rc('xtick', labelsize=18)  
 #plt.rc('ytick', labelsize=18) 
 
-alphadeg, gammae, num_spec, niovne, TiovTe, miovme, set_current, jorphi = np.loadtxt('inputfile.txt', unpack = True)
-#gammae = float(input("insert gammae: "))
-#alphadeg = input("insert alpha in degrees: ")
 
-#print "angle = ", alphadeg, "degrees\ngamma_e = ", gammae, "\nnumber of species = ", num_spec, "\nmiovme = ", miovme, "\nTiovTe = ", TiovTe, "\nset current (1) or potential (0)? ", set_current, "\nvalue =  ", jorphi
+if (os.path.isfile("inputfile.txt")):
+	alphadeg, gammae, num_spec, niovne, TiovTe, miovme, set_current, jorphi = np.loadtxt('inputfile.txt', unpack = True)
+elif (os.path.isfile("input_physparams.txt")):
+	file = open("input_physparams.txt")
+	gammaflag = 0
+	counter = 0
+	listline = []
+	for line in file:
+		listlineold = listline
+		listline = line.split()
+		if (len(listlineold) > 1) and ( (listlineold[1] == "gamma_ref") or (counter == 2) ):
+			gamma = float(listline[0])
+		if (len(listlineold) > 1) and ( (listlineold[1] == "alphadeg") or ( (counter == 0) and (str.isnumeric(line[0]) == True) ) ):
+			alphadeg = float(listline[0])
+		if (len(listlineold) > 1) and ( (listlineold[1] == "TioverTe") or (counter == 5) ):
+			TiovTe = float(listline[0])
+		if (len(listlineold) > 0) and (str.isnumeric(line[0]) == True):
+			counter += 1
 
-alpha = alphadeg*np.pi/180
+		##print(line)
+else:
+	prinf("ERROR: no input file found. Exit code now")
+	exit(1)
 
 xx, phi, ni, ne = np.loadtxt('phi_n_MP.txt', unpack = True)
 
@@ -152,10 +170,6 @@ plt.clf()
 
 
 Te = 1.0
-#alphadeg = input("Enter alpha in degrees: ")
-#alphadeg = float(alphadeg)
-#alpha = alphadeg*np.pi/180.0
-#print(alpha, Te)
 Ts = 1.0 + Te
 plt.plot(xx, phi)
 
@@ -164,7 +178,7 @@ def xifp(x, phi):
 	return y	
 
 numb = 4.0
-phi0 = np.log(1.12*alpha)
+#phi0 = np.log(1.12*alpha)
 phi0 = -2.15
 xarr = np.arange(0.0, 20.0, 0.01)
 phiarr = np.arange(phi0, -0.000000000001, 0.0001)

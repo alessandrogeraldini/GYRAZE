@@ -4,11 +4,13 @@
 #do not change the order in which the parameters are listed
 
 #set type_distfunc_entrance (= ADHOC or other string)
-ADHOC
+TEST
 #set alphadeg
 3.0
-#set gamma_ref (keep zero to solve only magnetic presheath)
-0.0
+#set gamma at MP (1) or DS (0)
+0
+#set gamma_ref
+0.2
 #set nspec
 1
 #set nioverne
@@ -17,7 +19,7 @@ ADHOC
 1.0
 #set mioverme
 3600
-#set set_current (flag)
-1
+#set set_current
+0
 #set target_current or phi_wall
-0.0
+3.0

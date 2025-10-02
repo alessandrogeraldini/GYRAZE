@@ -2,24 +2,42 @@ import numpy as np
 import matplotlib.pyplot as plt
 import scipy.interpolate as scint
 import matplotlib
+import os
+
 #plt.rcParams.update({'font.size': 10}) 
 #plt.rc('xtick', labelsize=18)  
 #plt.rc('ytick', labelsize=18) 
 
-alphadeg, gammae, num_spec, niovne, TiovTe, miovme, set_current, jorphi = np.loadtxt('inputfile.txt', unpack = True)
-#alphadeg, gammae, num_spec, TiovTe, miovme, set_current, jorphi = np.loadtxt('inputfile.txt', unpack = True)
-#gammae = float(input("insert gammae: "))
-#alphadeg = input("insert alpha in degrees: ")
+if (os.path.isfile("inputfile.txt")):
+	alphadeg, gamma, num_spec, niovne, TiovTe, miovme, set_current, jorphi = np.loadtxt('inputfile.txt', unpack = True)
+elif (os.path.isfile("input_physparams.txt")):
+	file = open("input_physparams.txt")
+	gammaflag = 0
+	counter = 0
+	listline = []
+	for line in file:
+		listlineold = listline
+		listline = line.split()
+		if (len(listlineold) > 1) and ( (listlineold[1] == "gamma_ref") or (counter == 2) ):
+			gamma = float(listline[0])
+		if (len(listlineold) > 1) and ( (listlineold[1] == "alphadeg") or ( (counter == 0) and (str.isnumeric(line[0]) == True) ) ):
+			alphadeg = float(listline[0])
+		if (len(listlineold) > 1) and ( (listlineold[1] == "TioverTe") or (counter == 5) ):
+			TiovTe = float(listline[0])
+		if (len(listlineold) > 0) and (str.isnumeric(line[0]) == True):
+			counter += 1
 
-#print "angle = ", alphadeg, "degrees\ngamma_e = ", gammae, "\nnumber of species = ", num_spec, "\nmiovme = ", miovme, "\nTiovTe = ", TiovTe, "\nset current (1) or potential (0)? ", set_current, "\nvalue =  ", jorphi
-print(gammae)
+		##print(line)
+else:
+	prinf("ERROR: no input file found. Exit code now")
+	exit(1)
 
 lambdaDoverrhoi= 0.1
 #gg, phi = np.loadtxt('phidata_compare.txt', unpack = True)
 xx, phi, ni, ne = np.loadtxt('phi_n_MP.txt', unpack = True)
 xxs, phis, nis, nes = np.loadtxt('phi_n_DS.txt', unpack = True)
 
-phispp = [ -(1/gammae**2)*(phis[i+2] - 2*phis[i+1] + phis[i])/(xxs[1]**2) for i in range(len(phis)-2) ]
+phispp = [ -(1/gamma**2)*(phis[i+2] - 2*phis[i+1] + phis[i])/(xxs[1]**2) for i in range(len(phis)-2) ]
 phispp.insert(0, phispp[0])
 phispp.append(0.0)
 
@@ -28,7 +46,7 @@ chargedensitymp = [ nnii - nnee for (nnee, nnii) in zip(ne, ni) ]
 
 #xx, phi = np.loadtxt('phi_MP_4deg.txt', unpack = True)
 #xxs, phis = np.loadtxt('phi_DS_4deg.txt', unpack = True)
-xxs_D = [gammae*xval for xval in xxs]
+xxs_D = [gamma*xval for xval in xxs]
 phis_scaled = [phi[0] - p for p in phis]
 xxs_scaled = [lambdaDoverrhoi*x for x in xxs]
 nis_scaled = [n for n in nis]

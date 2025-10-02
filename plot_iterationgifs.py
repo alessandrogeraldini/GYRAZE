@@ -3,7 +3,29 @@ import matplotlib.pyplot as plt
 import imageio
 import os.path
 
-alphadeg, gammae, num_spec, niovne, TiovTe, miovme, set_current, jorphi = np.loadtxt('inputfile.txt', unpack = True)
+if (os.path.isfile("inputfile.txt")):
+	alphadeg, gamma, num_spec, niovne, TiovTe, miovme, set_current, jorphi = np.loadtxt('inputfile.txt', unpack = True)
+elif (os.path.isfile("input_physparams.txt")):
+	file = open("input_physparams.txt")
+	gammaflag = 0
+	counter = 0
+	listline = []
+	for line in file:
+		listlineold = listline
+		listline = line.split()
+		if (len(listlineold) > 1) and ( (listlineold[1] == "gamma_ref") or (counter == 2) ):
+			gamma = float(listline[0])
+		if (len(listlineold) > 1) and ( (listlineold[1] == "alphadeg") or ( (counter == 0) and (str.isnumeric(line[0]) == True) ) ):
+			alphadeg = float(listline[0])
+		if (len(listlineold) > 1) and ( (listlineold[1] == "TioverTe") or (counter == 5) ):
+			TiovTe = float(listline[0])
+		if (len(listlineold) > 0) and (str.isnumeric(line[0]) == True):
+			counter += 1
+
+		##print(line)
+else:
+	prinf("ERROR: no input file found. Exit code now")
+	exit(1)
 
 phixMP_pnglist=[]
 nxMP_pnglist=[]
@@ -58,16 +80,17 @@ while os.path.isdir('iteration'+str(N)):
 	#DS
 	if os.path.isfile('iteration'+str(N)+'/phi_n_DS.txt') == True:
 		xx, phi, ni, ne = np.loadtxt('iteration'+str(N)+'/phi_n_DS.txt', unpack = True)
+		xxs_D = [gamma*xval for xval in xx]
 		i=len(ne)-1
 		while (ne[i] == 0.0):
 			i-=1
 		sizenDS = i+1
 		rho = [nin-nen for (nen,nin) in zip(ne, ni)]
-		phipp = [ -(1/gammae**2)*(phi[i+2] - 2*phi[i+1] + phi[i])/(xx[1]**2) for i in range(len(phi)-2) ]
+		phipp = [ -(1/gamma**2)*(phi[i+2] - 2*phi[i+1] + phi[i])/(xx[1]**2) for i in range(len(phi)-2) ]
 		#phipp.insert(0, phipp[0])
 		phipp.insert(0, phipp[0] - (phipp[1] - phipp[0]))
 		phipp.append(0.0)
-		plt.plot(xx, phi, lw = 2.0)
+		plt.plot(xxs_D, phi, lw = 2.0)
 		plt.ylim(-0.7, 0.0)
 		plt.xlim(0.0, 10.0)
 		plt.title('potential at iteration # = '+str(N))
@@ -86,10 +109,10 @@ while os.path.isdir('iteration'+str(N)):
 		plt.savefig('iteration'+str(N)+'/Ex_DS.png')
 		plt.close()
 		ExDS_pnglist.append('iteration'+str(N)+'/Ex_DS.png')
-		plt.plot(xx[1:sizenDS], ni[1:sizenDS], '-', lw = 2.0)
-		plt.plot(xx[1:sizenDS], ne[1:sizenDS], '-', lw = 2.0)
-		plt.plot(xx[1:sizenDS], rho[1:sizenDS], '-', lw = 2.0)
-		plt.plot(xx[1:sizenDS], phipp[1:sizenDS], '-', lw = 2.0)
+		plt.plot(xxs_D[1:sizenDS], ni[1:sizenDS], '-', lw = 2.0)
+		plt.plot(xxs_D[1:sizenDS], ne[1:sizenDS], '-', lw = 2.0)
+		plt.plot(xxs_D[1:sizenDS], rho[1:sizenDS], '-', lw = 2.0)
+		plt.plot(xxs_D[1:sizenDS], phipp[1:sizenDS], '-', lw = 2.0)
 		plt.ylim(-0.2, 1.0)
 		plt.xlim(0.0, 10.0)
 		plt.title('density at iteration # = '+str(N))
