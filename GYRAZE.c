@@ -900,6 +900,7 @@ void make_phigrid(double *x_grid, double *phi_grid, int size_phigrid, double gri
 	printf("in make_phigrid: size_phigrid = %d\n", size_phigrid);
 	if (initial != 0) {
 		if (improved == 0) {
+			printf("BLAH 1\n");
 			//printf("grid_parameter = %f\n", grid_parameter);
 			for (i=0; i<size_phigrid; i++) {
 			    //ff[i] = pow(sqrt(grid_parameter)+sqrt(x_grid[i]), 2.0) - grid_parameter;
@@ -930,6 +931,8 @@ void make_phigrid(double *x_grid, double *phi_grid, int size_phigrid, double gri
 			}
 		}
 		else { // improved =1 STILL NOT WORKING
+			printf("BLAH 2\n");
+
 			gsl_interp_accel *acc
 			= gsl_interp_accel_alloc ();
 			gsl_spline *spline
@@ -981,6 +984,8 @@ void make_phigrid(double *x_grid, double *phi_grid, int size_phigrid, double gri
 		}
 	}
 	else {
+		printf("BLAH 3\n");
+		printf("phi_jump = %f, len_scale = %f\n", phi_jump, len_scale);
 		for (i=0; i < size_phigrid; i++) {
 			xi = i*deltax;
 			ff[i] = xi;
@@ -1827,10 +1832,10 @@ i=0;
 		//phiDS0corr = -0.5*v_cutDS*v_cutDS + 1.5*gamma_DS*gamma_DS;
 		//EW = gamma_DS*sqrt((M_PI/2.0)*exp(-0.5*v_cutDS*v_cutDS)/(1.0+erf(sqrt(0.5)*v_cutDS)) - 1.0 + exp(-0.5*v_cutDS*v_cutDS) + 0.5*v_cutDS*v_cutDS); // + gamma_DS*1.25*exp(-0.5*v_cutDS*v_cutDS)/(1.0+erf(sqrt(0.5)*v_cutDS));
 		EW = gamma_DS*sqrt( (M_PI/2.0) )*gamma_DS*exp(phiDS0corr)/(1.0+erf(sqrt(-phiDS0corr))) + gamma_DS*sqrt(2.0*(ionmomfluxDS0 + elmomfluxDS0 - ionmomfluxDSinf - elmomfluxDSinf)); // + gamma_DS*1.25*exp(-0.5*v_cutDS*v_cutDS)/(1.0+erf(sqrt(0.5)*v_cutDS));
-		printf("EW = %f\n", EW/gamma_DS);
+		printf("EW = %f\n phiDS0corr = %f\n", EW/gamma_DS, phiDS0corr);
 		if (EW != EW)  {
 			printf("WARNING: the model wall electric field calculation is giving a NaN (from the square root of a negative number). This probably means that the electric field is very close to zero. Therefore, set EW to zero.\n");
-			EW = 0.0;
+			EW = 0.1;
 		}
 		if (gamma_DS > 3.0) {
 			for (i=0; i< size_mu_e; i++) 
@@ -2025,12 +2030,16 @@ i=0;
 		for (n=0; n<num_spec; n++) ni_DSgrid[n] = malloc(size_phiDSgrid*sizeof(double));
 		//make_phigrid(x_grid, phi_grid, size_phigrid, grid_parameter, deltax, N, phi0_init_MP, 1.0, alpha);
 		v_cutDS = sqrt(v_cut*v_cut + 2.0*phi_grid[0]);
-		if (gamma_DS < 1.0) 
+		if (gamma_DS < 1.0){ 
 			//make_phigrid(x_DSgrid, phi_DSgrid, size_phiDSgrid, 0.0, deltaxDS, 0, -phi_grid[0] - 0.5*v_cut*v_cut, 1.0/gamma_DS, alpha);
 			//make_phigrid(x_DSgrid, phi_DSgrid, size_phiDSgrid, 0.0, deltaxDS, 0, -phi_grid[0] - 0.5*v_cut*v_cut, 0.5*v_cutDS*v_cutDS/EW, alpha);
+			printf("BLAH v_cutDS = %f, EW = %f\n", v_cutDS, EW);
 			make_phigrid(x_DSgrid, phi_DSgrid, size_phiDSgrid, 0.0, deltaxDS, 0, -phi_grid[0] - 0.5*v_cut*v_cut, 2.0*0.5*v_cutDS*v_cutDS/EW, alpha);
+		}
 		else 
 			make_phigrid(x_DSgrid, phi_DSgrid, size_phiDSgrid, 0.0, deltaxDS, 0, -phi_grid[0] - 0.5*v_cut*v_cut, 1.0, alpha);
+		printf("At beginning phi_DSgrid[1] = %f, phi_DSgrid[0] = %f\n", phi_DSgrid[1], phi_DSgrid[0]);
+
 		if (gamma_DS >= TINY) {
 			for (i=0; i< size_mu_e; i++) {
 				vpar_e_cut[i] = vparcut_mu(mu_e[i], v_cutDS);
@@ -2210,7 +2219,7 @@ i=0;
 				//weight_j /= 2.0;
 				//weight_DS /= 2.0;
 			}
-			error_Poisson(error_DS, x_DSgrid, ne_DSgrid, sumni_DSgrid, nioverne, phi_DSgrid, size_phiDSgrid, size_neDSgrid, 1.0/(gamma_DS*gamma_ref));
+			error_Poisson(error_DS, x_DSgrid, ne_DSgrid, sumni_DSgrid, nioverne, phi_DSgrid, size_phiDSgrid, size_neDSgrid, 1.0/(gamma_DS*gamma_DS));
 			printf("error_av = %f\terror_max = %f\n", error_DS[0], error_DS[1]);
 
 
