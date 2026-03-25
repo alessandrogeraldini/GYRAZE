@@ -1,4 +1,4 @@
-// LAST SUBSTANTIAL MODIFICATION MADE 16 JAN 2022
+
 /* This code calculates the next electrostatic potential guess in the iteration to obtain the self-consistent magnetic presheath electrostatic potential profile */
 
 #include <stdlib.h>
@@ -131,6 +131,7 @@ for (i=0;i<size_phigrid;i++)
 
 if ( invgammasq > TINY ) { // DEBYE SHEATH ITERATION
 	phi0 = (ne_grid[size_ngrid-1] - ni_grid[size_ngrid-1])/(pow(phi_grid[size_ngrid-1], pfac));
+	printf("At beginning phi0 = %f\n", phi0);
 	gsl_vector *newphi_gsl = gsl_vector_alloc (size_phigrid-2);
 	gsl_matrix * m = gsl_matrix_alloc (size_phigrid-2, size_phigrid-2);
 
@@ -178,12 +179,13 @@ if ( invgammasq > TINY ) { // DEBYE SHEATH ITERATION
 
 	newphi[0] = phiW_impose;
 	//printf("newphi[0/%d] = %f (imposed)\n", size_ngrid, newphi[0]);
+        printf("In Debye sheath, asymptotic result starts at x = %f\n\n", x_grid[size_ngrid-1]);
 	for (i=0; i<size_ngrid-1; i++) {
 		temp = gsl_vector_get(newphi_gsl, i);
 		if (temp > 0.0) {
-			printf("WARNING: φ > 0.0 and thus non-monotonic in the Debye sheath\n\tFor the moment, this code cannot handle non-monotonic profiles => Exiting code\n");
-			temp = 0.0;
-			exit(-1);
+			printf("WARNING: φ > 0.0 at x = %f, and thus non-monotonic in the Debye sheath\n\tFor the moment, this code cannot handle non-monotonic profiles => Exiting code\n", x_grid[i+1]);
+//			temp = 0.0;
+//			exit(-1);
 		}
 		if (temp < newphi[i]) {
 			printf("WARNING: φ is non-monotonic in the Debye sheath at x = %f\n\tFor the moment, this code cannot handle non-monotonic profiles\n", x_grid[i+1]);
@@ -195,6 +197,9 @@ if ( invgammasq > TINY ) { // DEBYE SHEATH ITERATION
 	phip0 = (newphi[size_ngrid-1] - newphi[size_ngrid-2])/(x_grid[size_ngrid-1] - x_grid[size_ngrid-2]);
 	//printf("phip0 = %f\n\n", phip0);
 	CC = pdec*newphi[size_ngrid-1]/phip0 - x_grid[size_ngrid-1];
+	printf("In Debye sheath CC1 = %f\n\n", CC);
+        printf("In Debye sheath, max x = %f\n\n", x_grid[-1]);
+	printf("last phi is %f\n", newphi[size_ngrid-1]);
 	//CC = sqrt(pdec*(pdec-1)*newphi[size_ngrid-1]/(invgammasq*(ne_grid[size_ngrid-1] - ni_grid[size_ngrid-1]))) - x_grid[size_ngrid-1];
 	printf("CC1 = %f\n\n", CC);
 	//CC = (x_grid[size_ngrid-1]*pow(newphi[size_ngrid-1]/newphi[size_ngrid-2], -1.0/pdec) - x_grid[size_ngrid-2])/(1.0 - pow(newphi[size_ngrid-1]/newphi[size_ngrid-2], -1.0/pdec));
@@ -207,6 +212,7 @@ if ( invgammasq > TINY ) { // DEBYE SHEATH ITERATION
 	//if (pdec*(pdec-1)*newphi[size_ngrid-1]/(ne_grid[size_ngrid-1] - ni_grid[size_ngrid-1]) < 0.0) CC = 0.0; 
 	phi0 =  newphi[size_ngrid-1] /pow(x_grid[size_ngrid-1]+CC, pdec) ;
 	printf("pdec = %f\n", pdec);
+	printf("phi0 = %f\n", phi0);
 	//printf("C_ds = %f and a_ds = %f\n", CC, phi0);
 	for (i=size_ngrid-1; i<size_phigrid; i++) {
 		newphi[i] = phi0*pow(x_grid[i]+CC, pdec);

@@ -1129,7 +1129,9 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 	printf("phi[0] = %f\tphi_grid[0] = %f\n", phi[0], phi_grid[0]);
 
 	// Introduce a cap in energy (U, Uperp) high enough that we can safely assume F = 0
-	Ucap = 12.0 + 10.0/Ti;
+	//Ucap = 12.0 + 10.0/Ti;
+	Ucap = 48.0 + 10.0/Ti;
+
 	if (bilin_interp(0.0, Ucap, FF, mumu, UU, sizemumu, sizeUU, -1, -1) > 1e-6) printf("ERROR in densfinorb_renorm.c: increase Ucap please\n");
 	else if (bilin_interp(Ucap, 0.0, FF, mumu, UU, sizemumu, sizeUU, -1, -1) > 1e-6) printf("ERROR in densfinorb_renorm.c: increase Ucap please\n");
 	else printf("Ucap has been checked to be large enough\n");
@@ -1194,15 +1196,16 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 	xifunction = malloc(size_finegrid*sizeof(double));
 	/* FORM XBAR GRIDS 
 	Take derivatives of phi and use them to obtain two grids for xbar, one to be used for closed orbits and one to be used for open orbits. */
-	xbar = (double*)calloc(size_finegrid,sizeof(double));	
+	xbar = (double*)calloc(size_finegrid,sizeof(double));
 	for (i=0; i<size_finegrid; i++) {	
 		//if (i!=0)	xiprime[i-1] = (xiprime[i]-xiprime[i-1])/(xx[i]-xx[i-1]); 
 		// Evaluate derivative of phi
 		jmopen[i] = jmclosed[i] = 0; //*
 		if (i == 0)
-		{	
+		{
 			phip[0] = (phi[1] - phi[0])/(xx[1]-xx[0]);
-			//phip[0] = (phi[1] - phi[0])/(xx[1]-xx[0]) + (xx[0] - xx[1])*((phi[2] - phi[1])/(xx[2]-xx[1]) - (phi[1] - phi[0])/(xx[1]-xx[0]))/(xx[2]-xx[1]) ; 
+			//phip[0] = (phi[1] - phi[0])/(xx[1]-xx[0]) + (xx[0] - xx[1])*((phi[2] - phi[1])/(xx[2]-xx[1]) - (phi[1] - phi[0])/(xx[1]-xx[0]))/(xx[2]-xx[1]) ;
+
 		}
 		else if (i == size_finegrid-1)
 		{	
@@ -1239,6 +1242,7 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 			}
 		} 
 	}
+
 	//printf("icrit = %d\n", icrit);
 
 	for (i=0; i<size_finegrid; i++) {	
@@ -1252,6 +1256,7 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 		else 	
 			phipp[i] = ((xx[i] - xx[i-1])/(xx[i+1]- xx[i-1]))*(phip[i+1] - phip[i])/(xx[i+1] - xx[i]) + ((xx[i+1] - xx[i])/(xx[i+1]- xx[i-1]))*(phip[i] - phip[i-1])/(xx[i] - xx[i-1]); 
 	}
+
 
 	// Whole commented section below perhaps was overkill in xbar resolution
 	//////// but keep in case I ever change my mind
@@ -1281,6 +1286,7 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 		//j+=2;
 		j++;
 	}
+
 	xbarcrit = xifunction[icrit];
 	chiMcrit = 0.5*phip[icrit]*phip[icrit] + phi[icrit];
 	sizexbar = j;
@@ -1291,6 +1297,7 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 	//printf("sizexbar = %d, size_finegrid (x) =%d\n", sizexbar, size_finegrid);
 	//
 	// Lots of array allocations now that size of xbar (vy + x)
+
 	chi = (double **)calloc(sizexbar,sizeof(double*)); // chi(xbar, x) indices j and i 
 	Uperp = (double**)calloc(sizexbar,sizeof(double*)); 
 	mu = (double**)calloc(sizexbar,sizeof(double*)); 

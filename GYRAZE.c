@@ -104,16 +104,34 @@ OUTPUT: density profile ni_DS
 				vzkm = sqrt(2.0*(deltaUperp + Uminmu[k-1]));
 				Fk = bilin_interp(mu_op[j], Uminmu[k], FF, mu, Uminmu, size_mu, size_U, -1, -1);
 				Fkm1 = bilin_interp(mu_op[j], Uminmu[k-1], FF, mu, Uminmu, size_mu, size_U, -1, -1);
-				intgrd += ( (sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - sqrt(2.0*halfVx0sq)) * Fk + (sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - sqrt(2.0*halfVx0sq)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+
+				if(halfVx0sq + alpha*vzk*twopidmudvy[j] < 0.0){
+					intgrd += 0.0; 
+				}
+				else{
+				
+				if(halfVx0sq < 0.0){
+					intgrd += ( (sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j]))) * Fk + (sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j]))) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+				}
+				else{
+					intgrd += ( (sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - sqrt(2.0*halfVx0sq)) * Fk + (sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - sqrt(2.0*halfVx0sq)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+				}
 				if (i==0)
 					intgrdmfl += (1.0/3.0)*( ( pow(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j]), 1.5) - pow(2.0*halfVx0sq, 1.5) ) * Fk + (pow(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j]), 1.5) - pow(2.0*halfVx0sq, 1.5)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+				}
 				//if ((count == 0) && (intgrd != intgrd) ) {
 				//	count = 1;
 				//}
 			}
 			if (j > 0) {
 				if (i==0) 
-					momflux0 += (intgrdmfl + intgrdmflold)*0.5*(vy[j] - vy[j-1]); 
+					momflux0 += (intgrdmfl + intgrdmflold)*0.5*(vy[j] - vy[j-1]);
+/*				if(isnan(intgrd)){
+					intgrd += 0.0;
+				}
+				if(isnan(intgrdold)){
+					intgrdold += 0.0;
+				}*/
 				ni_DS[i] += (intgrd + intgrdold)*0.5*(vy[j] - vy[j-1]);
 			}
 			else if (j==0) {
@@ -1835,7 +1853,7 @@ i=0;
 		printf("EW = %f\n phiDS0corr = %f\n", EW/gamma_DS, phiDS0corr);
 		if (EW != EW)  {
 			printf("WARNING: the model wall electric field calculation is giving a NaN (from the square root of a negative number). This probably means that the electric field is very close to zero. Therefore, set EW to zero.\n");
-			EW = 0.1;
+			EW = 0.0;
 		}
 		if (gamma_DS > 3.0) {
 			for (i=0; i< size_mu_e; i++) 
