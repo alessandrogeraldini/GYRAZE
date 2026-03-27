@@ -27,7 +27,7 @@
 const char *strqty[9] = {"alpha=","fixMP=", "gamma=", "nspec=", "ni:ne=", "Ti:Te=","mi:me=","jwall=","pwall="};
 const int lenstrqty = 6;
 
-void densionDS(double alpha, double TiovTe, double *Bohm, double *ni_DS, double *phi_DS, double phi0, double **FF, double *mu, double *Uminmu, double *vy, double *mu_op, double *chiM, double *twopidmudvy, int size_phi, int size_mu, int size_U, int size_op_i) {
+void densionDS(double alpha, double TiovTe, double *Bohm, double *ni_DS, double *phi_DS, double phi0, double **FF, double *mu, double *Uminmu, double *vy, double *mu_op, double *chiM, double *twopidmudvy, int size_phi, int size_mu, int size_U, int size_op_i, double* ni_DScorr) {
 /* 
 This function calculates the ion density in the Debye sheath, which exploits a 1D acceleration of ions in the direction normal to the wall.
 It is not a particularly accurate density calculation; a trapezium rule is used.
@@ -38,7 +38,7 @@ INPUTS: alpha, temperature ratio TiovTe, potential in Debye sheath phi_DS, poten
 OUTPUT: density profile ni_DS
 */
 	int i, j, k, count, method = 1, sizevx = 200, l;
-	double Bohm1, deltaUperp, halfVx0sq, intgrd, intgrdold, vzk, vzkm, n_inf;
+	double Bohm1, deltaUperp, halfVx0sq, intgrd, intgrdold, intgrd_corr, intgrd_corr_old, vzk, vzkm, n_inf;
 	double intgrdBohmold, intgrdBohm, intgrdmfl, intgrdmflold, momfluxinf=0.0, momflux0=0.0;
 	double Fk, Fkm1, vx[sizevx], fvx[sizevx], Bohmval=0.0;
 	n_inf = 0.0;
@@ -85,13 +85,17 @@ OUTPUT: density profile ni_DS
 	printf("Bohm = %f\n", *Bohm);
 	for (i=0; i < size_phi; i++) { 
 		ni_DS[i] = 0.0;
+		ni_DScorr[i] = 0.0;
 		intgrd = 0.0;
 		intgrdmfl = 0.0;
+		intgrd_corr = 0.0;
 		for (j=0; j< size_op_i; j++) {
 			intgrdold = intgrd;
 			intgrdmflold = intgrdmfl;
+			intgrd_corr_old = intgrd_corr;
 			intgrd = 0.0;
 			intgrdmfl = 0.0;
+			intgrd_corr = 0.0;
 			//count = 0;
 			for (k=1; k < size_U; k++) {
 				halfVx0sq = chiM[j] - 0.5*vy[j]*vy[j] - phi_DS[i]/TiovTe - phi0/TiovTe;
@@ -115,6 +119,10 @@ OUTPUT: density profile ni_DS
 				}
 				else{
 					intgrd += ( (sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - sqrt(2.0*halfVx0sq)) * Fk + (sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - sqrt(2.0*halfVx0sq)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+					intgrd_corr += ( (1.0/sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - 1.0/sqrt(2.0*halfVx0sq)) * Fk + (1.0/sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - 1.0/sqrt(2.0*halfVx0sq)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+
+ 
+
 				}
 				if (i==0)
 					intgrdmfl += (1.0/3.0)*( ( pow(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j]), 1.5) - pow(2.0*halfVx0sq, 1.5) ) * Fk + (pow(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j]), 1.5) - pow(2.0*halfVx0sq, 1.5)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
@@ -133,14 +141,19 @@ OUTPUT: density profile ni_DS
 					intgrdold += 0.0;
 				}*/
 				ni_DS[i] += (intgrd + intgrdold)*0.5*(vy[j] - vy[j-1]);
+				ni_DScorr[i] += (intgrd_corr + intgrd_corr_old)*0.5*(vy[j] - vy[j-1]);
+ 
+
 			}
 			else if (j==0) {
 				intgrd = 0.0;
+				intgrd_corr = 0.0;
 			}
 		}
 		if (i==0)
 			momflux0 /= n_inf;
 		ni_DS[i] /= n_inf;
+		ni_DScorr[i] /= n_inf;
 		//printf("ni_DS[i] = %f, phi_DS[i] = %f\n", ni_DS[i], phi_DS[i]);
 		//printf("ni_DS = %f\tphi_DS = %f\n", ni_DS[i], phi_DS[i]);
 		if (i == size_phi-1) 
@@ -1123,14 +1136,14 @@ int main(void) {
 	double Uminmu_MPE, garbage = 0.0;
 	int size_mu_e, size_vpar_e, size_neDSgrid = 0, size_op_e=0;
 // quantities related to individual ion species: dim1 is for species
-	double **ni_grid, **ni_DSgrid, ionmomfluxDS0=0.0, ionmomfluxDSinf=0.0;
+	double **ni_grid, **ni_DSgrid, **ni_DS_corr, ionmomfluxDS0=0.0, ionmomfluxDSinf=0.0;
 	double **vy_i_wall, **mu_i_op, **chiM_i, **twopidmudvy_i;
 	double *flux_i, *lenfactor, Bohm=0.0, lenMP, *Q_i;
 	int *size_ngrid, *size_mu_i, *size_U_i, *sizevxopen, *size_op_i;
 	struct distfuncDKGK *FiGK;
 	double ***dist_i_GK, **mu_i, **U_i;
 // quantities related to overall ion properties
-	double *sumni_grid, *sumni_DSgrid, sumflux_i=0.0, sumni_norm=0.0, sumQ_i=0.0;
+	double *sumni_grid, *sumni_DSgrid, *sumni_DS_corr, sumflux_i=0.0, sumni_norm=0.0, sumQ_i=0.0;
 	int size_sumnigrid;
 // quantities related to the iteration
 	int zoomfactor;
@@ -1727,8 +1740,8 @@ i=0;
 		printf("size of coarse potential grid in Debye sheath = %d\n", size_phiDSgrid);
 		fprintf(fout, "size of coarse potential grid in Debye sheath = %d\n", size_phiDSgrid);
 		x_DSgrid = malloc(size_phiDSgrid*sizeof(double)); phi_DSgrid = malloc(size_phiDSgrid*sizeof(double));
-		ne_DSgrid = malloc(size_phiDSgrid*sizeof(double)); ni_DSgrid = malloc(num_spec*sizeof(double));
-		sumni_DSgrid = malloc(size_phiDSgrid*sizeof(double)); vy_e_wall  = malloc((ZOOM_DS*size_phiDSgrid+1)*size_phiDSgrid*sizeof(double));
+		ne_DSgrid = malloc(size_phiDSgrid*sizeof(double)); ni_DSgrid = malloc(num_spec*sizeof(double)); ni_DS_corr = malloc(num_spec*sizeof(double));
+		sumni_DSgrid = malloc(size_phiDSgrid*sizeof(double)); vy_e_wall  = malloc((ZOOM_DS*size_phiDSgrid+1)*size_phiDSgrid*sizeof(double)); sumni_DS_corr = malloc(size_phiDSgrid*sizeof(double)); 
 		mu_e_op  = malloc((ZOOM_DS*size_phiDSgrid+1)*sizeof(double)); chiM_e  = malloc((ZOOM_DS*size_phiDSgrid+1)*sizeof(double));
 		twopidmudvy_e  = malloc((ZOOM_DS*size_phiDSgrid+1)*sizeof(double));
 		v_cut = 1.0;
@@ -2039,13 +2052,18 @@ i=0;
 		// form x, phi, ne and ni grids for Debye sheath
 		ne_DSgrid = malloc(size_phiDSgrid*sizeof(double));
 		ni_DSgrid = malloc(num_spec*sizeof(double));
+		ni_DS_corr = malloc(num_spec*sizeof(double));
 		sumni_DSgrid = malloc(size_phiDSgrid*sizeof(double));
+		sumni_DS_corr = malloc(size_phiDSgrid*sizeof(double));
 		vy_e_wall  = malloc(size_phiDSgrid*sizeof(double));
 		mu_e_op  = malloc(size_phiDSgrid*sizeof(double));
 		chiM_e  = malloc(size_phiDSgrid*sizeof(double));
 		twopidmudvy_e  = malloc(size_phiDSgrid*sizeof(double));
 		vpar_e_cut_lookup  = malloc(size_phiDSgrid*sizeof(double));
-		for (n=0; n<num_spec; n++) ni_DSgrid[n] = malloc(size_phiDSgrid*sizeof(double));
+		for (n=0; n<num_spec; n++) {
+			ni_DSgrid[n] = malloc(size_phiDSgrid*sizeof(double));
+			ni_DS_corr[n] = malloc(size_phiDSgrid*sizeof(double));
+		}
 		//make_phigrid(x_grid, phi_grid, size_phigrid, grid_parameter, deltax, N, phi0_init_MP, 1.0, alpha);
 		v_cutDS = sqrt(v_cut*v_cut + 2.0*phi_grid[0]);
 		if (gamma_DS < 1.0){ 
@@ -2111,13 +2129,17 @@ i=0;
 			make_phigrid(x_grid, phi_grid, size_phigrid, grid_parameter, deltax, N, phi0_init_MP, 1.0, alpha);
 			printf("grid_parameter = %f\n", grid_parameter);
 			printf("evaluate ion density in DS\n");
-			for (i=0; i<size_phiDSgrid; i++) sumni_DSgrid[i] = 0.0;
+			for (i=0; i<size_phiDSgrid; i++) {
+				sumni_DSgrid[i] = 0.0;
+				sumni_DS_corr[i] = 0.0;
+			}
 			for (n=0; n<num_spec; n++) {
 				//printf("n (species index) = %d\n", n);
-				densionDS(alpha, TioverTe[n], &Bohm, ni_DSgrid[n], phi_DSgrid, phi_grid[0], dist_i_GK[n], mu_i[n], U_i[n], vy_i_wall[n], mu_i_op[n], chiM_i[n], twopidmudvy_i[n], size_phiDSgrid, size_mu_i[n], size_U_i[n], size_op_i[n]);
+				densionDS(alpha, TioverTe[n], &Bohm, ni_DSgrid[n], phi_DSgrid, phi_grid[0], dist_i_GK[n], mu_i[n], U_i[n], vy_i_wall[n], mu_i_op[n], chiM_i[n], twopidmudvy_i[n], size_phiDSgrid, size_mu_i[n], size_U_i[n], size_op_i[n],ni_DS_corr[n]);
 				//printf("nioverne[0]=%f\n", nioverne[n]);
 				for (i=0; i<size_phiDSgrid; i++){
 					sumni_DSgrid[i] += (nioverne[n]*ni_DSgrid[n][i]);
+					sumni_DS_corr[i] += (nioverne[n]*ni_DS_corr[n][i]);
 					//printf("niDS[%d] = %f, sumni = %f\n", i, ni_DSgrid[n][i], sumni_DSgrid[i]);
 				}
 			}
@@ -2254,6 +2276,13 @@ i=0;
 			if (gamma_DS < SMALLGAMMA) {
 				fprintf(fp, "0.0 %f\n", -0.5*v_cutDS*v_cutDS);
 				fprintf(fp, "1.0 %f\n", -0.5*v_cutDS*v_cutDS+EW);
+			}
+			snprintf(fpstr, 150, "%s%d/phi_corr_DS.txt", dirname_it, N);
+			fp = fopen(fpstr, "w");
+			if (fp == NULL)  
+				printf("error when opening file %s\n", fpstr);
+			for (i=0; i<size_phiDSgrid; i++) {
+				fprintf(fp, "%f %f %f\n", x_DSgrid[i], ne_DSgrid[i], sumni_DS_corr[i]);
 			}
 			fclose(fp);
 			snprintf(fpstr, 150, "%s%d/vparcut.txt", dirname_it, N);
@@ -2445,6 +2474,14 @@ i=0;
 	else 
 		fprintf(fp, "%f\n", -0.5*v_cutDS*v_cutDS);
 	fclose(fp);
+	snprintf(fpstr, 150, "%s/phi_corr_DS.txt", dirname);
+	fp = fopen(fpstr, "w");
+	if (fp == NULL)  
+		printf("error when opening file %s\n", fpstr);
+	for (i=0; i<size_phiDSgrid; i++) {
+		fprintf(fp, "%f %f %f\n", x_DSgrid[i], ne_DSgrid[i], sumni_DS_corr[i]);
+	}
+	fclose(fp);
 	snprintf(fpstr, 150, "%s/phi_n_MP.txt", dirname);
 	fp = fopen(fpstr, "w");
 	if (fp == NULL) {
@@ -2568,6 +2605,7 @@ i=0;
 	free(phi_DSgrid);
 	free(ne_DSgrid);
 	free(ni_DSgrid);
+	free(ni_DS_corr);
 	free(U_e_DS);
 	free(vpar_e_DS);
 	exit(0);
