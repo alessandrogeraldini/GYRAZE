@@ -1016,7 +1016,7 @@ void denszeroorb(double charge, double TeovTs, double *phi_real, double *n_grid,
 }
 
 
-void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int *size_ngrid, double* n_grid, double *x_grid, double* phi_grid, double charge, double **FF, double *mumu, double *UU, int sizemumu, int sizeUU, double grid_parameter, double *flux, double *Qflux, int zoomfactor, double margin, double phi_DSbump, double *vy_op, double *mu_op, double *chiMax_op, double *dmudvy_op, int *size_op) {
+void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int *size_ngrid, double* n_grid, double* n_grid_corr_delta, double *x_grid, double* phi_grid, double charge, double **FF, double *mumu, double *UU, int sizemumu, int sizeUU, double grid_parameter, double *flux, double *Qflux, int zoomfactor, double margin, double phi_DSbump, double *vy_op, double *mu_op, double *chiMax_op, double *dmudvy_op, int *size_op) {
 	// declare variables
 	clock_t begin = clock(); // Finds the start time of the computation
 	double limit_rho = 8.0;
@@ -1043,9 +1043,9 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 	/* lowerlimit represents the lower limit of k in the integrals over Uperp (or vx). It's needed because some of the earlies energies; (which are the largest because thy are values of chi stored after the maximum is found); may be so large that they are associated with very small values of the distribution function. This avoids integrating in an empty portion of phase space; upperlimit[j] represents the largest value of k (the smallest stored energy Uperp = chi_minimum) associated with some value of j; upper[j][i] represents the value of k associated with the smallest value of vx when integrating over Uperp. Going above upperlimit[j][i] makes Uperp < chi so velocities imaginary; imax/imin[j] stores the position of the maximum/minimum of the effective potential chi (It's x_M/x_m in the paper, which depends on xbar). */
 	double **Uperp, ***vx, *chiMax, *chimpp, *chimin, oorbintgrd, oorbintgrdantycal;
 	/* Uperp stores the possible values of Uperp associated with closed orbits, and so does vx; chiMax and chimin store the local maxima and minima of the effective potential maximum, oorbintgrd is the value of the integrand in the first open orbit integral (oorbintgrdantycal is the analytical result for flat potential) */
-	double vz, U, dvz = 0.1, dvzopen = 0.1, dvx, dxbar, intdU=0.0, intdUopen=0.0;
+	double vz, U, dvz = 0.1, dvzopen = 0.1, dvx, dxbar, intdU=0.0, intdUopen=0.0, intdU_corr_delta = 0.0;
 		/* vz used in the density integral; U is the total energy, used in the density integral; dvz is the thickness of the vz grid used to take the integral over U (which is taken over vz in practice), dvzopen is the same for the open orbit piece; dvx is the thickness of the vx grid used to take the integral over Uperp ( which is taken over vx in practice). It must be evaluated because it depends on stored values of vx[j][i][k]; dxbar is the thickness of the xbar grid; intdU is the value of the integral over U in the closed orbit density integration process; intdUopen is the same as above, for the open orbit integral  */
-	double intdUold=0.0, intdvx=0.0, intdvxold = 0.0, intdxbar=0.0, intdxbaropen=0.0, F, Fold=0.0, Fold_ref=0.0, Ucap;
+	double intdUold=0.0, intdU_corr_delta_old = 0.0, intdvx=0.0, intdvxold = 0.0, intdvx_corr_delta = 0.0, intdvx_corr_delta_old = 0.0, intdxbar=0.0, intdxbar_corr_delta = 0.0, intdxbaropen=0.0, F, Fold=0.0, Fold_ref=0.0, Ucap;
 		/* intdUold is a variable which stores the old intdU, so that the trapezium rule of integration can be applied (intdUold + intdU)*dvz; intdvx stores the integral over Uperp (hence over vx) in the closed orbit integral; intdxbar stores the value of the integral over xbar (which is the final result!), intdxbaropen does the same in the open orbit density integral; intdxbaropenBohm does the same for the Bohm integral; idealBohm is what the Bohm integral shoult be if Bohm condition is marginally satisfied; F is the value of the distribution function evaluated in the density integrals by interpolating FF, and Fold is the `old' needed to apply the trapezium rule; Fprime is the bilinearly interpolated value of FFprime, and Fprimeold is the same at the previous grid point (needed for trapezium rule); used in INTEGRALS OF DISTRIBUTION FUNCTION AT INFINITY; Ucap is the topmost total energy integrated to */
 	double intdUopenflow = 0.0, intdUopenflowold = 0.0, intdxbaropenflow = 0.0, oorbintgrdflow = 0.0, oorbintgrdflowold = 0.0, oorbintgrdener = 0.0, oorbintgrdenerold = 0.0;
 	// values of various integrals
@@ -1535,7 +1535,7 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 						jmopen[i-1] = j-1; 
 						if (DEBUG == 1) {
 							printf("i = %d, j = %d, icrit = %d\n", i-1, j-1, icrit); 
-							printf("jmopen[%d] = %d\n", i-1, jmopen[i-1]); 
+							intdvx_corr_delta = 0.0; intdvx_corr_delta_old = 0.0; printf("jmopen[%d] = %d\n", i-1, jmopen[i-1]); 
 						}
 					} 
 				}
@@ -1983,11 +1983,14 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 			if ( j>=jmclosed[i] ) {	
 				/* We have entered the closed orbit integral */
 				intdvxold = intdvx;
+				intdvx_corr_delta_old = intdvx_corr_delta;
 				//intdvxflowold = intdvxflow;
 				//intdvxflow = 0.0;
 				intdvx = 0.0;
+				intdvx_corr_delta = 0.0;
 				if (j == jmclosed[i]) {
 					intdvx = 0.0;
+					intdvx_corr_delta = 0.0;
 					//intdxbar += 0.0; 
 				}
 				else if (j > jmclosed[i]) {	
@@ -2000,6 +2003,8 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 						vxold = vxnew;
 						intdUold = intdU;
 						intdU = 0.0;
+						intdU_corr_delta_old = intdU_corr_delta;
+						intdU_corr_delta = 0.0;
 						if (k == upper[j][i]) {
 							Uperpnew = chi[j][i];
 							if (lowerlimit[j] == upper[j][i] ) {
@@ -2072,7 +2077,7 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 								}
 								//frac_reflected = 0.0;
 								intdU += 0.5*frac*dvz*((F+Fold) + frac_reflected*(F + Fold_ref));
-							}
+													}
 							else {	
 								//vz = dvz*l;
 
@@ -2089,14 +2094,18 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 							} 
 						}
 						intdUantycal = exp(-Uperpnew)*(1.0/(2.0*M_PI));// result with phi =0
+						intdU_corr_delta = bilin_interp(munew, Ucrit, FF, mumu, UU, sizemumu, sizeUU, -1, -1);
 						//intdU = intdUantycal;
 						if (DEBUG == 1) 	
 							printf("Analytical intdU is %f, numerical one is %f\n", intdUantycal, intdU);
 						if (k==lowerlimit[j]) {	
-							intdvx += 0.0; 
+							intdvx += 0.0;
+							intdvx_corr_delta += 0.0;
 						}
 						else {	
 							intdvx += 2.0*0.5*dvx*(intdU+intdUold);
+							intdvx_corr_delta += -0.5*dvx*(intdU_corr_delta + intdU_corr_delta_old);
+//							intdvx_corr_delta += 0.0;
 						}
 						if (intdvx != intdvx) {	
 							printf("intdvx is NAN, j=%d, i=%d\n", j, i); 
@@ -2120,6 +2129,7 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 							dxbar = (xbar[j] - xbar[j-1])*(chiMax[j] - chi[j][i])/ (chiMax[j] - chi[j][i] + chi[j-1][i] - chiMax[j-1]);// open orbit density does not need to be so accurate at this point
 						}
 						intdxbar += 0.5*(intdvx+intdvxold)*dxbar;
+						intdxbar_corr_delta += 0.5*(intdvx_corr_delta + intdvx_corr_delta_old)*dxbar;
 						if (intdxbar != intdxbar) {	
 							printf("intdxbar is NAN, j=%d, i=%d\n", j, i);  
 							exit(-1);
@@ -2129,6 +2139,7 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 					{
 						dxbar = xbar[j] - xbar[j-1];
 						intdxbar += 0.5*(intdvx+intdvxold)*dxbar;
+						intdxbar_corr_delta += 0.5*(intdvx_corr_delta + intdvx_corr_delta_old)*dxbar;
 						if (intdxbar != intdxbar) {
 							printf("intdxbar is NAN, j=%d, i=%d\n", j, i); 
 							exit(-1);
@@ -2138,6 +2149,8 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 			} 
 		}
 		n_grid[ic] = intdxbar + intdxbaropen;
+		n_grid_corr_delta[ic] = intdxbar_corr_delta;
+//		n_grid_corr_delta[ic] = n_inf;
 		if (ic == 0) {
 			flux0 = intdxbaropenflow/(n_inf*alpha);
 			Qflux0 = intdxbaropenener/(n_inf*alpha);
@@ -2195,6 +2208,7 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 			printf("before renormalizing n_finorb[%d] = %f, phi_grid[%d] = %f\n", ic, n_grid[ic], ic, phi_grid[ic]);
 		if (ic < *size_ngrid) {
 			n_grid[ic] /= n_inf;
+			n_grid_corr_delta[ic] /= n_inf;
 			if (DEBUG ==1) {
 				printf("x_grid[%d] = %f\tn_finorb[%d] = %f\tphi_grid[%d] = %f\n", ic, x_grid[ic], ic, n_grid[ic], ic, phi_grid[ic]);
 			}
