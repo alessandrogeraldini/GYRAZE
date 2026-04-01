@@ -1021,7 +1021,7 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 	clock_t begin = clock(); // Finds the start time of the computation
 	double limit_rho = 8.0;
 	double n_inf=0.0;
-	double Ucrit = 0.0, frac_reflected=0.0, frac = 0.0, vzcrit;
+	double Ucrit = 0.0, Ucritold = 0.0, Ucritp = 0.0, Ucritpold = 0.0, frac_reflected=0.0, frac = 0.0, vzcrit;
 	double deltax, deltax_inf, deltaE = 0.1, phibar;
 	double *chiinf, *muinf, **vxinf;
 	double *xx, *phi, *phip, *phipp, **chi;
@@ -1052,7 +1052,7 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 	double oorbintgrdold=0.0, Fopen=0.0, intdUopenold=0.0, intdUopenener=0.0, intdUopenenerold = 0.0, intdxbaropenener = 0.0, Qflux0 = 0.0;
 	double vx0open; 
 	double intdUantycal=0.0, intdvxantycal=0.0, vxnew=0.0, vxold = 0.0, Uperpnew = 0.0, *xtop, intdUopenantycal=0.0;
-	double openorbitnew, chinew, munew = 0.0;
+	double openorbitnew, chinew, munew = 0.0, muold = 0.0, Uperpold = 0.0, dmu_dUperp = 0.0, dmu_dUperp_old = 0.0;
 	/* intdUantycal is the integral over U (or v_z) for a flat potential profile (phi =0) for some value of xbar and Uperp; intdvxantycal  is the integral over Uperp (or vx) for a flat potential profile for some value of xbar; vxnew is the value of vx at the 'new' grid point, used in the vx integral (taken using the trapezium rule); vxold is the value of vx at the 'old' grid point, used in the vx integral; Uperpnew is the value of Uperp (used in the closed orbit density integral); munew is the valye of mu (used in the closed orbit density integral); xtop is the top bounce point x_t of the last closed orbit; intdUopenantycal is the analytical value of the integral over U  in the open orbit density integral */
 	double xi, *gg, *ff;
 	double flux0, du, fluxinf1old, fluxinfintgrdold, fluxinfintgrd, Qfluxinf1old, Qfluxinfintgrdold, Qfluxinfintgrd, u, Chodura2, Chodura2old, Chodura1old, Chodura1, Chodura;
@@ -2005,6 +2005,12 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 						intdU = 0.0;
 						intdU_corr_delta_old = intdU_corr_delta;
 						intdU_corr_delta = 0.0;
+
+						muold = munew;
+						Ucritold = Ucrit;
+						Ucritpold = Ucritp;
+						Uperpold = Uperpnew;
+						dmu_dUperp_old = dmu_dUperp;
 						if (k == upper[j][i]) {
 							Uperpnew = chi[j][i];
 							if (lowerlimit[j] == upper[j][i] ) {
@@ -2102,10 +2108,37 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 							intdvx += 0.0;
 							intdvx_corr_delta += 0.0;
 						}
-						else {	
-							intdvx += 2.0*0.5*dvx*(intdU+intdUold);
-							intdvx_corr_delta += -0.5*dvx*(intdU_corr_delta + intdU_corr_delta_old);
-//							intdvx_corr_delta += 0.0;
+							else {	
+								double dmu = munew - muold;
+								double dmu_tol = fmax(TINY, 1e-14*fmax(1.0, fmax(fabs(munew), fabs(muold))));
+								double dUperp = Uperpnew - Uperpold;
+								double dUperp_tol = fmax(TINY, 1e-14*fmax(1.0, fmax(fabs(Uperpnew), fabs(Uperpold))));
+
+								intdvx += 2.0*0.5*dvx*(intdU+intdUold);
+								if (fabs(dmu) <= dmu_tol) Ucritp = Ucritpold;
+								else Ucritp = (Ucrit - Ucritold)/dmu;
+
+								if (fabs(dUperp) <= dUperp_tol) {
+									/* Consecutive Uperp points can coincide numerically near turning points. */
+									if (fabs(dmu) <= dmu_tol) dmu_dUperp = 0.0;
+									else dmu_dUperp = dmu_dUperp_old;
+								}
+								else {
+									dmu_dUperp = dmu / dUperp;
+								}
+								if(fabs(dmu_dUperp) > 10000){
+									printf("munew - muold = %.6e, Uperpnew - Uperpold is %.6e (tol %.6e)\n", dmu, dUperp, dUperp_tol);
+								}
+							// if(Uperpnew == Uperpold){
+							// 	dmu_dUperp = 1.0;
+							// }
+							// else{
+							// 	// dmu_dUperp = (munew - muold) / (Uperpnew - Uperpold);
+							// 	dmu_dUperp = 1.0;
+							// }
+							intdvx_corr_delta += -2.0*0.5*dvx*(intdU_corr_delta*(1.+Ucritp*dmu_dUperp) + intdU_corr_delta_old*(1.+Ucritpold*dmu_dUperp_old));
+							//intdvx_corr_delta += -0.5*dvx*(intdU_corr_delta*(1.+Ucritp) + intdU_corr_delta_old*(1.+Ucritpold));
+							//intdvx_corr_delta += -0.5*dvx*(dmu_dUperp + dmu_dUperp_old);
 						}
 						if (intdvx != intdvx) {	
 							printf("intdvx is NAN, j=%d, i=%d\n", j, i); 
