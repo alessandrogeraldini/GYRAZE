@@ -1804,6 +1804,7 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 		intdxbar = 0.0;
 		intdxbaropen = 0.0;
 		intdxbaropenflow = 0.0;
+		intdxbar_corr_delta = 0.0;
 		for (j=0; j<sizexbar; j++) { //*
 			vxnew = 0.0;
 			intdUopenold = intdUopen;
@@ -1981,6 +1982,9 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 				} 
 			}
 			if ( j>=jmclosed[i] ) {	
+				// if(charge < 0 && lowerlimit[j] != 0){
+				// 	printf("lowerlimit is %d\n", lowerlimit[j]);
+				// }
 				/* We have entered the closed orbit integral */
 				intdvxold = intdvx;
 				intdvx_corr_delta_old = intdvx_corr_delta;
