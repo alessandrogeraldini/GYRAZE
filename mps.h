@@ -18,6 +18,6 @@ void error_Poisson(double *error, double *x_grid, double *ne_grid, double *ni_gr
 void denszeroorb(double charge, double TeovTs, double *phi,double *n_grid, int p_size, double *Phi_e_point, double *Qe_point, double **distfunc, double *vpar, double *mu, int size_vpar, int size_mu, double *vpar_cut_lookup, double gamma, double *x_grid, double *n_inf); 
 double *linetodata(char line[], int lenline, int *size);
 //double *linetodatanew(char *line, int *size);
-void densfinorb(double Te, double lenfactor, double alpha, int size_phigrid, int *size_ngrid, double* n_grid, double* n_grid_corr_delta, double *x_grid, double* phi_grid, double charge, double **FF, double *mumu, double *UU, int sizemumu, int sizeUU, double grid_parameter, double *flux, double *Qflux, int zoomfactor, double stopdens, double phiDSbump, double *vy, double *mu_op, double *chiMax_op, double *dmudvy, int *size_op);
+void densfinorb(double Te, double lenfactor, double alpha, int size_phigrid, int *size_ngrid, double* n_grid, double* n_grid_corr_delta, double* n_grid_corr_chiM, double *x_grid, double* phi_grid, double charge, double **FF, double *mumu, double *UU, int sizemumu, int sizeUU, double grid_parameter, double *flux, double *Qflux, int zoomfactor, double stopdens, double phiDSbump, double *vy, double *mu_op, double *chiMax_op, double *dmudvy, int *size_op);
 double bilin_interp(double x, double y, double **FF, double *xx, double *yy, int cols, int rows, int guessi, int guessj);
 double lin_interp(double* x_grid, double* y_grid,double given_x ,int n, int line);
