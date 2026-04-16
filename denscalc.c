@@ -1016,7 +1016,7 @@ void denszeroorb(double charge, double TeovTs, double *phi_real, double *n_grid,
 }
 
 
-void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int *size_ngrid, double* n_grid, double* n_grid_corr_delta, double* n_grid_corr_chiM, double *x_grid, double* phi_grid, double charge, double **FF, double *mumu, double *UU, int sizemumu, int sizeUU, double grid_parameter, double *flux, double *Qflux, int zoomfactor, double margin, double phi_DSbump, double *vy_op, double *mu_op, double *chiMax_op, double *dmudvy_op, int *size_op) {
+void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int *size_ngrid, double* n_grid, double* n_grid_corr_delta, double* n_grid_corr_chiM, double *x_grid, double* phi_grid, double charge, double **FF, double *mumu, double *UU, int sizemumu, int sizeUU, double grid_parameter, double *flux, double *Qflux, int zoomfactor, double margin, double phi_DSbump, double *vy_op, double *mu_op, double *chiMax_op, double *dmudvy_op, int *size_op, char* dirname) {
 	// declare variables
 	clock_t begin = clock(); // Finds the start time of the computation
 	double limit_rho = 8.0;
@@ -1129,8 +1129,8 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 	printf("phi[0] = %f\tphi_grid[0] = %f\n", phi[0], phi_grid[0]);
 
 	// Introduce a cap in energy (U, Uperp) high enough that we can safely assume F = 0
-	//Ucap = 12.0 + 10.0/Ti;
-	Ucap = 48.0 + 10.0/Ti;
+	Ucap = 12.0 + 10.0/Ti;
+	//Ucap = 48.0 + 10.0/Ti;
 
 	if (bilin_interp(0.0, Ucap, FF, mumu, UU, sizemumu, sizeUU, -1, -1) > 1e-6) printf("ERROR in densfinorb_renorm.c: increase Ucap please\n");
 	else if (bilin_interp(Ucap, 0.0, FF, mumu, UU, sizemumu, sizeUU, -1, -1) > 1e-6) printf("ERROR in densfinorb_renorm.c: increase Ucap please\n");
@@ -1652,6 +1652,38 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 	double inttime  = (double)(int1 - begin) / CLOCKS_PER_SEC;
 	if (DEBUG == 1) 
 		printf("in densfinorb: Array filling DONE: time is %f\n", inttime);
+	
+	FILE *fmu;
+char mu_path[300];
+
+if (dirname != NULL && charge < 0) {
+    snprintf(mu_path, sizeof(mu_path), "%s/mu_full_e_DS.txt", dirname);
+    fmu = fopen(mu_path, "w");
+    if (fmu == NULL) {
+        printf("Cannot open %s\n", mu_path);
+        exit(EXIT_FAILURE);
+    }
+
+    fprintf(fmu, "# j k xbar Uperp mu chiMax upperlimit\n");
+    for (j = 0; j < sizexbar; j++) {
+        for (k = 0; k <= upperlimit[j]; k++) {
+            fprintf(fmu, "%d %d %.15e %.15e %.15e %.15e %d\n",
+                j,
+                k,
+                xbar[j],
+                Uperp[j][k],
+                mu[j][k],
+                chiMax[j],
+                upperlimit[j]
+            );
+        }
+        fprintf(fmu, "\n");
+    }
+
+    fclose(fmu);
+}
+
+	
 	/* DENSITY INTEGRALS 
 	This part calculates the density integrals and outputs the result of the integration to a file fout and also the yz distribution function to three files one containing the distribution function the other two containing the velocity grid */
 	FILE *fout; 
@@ -2156,6 +2188,7 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 							// 	dmu_dUperp = 1.0;
 							// }
 							intdvx_corr_delta += -2.0*0.5*dvx*(intdU_corr_delta*(1.+Ucritp*dmu_dUperp) + intdU_corr_delta_old*(1.+Ucritpold*dmu_dUperp_old));
+							//intdvx_corr_delta += -2.0*0.5*dvx*((1.+Ucritp*dmu_dUperp) + (1.+Ucritpold*dmu_dUperp_old));
 							//intdvx_corr_delta += -0.5*dvx*(intdU_corr_delta*(1.+Ucritp) + intdU_corr_delta_old*(1.+Ucritpold));
 							//intdvx_corr_delta += -0.5*dvx*(dmu_dUperp + dmu_dUperp_old);
 						}
