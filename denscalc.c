@@ -1101,11 +1101,11 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 			//xx[i] = xi*xi;
 			phi[i] = gsl_spline_eval (spline, xi, acc);
 			//phi[i] = lin_interp(gg, phi_grid, sqrt(xx[i]), size_phigrid, 923);
-			fprintf(fp, "%f %f\n", xx[i], phi[i]);
+			if (fp != NULL) fprintf(fp, "%f %f\n", xx[i], phi[i]);
 			xx[i] *= lenfactor;
 			phi[i] *= (charge/Ti);
 		}
-		fclose(fp);
+		if (fp != NULL) fclose(fp);
 		gsl_spline_free (spline);
 		gsl_interp_accel_free (acc);
 
@@ -1119,10 +1119,10 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 			xx[i] = x_grid[i]*lenfactor;
 			//if (i== size_finegrid-1) xx[i] -= TINY;
 			phi[i] = phi_grid[i];
-			fprintf(fp, "%f %f\n", xx[i], phi[i]);
+			if (fp != NULL) fprintf(fp, "%f %f\n", xx[i], phi[i]);
 			phi[i] *= (charge/Ti);
 		}
-		fclose(fp);
+		if (fp != NULL) fclose(fp);
 	}
 	printf("lenfactor = %f\n", lenfactor);
 	printf("Ti= %f\tcharge = %f\n", Ti, charge);

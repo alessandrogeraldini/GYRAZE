@@ -1254,29 +1254,33 @@ int main(void) {
 	char *outputstr = "OUTPUT/";
 	for (ndirname=0; ndirname<strlen(outputstr);ndirname++) 
 		dirname[ndirname] = outputstr[ndirname];
+	dirname[ndirname] = '\0';
 	while (fgets(line_hundred, 100, input) != NULL) {	
 		if ( ( (line_hundred[0] != '#') && (line_hundred[0] != ' ') ) && (line_hundred[0] != '\n') ) {
 		storevals = linetodata(line_hundred, strlen(line_hundred), &ncols);
 		//printf("ndirname = %d\n", ndirname);
-		if ( (i!= 8) && (i!=0) ) {
-			for (j=0; j < lenstrqty-1; j++) {
-				dirname[ndirname+j] = strqty[i-fix_current-1][j];
+			if ( (i!= 8) && (i!=0) ) {
+				for (j=0; j < lenstrqty-1; j++) {
+					dirname[ndirname+j] = strqty[i-fix_current-1][j];
+				}
+				ndirname += (lenstrqty -1);
+				dirname[ndirname] = '\0';
+				//dirname[0] = 'a'; dirname[1] = 'l'; dirname[2] 
+				for (j=0;j<strlen(line_hundred)-1;j++) {
+					//printf("%c\n", line_hundred[j]);
+					dirname[j+ndirname] = line_hundred[j];
+					dirname[j+ndirname+1] = '\0';
+					printf("%s\n", dirname);
+				}
 			}
-			ndirname += (lenstrqty -1);
-			//dirname[0] = 'a'; dirname[1] = 'l'; dirname[2] 
-			for (j=0;j<strlen(line_hundred)-1;j++) {
-				//printf("%c\n", line_hundred[j]);
-				dirname[j+ndirname] = line_hundred[j];
-				printf("%s\n", dirname);
-			}
-		}
 		else if (i==0) {
-			for (j=0;j<strlen(line_hundred)-1;j++) {
-				//printf("%c\n", line_hundred[j]);
-				dirname[j+ndirname] = line_hundred[j];
-				printf("%s\n", dirname);
+				for (j=0;j<strlen(line_hundred)-1;j++) {
+					//printf("%c\n", line_hundred[j]);
+					dirname[j+ndirname] = line_hundred[j];
+					dirname[j+ndirname+1] = '\0';
+					printf("%s\n", dirname);
+				}
 			}
-		}
 		if (i==0){
 			type_distfunc_entrance = strncmp(line_hundred, "ADHOC", 5); // type_distfunc_entrance = 0 if the functions are ADHOC
 		}
@@ -1309,11 +1313,12 @@ int main(void) {
 				target_current = current = 0.0; // gets calculated afterwords
 			}
 		}
-		if (i!=8) {
-			ndirname += strlen(line_hundred)-1;
-			dirname[ndirname] = '/';
-			ndirname += 1;
-		}
+			if (i!=8) {
+				ndirname += strlen(line_hundred)-1;
+				dirname[ndirname] = '/';
+				ndirname += 1;
+				dirname[ndirname] = '\0';
+			}
 		i += 1; // count the rows in the file
 		//printf("dirname = %s\n", dirname);
 		printf("%s\n", dirname);
@@ -1371,6 +1376,7 @@ int main(void) {
 	for (i=0; i< nstrit; i++) {
 		dirname_it[ndirname+i] = strit[i];
 	}
+	dirname_it[ndirname+nstrit] = '\0';
 	printf("dirname for iteration = %s\n", dirname_it);
 	mkdir(dirname, S_IRWXU);
 	for (n=0; n<num_spec; n++) sumni_norm += nioverne[n];
@@ -1947,11 +1953,12 @@ i=0;
 		fprintf(fp, "%f\n", current); // current at target
 		fprintf(fp, "%f\n", 0.5*v_cut*v_cut); // potential drop across magnetic presheath + Debye sheath
 		fprintf(fp, "%f\n", Q_e); // electron heat flux
-		fprintf(fp, "%f\n", sumQ_i); // ion heat flux
-		fprintf(fp, "%f\n", flux_e); // electron particle flux/current
-		fprintf(fp, "%f\n", sumflux_i); // total ion particle flux/current (although must include Z in sumflux for multiple species)
+			fprintf(fp, "%f\n", sumQ_i); // ion heat flux
+			fprintf(fp, "%f\n", flux_e); // electron particle flux/current
+			fprintf(fp, "%f\n", sumflux_i); // total ion particle flux/current (although must include Z in sumflux for multiple species)
+			fclose(fp);
 
-		/* 
+			/* 
 			HAVE ION AND ELECTRON DENSITY
 			CALCULATE THE ERROR IN QUASINEUTRALITY
 			BASED ON ERROR, DECIDE WHAT TO DO
@@ -2301,12 +2308,13 @@ i=0;
 			for (i=0; i<size_phiDSgrid; i++) {
 				fprintf(fp, "%f %f %f %f\n", x_DSgrid[i], phi_DSgrid[i], sumni_DSgrid[i], ne_DSgrid[i]);
 			}
-			if (gamma_DS < SMALLGAMMA) {
-				fprintf(fp, "0.0 %f\n", -0.5*v_cutDS*v_cutDS);
-				fprintf(fp, "1.0 %f\n", -0.5*v_cutDS*v_cutDS+EW);
-			}
-			snprintf(fpstr, 150, "%s%d/phi_corr_DS.txt", dirname_it, N);
-			fp = fopen(fpstr, "w");
+				if (gamma_DS < SMALLGAMMA) {
+					fprintf(fp, "0.0 %f\n", -0.5*v_cutDS*v_cutDS);
+					fprintf(fp, "1.0 %f\n", -0.5*v_cutDS*v_cutDS+EW);
+				}
+				fclose(fp);
+				snprintf(fpstr, 150, "%s%d/phi_corr_DS.txt", dirname_it, N);
+				fp = fopen(fpstr, "w");
 			if (fp == NULL)  
 				printf("error when opening file %s\n", fpstr);
 			for (i=0; i<size_phiDSgrid; i++) {
@@ -2326,7 +2334,7 @@ i=0;
 			if (fp == NULL) {
 				printf("error when opening file %s\n", fpstr);
 			}
-			for (i=0; i<=size_mu_e; i++) {
+			for (i=0; i<size_mu_e; i++) {
 				fprintf(fp, "%f %f\n", mu_e[i], vpar_e_cut[i]);
 			}
 			fclose(fp);
@@ -2355,12 +2363,13 @@ i=0;
 			}
 			fprintf(fp, "%f\n", sumflux_i-flux_e);
 			fprintf(fp, "%f\n", 0.5*v_cut*v_cut);
-			fprintf(fp, "%f\n", Q_e);
-			fprintf(fp, "%f\n", sumQ_i);
-			fprintf(fp, "%f\n", flux_e);
-			fprintf(fp, "%f\n", sumflux_i);
+				fprintf(fp, "%f\n", Q_e);
+				fprintf(fp, "%f\n", sumQ_i);
+				fprintf(fp, "%f\n", flux_e);
+				fprintf(fp, "%f\n", sumflux_i);
+				fclose(fp);
 
-			if ( (error_DS[0] < tol_DS[0]) && (error_DS[1] < tol_DS[1]) ) convergence_DS += 1 ;
+				if ( (error_DS[0] < tol_DS[0]) && (error_DS[1] < tol_DS[1]) ) convergence_DS += 1 ;
 			else convergence_DS = 0;
 			if (convergence_DS == 0 || convergence_MP == 0 || convergence_j == 0) { 
 				printf("phi_DSgrid[0] = %f\n", phi_DSgrid[0]);

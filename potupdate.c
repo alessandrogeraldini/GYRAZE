@@ -198,7 +198,7 @@ if ( invgammasq > TINY ) { // DEBYE SHEATH ITERATION
 	//printf("phip0 = %f\n\n", phip0);
 	CC = pdec*newphi[size_ngrid-1]/phip0 - x_grid[size_ngrid-1];
 	printf("In Debye sheath CC1 = %f\n\n", CC);
-        printf("In Debye sheath, max x = %f\n\n", x_grid[-1]);
+	        printf("In Debye sheath, max x = %f\n\n", x_grid[size_phigrid-1]);
 	printf("last phi is %f\n", newphi[size_ngrid-1]);
 	//CC = sqrt(pdec*(pdec-1)*newphi[size_ngrid-1]/(invgammasq*(ne_grid[size_ngrid-1] - ni_grid[size_ngrid-1]))) - x_grid[size_ngrid-1];
 	printf("CC1 = %f\n\n", CC);
@@ -322,7 +322,9 @@ if (attempt_at_adapting_grid==1) {
 	}
 	free(new_x);
 }
-free(newphi);
-return;
+	free(newphi);
+	free(oldphi);
+	free(phipp);
+	return;
 
 }
