@@ -76,7 +76,7 @@ void denszeroorb(double charge, double TeovTs, double *phi_real, double *n_grid,
 	int show_err;// change show_err to 1 or 0 if you do/don't want the error output to be printed to a file (note that the error output will only be meaningful for maxwellian inputs). Change p_option to control how the phi values are distributed with 1 being in an attempt to make n_grid roughly linear and 0 making phi linear;
 	int mu_ind;
 	double *nepart, vpar_cut;
-	FILE* fptr1;
+	FILE* fptr1 = NULL;
 	show_err = 0;
 
 	vparacc = malloc(size_vpar*sizeof(double));
@@ -125,7 +125,7 @@ void denszeroorb(double charge, double TeovTs, double *phi_real, double *n_grid,
 					}
 					else
 					{
-						printf("Fuck");
+						printf("ERROR in denszeroorb: size_vpar must be greater than 1\n");
 					}
 				}
 
@@ -922,7 +922,7 @@ void denszeroorb(double charge, double TeovTs, double *phi_real, double *n_grid,
 		momfluxinf /= n_inf;
 		momflux0 = exp(phi[0])/(1.0+erf(sqrt(-phi[0]))) ;
 		momfluxinf = 1.0 - (2.0/sqrt(M_PI))*exp(phi[0])*sqrt(-phi[0])/(1.0+erf(sqrt(-phi[0]))) ;
-		printf("YOLO\n");	
+			printf("electron momentum-flux check\n");	
 		printf("momfluxinf = %f\n", momfluxinf);
 		printf("momflux0 = %f\n", momflux0);
 		printf("2*(momflux0 - momfluxinf) = %f\n", 2.0*(momflux0-momfluxinf));
@@ -966,29 +966,41 @@ void denszeroorb(double charge, double TeovTs, double *phi_real, double *n_grid,
 	if (show_err == 1)
 	{
 		fptr1 = fopen("OUTPUT/total_error.txt", "w");
-		for (p = 0; p < p_size; p++)
-		{
-			fprintf(fptr1, "%.15f\n", n_res[p]);
+		if (fptr1 != NULL) {
+			for (p = 0; p < p_size; p++)
+			{
+				fprintf(fptr1, "%.15f\n", n_res[p]);
+			}
+			fclose(fptr1);
 		}
-		fclose(fptr1);
+		else printf("Cannot open OUTPUT/total_error.txt\n");
 		fptr1 = fopen("OUTPUT/regular_point_error.txt", "w");
-		for (p = 0; p < p_size; p++)
-		{
-			fprintf(fptr1, "%.15f\n", af_err[p]);
+		if (fptr1 != NULL) {
+			for (p = 0; p < p_size; p++)
+			{
+				fprintf(fptr1, "%.15f\n", af_err[p]);
+			}
+			fclose(fptr1);
 		}
-		fclose(fptr1);
+		else printf("Cannot open OUTPUT/regular_point_error.txt\n");
 		fptr1 = fopen("OUTPUT/initial_point_error.txt", "w");
-		for (p = 0; p < p_size; p++)
-		{
-			fprintf(fptr1, "%.15f\n", in_err[p]);
+		if (fptr1 != NULL) {
+			for (p = 0; p < p_size; p++)
+			{
+				fprintf(fptr1, "%.15f\n", in_err[p]);
+			}
+			fclose(fptr1);
 		}
-		fclose(fptr1);
+		else printf("Cannot open OUTPUT/initial_point_error.txt\n");
 		fptr1 = fopen("OUTPUT/Edens.txt", "w");
-		for (p = 0; p < p_size; p++)
-		{
-			fprintf(fptr1, "%.15f\n", in_err[p]);
+		if (fptr1 != NULL) {
+			for (p = 0; p < p_size; p++)
+			{
+				fprintf(fptr1, "%.15f\n", in_err[p]);
+			}
+			fclose(fptr1);
 		}
-		fclose(fptr1);
+		else printf("Cannot open OUTPUT/Edens.txt\n");
 	}
 
 	for (mu_ind = 0; mu_ind < size_mu; mu_ind++) {
@@ -1058,7 +1070,7 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 	double flux0, du, fluxinf1old, fluxinfintgrdold, fluxinfintgrd, Qfluxinf1old, Qfluxinfintgrdold, Qfluxinfintgrd, u, Chodura2, Chodura2old, Chodura1old, Chodura1, Chodura;
 	double fluxinf, Qfluxinf, fluxinf1, Qfluxinf1, densinf1, densinf, densinf1old; 
 	double musmall, muell, Omegaell, minphiformucalc = 0.3;
-	FILE *fp, *filellip;
+	FILE *fp = NULL, *filellip = NULL;
 
 	//printf("charge = %f\n", charge);
 	//for (i=0; i<size_phigrid;i++) printf("index %d\tx = %f\tphi = %f\n", i, x_grid[i], phi_grid[i]);
@@ -1080,9 +1092,8 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 	xx = (double*)calloc(size_finegrid,sizeof(double)); // xx = x has correct size
 	phi = (double*)calloc(size_finegrid,sizeof(double)); // phi now has correct size
 	filellip = fopen("checkellip.txt", "w");
-	if (filellip == NULL) {	
-		printf("Cannot open filellip.txt");
-		exit(EXIT_FAILURE);
+	if (filellip == NULL) {
+		printf("Cannot open checkellip.txt\n");
 	}
 	if (zoomfactor != 1) {
 		i=0;
@@ -1624,7 +1635,7 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 					muell /= Omegaell;
 					if ( (mu[j][k] < 2.5) && (mu[j][k] > 1.5) ) {
 						printf("xbar = %f\tOmegaell = %f\tmu (actual, ellipmodel) = (%f, %f)\n", xbar[j], Omegaell, mu[j][k], muell);
-						fprintf(filellip, "%f %f %f %f\n", xbar[j], Omegaell, mu[j][k], muell);
+						if (filellip != NULL) fprintf(filellip, "%f %f %f %f\n", xbar[j], Omegaell, mu[j][k], muell);
 					}
 				}
 			}
@@ -1653,7 +1664,7 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 	if (DEBUG == 1) 
 		printf("in densfinorb: Array filling DONE: time is %f\n", inttime);
 	
-	FILE *fmu;
+	FILE *fmu = NULL;
 char mu_path[300];
 
 if (dirname != NULL && charge < 0) {
@@ -1661,26 +1672,26 @@ if (dirname != NULL && charge < 0) {
     fmu = fopen(mu_path, "w");
     if (fmu == NULL) {
         printf("Cannot open %s\n", mu_path);
-        exit(EXIT_FAILURE);
     }
-
-    fprintf(fmu, "# j k xbar Uperp mu chiMax upperlimit\n");
-    for (j = 0; j < sizexbar; j++) {
-        for (k = 0; k <= upperlimit[j]; k++) {
-            fprintf(fmu, "%d %d %.15e %.15e %.15e %.15e %d\n",
-                j,
-                k,
-                xbar[j],
-                Uperp[j][k],
-                mu[j][k],
-                chiMax[j],
-                upperlimit[j]
-            );
+    else {
+        fprintf(fmu, "# j k xbar Uperp mu chiMax upperlimit\n");
+        for (j = 0; j < sizexbar; j++) {
+            for (k = 0; k <= upperlimit[j]; k++) {
+                fprintf(fmu, "%d %d %.15e %.15e %.15e %.15e %d\n",
+                    j,
+                    k,
+                    xbar[j],
+                    Uperp[j][k],
+                    mu[j][k],
+                    chiMax[j],
+                    upperlimit[j]
+                );
+            }
+            fprintf(fmu, "\n");
         }
-        fprintf(fmu, "\n");
-    }
 
-    fclose(fmu);
+        fclose(fmu);
+    }
 }
 
 	
@@ -2329,7 +2340,7 @@ if (dirname != NULL && charge < 0) {
 	}
 	*size_op = maxj/2;
 
-	fclose(filellip);
+	if (filellip != NULL) fclose(filellip);
 
 	// If you love your variables (and your memory) set them free // wise words Robbie
 	free(chiMopen);//
