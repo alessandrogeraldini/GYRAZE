@@ -204,11 +204,9 @@ void denszeroorb(double charge, double TeovTs, double *phi_real, double *n_grid,
 				w_up = 0.5 * pow(vpar_cut, 2.0);
 				w_lo = 0.5 * pow((vi_1 * v_s), 2.0);
 			}
-			//printf("in makelookup.c: mu = %f and vpar_cut_DSE = %f, nepart[mu_ind] = %f\n", mu[mu_ind], vpar_cut, nepart[mu_ind]);
 			if (mu_ind != 0) {
 				n_inf += 2.0*M_PI*0.5*(nepart[mu_ind] + nepart[mu_ind -1])*(mu[mu_ind] - mu[mu_ind-1]);
 			}
-			//printf("count=%d\n", count);
 		}
 		printf("n_inf = %f\n", n_inf);
 
@@ -273,13 +271,10 @@ void denszeroorb(double charge, double TeovTs, double *phi_real, double *n_grid,
 				w_up = 0.5 * pow(vpar_cut, 2.0);
 				w_lo = 0.5 * pow((vi_1 * v_s), 2.0);
 			}
-			//printf("in makelookup.c: mu = %f and vpar_cut_DSE = %f, nepart[mu_ind] = %f\n", mu[mu_ind], vpar_cut, nepart[mu_ind]);
 			if (mu_ind != 0) {
 				momfluxinf += 2.0*M_PI*0.5*(nepart[mu_ind] + nepart[mu_ind -1])*(mu[mu_ind] - mu[mu_ind-1]);
 			}
-			//printf("count=%d\n", count);
 		}
-		//printf("momfluxinf = %f\n", momfluxinf);
 
 		// ELECTRON FLUX electron flux
 		for (mu_ind=0; mu_ind<size_mu; mu_ind++) {
@@ -346,66 +341,6 @@ void denszeroorb(double charge, double TeovTs, double *phi_real, double *n_grid,
 			if (mu_ind != 0) 
 				Phi += 2.0*M_PI*0.5*(nepart[mu_ind] + nepart[mu_ind -1 ])*(mu[mu_ind]-mu[mu_ind-1]);
 		}
-
-		//for (mu_ind=0; mu_ind<size_mu; mu_ind++) {
-		//	nepart[mu_ind] = 0.0;
-		//	vpar_cut = vpar_cut_lookup[mu_ind] ; 
-		//	vpar_cut = sqrt(vpar_cut*vpar_cut + 2.0*(-phi[0]) + TINY);
-		//	for (vi = 0; vi < len_F - 1; vi++) {
-		//		F[vi]   = vi*v_s*vi*v_s*distfunc[mu_ind][vi];
-		//		Fp[vi]  = vi*v_s*vi*v_s*ddistdvpar[mu_ind][vi] + 2.0*vi*v_s*distfunc[mu_ind][vi];
-		//		Fpp[vi] = vi*v_s*vi*v_s*ddistdvpartwo[mu_ind][vi] + 4.0*vi*v_s*ddistdvpar[mu_ind][vi] + 2.0*distfunc[mu_ind][vi];
-		//	}
-		//	//printf("v_max = %f\tvpar_cut = %f\n", v_max, vpar_cut);
-		//	if (vpar_cut >= v_max) // effectively no cut off
-		//		momfluxinf = 0.0;
-		//	else { // now there is a cut-off
-		//		v_min = 0.0;
-		//		if ((int)floor(v_min / v_s) >= len_F - 1)
-		//		{
-		//			nepart[mu_ind] = 0.0;
-		//		}
-		//		else
-		//		{
-		//			vi_1 = -1;
-		//			for (vi = vi_1 + 1; vi < len_F - 1; vi++)
-		//			{
-		//				sqrt_up = (vi + 1) * v_s;
-		//				sqrt_lo = (vi * v_s);
-
-		//				nepart[mu_ind] += (((F[vi] - ((vi * v_s) * Fp[vi])) * (sqrt_up - sqrt_lo)) + (0.5 * Fp[vi] * (((((vi + 1) * v_s) * sqrt_up) - ((vi * v_s) * sqrt_lo)))));
-		//				nepart[mu_ind] += ((0.5 * (pow((vi * v_s), 2.0) + pow(v_min, 2.0)) * Fpp[vi] * (sqrt_up - sqrt_lo))) + ((1.0 / 6.0) * Fpp[vi] * (pow(sqrt_up, 3.0) - pow(sqrt_lo, 3.0))) - (0.5 * (vi * v_s) * Fpp[vi] * (((((vi + 1) * v_s) * sqrt_up) - ((vi * v_s) * sqrt_lo))));
-
-		//				w_up = 0.5 * (pow(((vi + 1) * v_s), 2.0) - pow(v_min, 2.0));
-		//				w_lo = 0.5 * (pow((vi * v_s), 2.0) - pow(v_min, 2.0));
-		//			}
-
-		//			for (vi = vi_1 + 1; vi < (int)floor(vpar_cut / v_s); vi++)
-		//			{
-		//				sqrt_up = (vi + 1) * v_s;
-		//				sqrt_lo = (vi * v_s);
-
-		//				nepart[mu_ind] -= (((F[vi] - ((vi * v_s) * Fp[vi])) * (sqrt_up - sqrt_lo)) + (0.5 * Fp[vi] * (((((vi + 1) * v_s) * sqrt_up) - ((vi * v_s) * sqrt_lo)))));
-		//				nepart[mu_ind] -= ( ((0.5 * (pow((vi * v_s), 2.0) + pow(v_min, 2.0)) * Fpp[vi] * (sqrt_up - sqrt_lo))) + ((1.0 / 6.0) * Fpp[vi] * (pow(sqrt_up, 3.0) - pow(sqrt_lo, 3.0))) - (0.5 * (vi * v_s) * Fpp[vi] * (((((vi + 1) * v_s) * sqrt_up) - ((vi * v_s) * sqrt_lo)))) );
-
-		//				w_up = 0.5 * (pow(((vi + 1) * v_s), 2.0) - pow(v_min, 2.0));
-		//				w_lo = 0.5 * (pow((vi * v_s), 2.0) - pow(v_min, 2.0));
-		//			}
-		//			vi_1 = (int)floor(vpar_cut / v_s);
-		//			sqrt_up = vpar_cut;
-		//			sqrt_lo = vi_1 * v_s;
-
-		//			nepart[mu_ind] -= (((F[vi_1] - ((vi_1 * v_s) * Fp[vi_1])) * (sqrt_up - sqrt_lo)) + (0.5 * Fp[vi_1] * (((vpar_cut * sqrt_up) - ((vi_1 * v_s) * sqrt_lo)))));
-		//			nepart[mu_ind] -= ( ((0.5 * (pow(((vi_1)* v_s), 2.0) + pow(v_min, 2.0)) * Fpp[vi_1] * (sqrt_up - sqrt_lo))) + ((1.0 / 6.0) * Fpp[vi_1] * (pow(sqrt_up, 3.0) - pow(sqrt_lo, 3.0))) - (0.5 * (vi_1 * v_s) * Fpp[vi_1] * (((vpar_cut * sqrt_up) - ((vi_1 * v_s) * sqrt_lo)))) );
-
-		//			w_up = 0.5 * pow(vpar_cut, 2.0);
-		//			w_lo = 0.5 * pow((vi_1 * v_s), 2.0);
-		//		}
-		//	}
-		//	if (mu_ind != 0) 
-		//		momfluxinf += 2.0*M_PI*0.5*(nepart[mu_ind] + nepart[mu_ind -1 ])*(mu[mu_ind]-mu[mu_ind-1]);
-		//}
-		//printf("momfluxinf = %f\n", momfluxinf);
 
 		// ELECTRON HEAT FLUX
 		for (mu_ind=0; mu_ind<size_mu; mu_ind++) {
@@ -738,11 +673,7 @@ void denszeroorb(double charge, double TeovTs, double *phi_real, double *n_grid,
 				F[vi]   = vi*v_s*vi*v_s*distfunc[mu_ind][vi];
 				Fp[vi]  = vi*v_s*vi*v_s*ddistdvpar[mu_ind][vi] + 2.0*vi*v_s*distfunc[mu_ind][vi];
 				Fpp[vi] = vi*v_s*vi*v_s*ddistdvpartwo[mu_ind][vi] + 4.0*vi*v_s*ddistdvpar[mu_ind][vi] + 2.0*distfunc[mu_ind][vi];
-				//F[vi]   = distfunc[mu_ind][vi];
-				//Fp[vi]  = ddistdvpar[mu_ind][vi];
-				//Fpp[vi] = ddistdvpartwo[mu_ind][vi];
 			}
-		//else { // now there is a cut-off
 			v_min = sqrt(-2.0 * phi[p]);
 			if ((int)floor(v_min / v_s) >= len_F - 1) {
 				nepart[mu_ind] = 0.0;
@@ -902,22 +833,12 @@ void denszeroorb(double charge, double TeovTs, double *phi_real, double *n_grid,
 					}
 				}
 			}
-		//}
-			//if (nepart[mu_ind] != nepart[mu_ind]) printf("mu_ind = %d, p = %d\n", mu_ind, p);
-
-//piece below is attempt at including first order in gamme effect of density variation --> does not work so well, so leave commented out
 			if ( (gamma < SMALLGAMMA) && (gamma > TINY) ) nepart[mu_ind] *= smallrhoefrac(x_grid[p], mu[mu_ind]);
-//instead, use wall electric field to calculate cutoff correction in vparallel --> works better
 			if (mu_ind != 0) {
 				momflux0 += 2.0*M_PI*0.5*(nepart[mu_ind] + nepart[mu_ind -1])*(mu[mu_ind] - mu[mu_ind-1]);
-				//printf("n_grid %f\n", n_grid[p]);
 			}
 		}
-		//n_pre[p] = 0.5 * exp(phi[p]) * (1 + erf(sqrt(phi[p] -phi[0] )));
 		printf("n_grid[%d] = %f, n_pre = %f\n", p, n_grid[p], n_pre[p]);
-		//if (p== p_size-1)
-		//	printf("in denszeroorb: charge = %f, derivative wrt phi is dndphi = %f\n", charge, (n_grid[p] - n_grid[p-1])/(phi[p] - phi[p-1]));
-	//}
 		momflux0 /= n_inf;
 		momfluxinf /= n_inf;
 		momflux0 = exp(phi[0])/(1.0+erf(sqrt(-phi[0]))) ;
@@ -992,15 +913,6 @@ void denszeroorb(double charge, double TeovTs, double *phi_real, double *n_grid,
 			fclose(fptr1);
 		}
 		else printf("Cannot open OUTPUT/initial_point_error.txt\n");
-		fptr1 = fopen("OUTPUT/Edens.txt", "w");
-		if (fptr1 != NULL) {
-			for (p = 0; p < p_size; p++)
-			{
-				fprintf(fptr1, "%.15f\n", in_err[p]);
-			}
-			fclose(fptr1);
-		}
-		else printf("Cannot open OUTPUT/Edens.txt\n");
 	}
 
 	for (mu_ind = 0; mu_ind < size_mu; mu_ind++) {
@@ -1269,32 +1181,9 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 	}
 
 
-	// Whole commented section below perhaps was overkill in xbar resolution
-	//////// but keep in case I ever change my mind
-	//j=0;
-	//k = icrit+1; 
-	//// the smallest value of xbar is not calculated at the critical point, but one step ahead
-	//for (i=icrit-1;i>=0;i--) {
-	//	while ( (xifunction[k] < xifunction[i]) && (k<size_finegrid) ) {	
-	//		xbar[j] = xifunction[k]; 
-	//		j++; k++; 
-	//	}	
-	//	xbar[j] = xifunction[i]; 
-	//	j++; 
-	//}
-	//while (k<size_finegrid) { 	
-	//	xbar[j] = xifunction[k]; 
-	//	k++; j++; 
-	//}	
-	////////
-
-	j=0; // set counting index to zero
-	for (k=icrit+1; k < size_finegrid; k++) { //*
-		//if (j!=0) xbar[2*j-1] = xbar[2*j-2] + 0.5*(xifunction[k]-xbar[2*j-2]); 
-		//xbar[2*j] = xifunction[k]; 
-		xbar[j] = xifunction[k]; 
-		//if (xbar[j] > xx[size_finegrid-1] - 0.5*limit_rho) maxj = j;
-		//j+=2;
+	j=0;
+	for (k=icrit+1; k < size_finegrid; k++) {
+		xbar[j] = xifunction[k];
 		j++;
 	}
 
@@ -1763,19 +1652,6 @@ if (dirname != NULL && charge < 0) {
 					Fold_ref = F;
 					vz = dvz*l;
 					U = Uperpnew + 0.5*pow(vz, 2.0);
-					//if ( (U > munew) && (U - 0.5*vz*vz + 0.5*(vz-dvz)*(vz-dvz) < munew) ) {
-					//	frac = (vz - sqrt(2.0*(munew - Uperpnew)))/dvz;
-					//	Fold = bilin_interp(munew, 0.0, FF, mumu, UU, sizemumu, sizeUU, -1, -1); 
-					//	F = bilin_interp(munew, U-munew, FF, mumu, UU, sizemumu, sizeUU, -1, -1); 
-					//}
-					//else if (U > munew){
-					//	frac = 1.0;
-					//	F = bilin_interp(munew, U-munew, FF, mumu, UU, sizemumu, sizeUU, -1, -1); 
-					//}
-					//else {
-					//	frac = 1.0;
-					//	F = 0.0;
-					//}
 					frac = 1.0;
 					F = bilin_interp(munew, U-munew, FF, mumu, UU, sizemumu, sizeUU, -1, -1); 
 
@@ -2191,17 +2067,7 @@ if (dirname != NULL && charge < 0) {
 								if(fabs(dmu_dUperp) > 10000){
 									printf("munew - muold = %.6e, Uperpnew - Uperpold is %.6e (tol %.6e)\n", dmu, dUperp, dUperp_tol);
 								}
-							// if(Uperpnew == Uperpold){
-							// 	dmu_dUperp = 1.0;
-							// }
-							// else{
-							// 	// dmu_dUperp = (munew - muold) / (Uperpnew - Uperpold);
-							// 	dmu_dUperp = 1.0;
-							// }
 							intdvx_corr_delta += -2.0*0.5*dvx*(intdU_corr_delta*(1.+Ucritp*dmu_dUperp) + intdU_corr_delta_old*(1.+Ucritpold*dmu_dUperp_old));
-							//intdvx_corr_delta += -2.0*0.5*dvx*((1.+Ucritp*dmu_dUperp) + (1.+Ucritpold*dmu_dUperp_old));
-							//intdvx_corr_delta += -0.5*dvx*(intdU_corr_delta*(1.+Ucritp) + intdU_corr_delta_old*(1.+Ucritpold));
-							//intdvx_corr_delta += -0.5*dvx*(dmu_dUperp + dmu_dUperp_old);
 						}
 						if (intdvx != intdvx) {	
 							printf("intdvx is NAN, j=%d, i=%d\n", j, i); 
