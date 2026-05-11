@@ -940,6 +940,31 @@ void denszeroorb(double charge, double TeovTs, double *phi_real, double *n_grid,
 }
 
 
+/* For a given xbar index j and a target magnetic moment mu_target, returns the
+   perpendicular energy Uperp such that mu(xbar[j], Uperp) = mu_target.
+   Safe to call after the closed-orbit array-filling loop and the open-orbit
+   mu[j][upperlimit[j]] = 0 reset.
+   Returns -1.0 if no closed orbit exists at j, or if mu_target exceeds the
+   maximum reachable mu at this xbar. */
+static double uperp_from_mu(int j, double mu_target,
+                             double **mu, double **Uperp, int *upperlimit)
+{
+	int k;
+	if (upperlimit[j] < 0)
+		return -1.0;
+	if (mu_target >= mu[j][0])
+		return Uperp[j][0];
+	if (mu_target <= 0.0)
+		return Uperp[j][upperlimit[j]];
+	for (k = 0; k < upperlimit[j]; k++) {
+		if (mu[j][k+1] <= mu_target) {
+			double t = (mu_target - mu[j][k]) / (mu[j][k+1] - mu[j][k]);
+			return Uperp[j][k] + t * (Uperp[j][k+1] - Uperp[j][k]);
+		}
+	}
+	return Uperp[j][upperlimit[j]];
+}
+
 void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int *size_ngrid, double* n_grid, double* n_grid_corr_delta, double* n_grid_corr_chiM, double *x_grid, double* phi_grid, double charge, double **FF, double *mumu, double *UU, int sizemumu, int sizeUU, double grid_parameter, double *flux, double *Qflux, int zoomfactor, double margin, double phi_DSbump, double *vy_op, double *mu_op, double *chiMax_op, double *dmudvy_op, int *size_op, char* dirname) {
 	// declare variables
 	clock_t begin = clock(); // Finds the start time of the computation
