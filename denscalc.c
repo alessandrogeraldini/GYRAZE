@@ -984,6 +984,7 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 	/* openorbit is the Delta_M = 2*pi*dmu/dxbar; openorbitantycal is the analytical value of openorbit for a flat potential; mu is the array containing values of mu(xbar, Uperp), index j for values of xbar, k for values of Uperp; xbar is the grid of values used in the closed orbit integral; FF contains the distribution function, read from the file distfile.txt. UU and mumu contain the values of U and mu corresponding to the function FF (which is F(mu, U)); FFprime is the numerical first derivative of F with respect to U; xifunction is the function of x which defines the grid of values of xbar by finding a chi whose minimum lies exactly at each grid point x. 
 	Note: first index of FF and FFprime is mu, second one is U; */
 	int i=0, ic=0, j=0, k=0, l=0;
+	int phi_monotone = 1, phi_imax = -1, phi_imin = -1;
 	int *jmclosed, *jmopen,  sizeU, size_finegrid, size_xlim;
 	/* jmclosed represent minimum values of xbar above which we integrate open and closed orbit density integrals respectively (xbar_m,o and xbar_m in the paper); i is an index usually representing the positin x  j is an index usually representing the orbit position xbar; k is an index usually representing the energy Uperp (or velocity vx). It's always used in conjunction with j (and sometimes i); l is an index (used in for loops) usually representing the total energy (or velocity vz). It's used only in the DENSITY INTEGRALS part of the code; sizeU is the size of the integration range over U (or velocity vz). It is set later on in the code */
 	int *crossed_max, *crossed_min, *kdrop;
@@ -1075,6 +1076,28 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 	printf("lenfactor = %f\n", lenfactor);
 	printf("Ti= %f\tcharge = %f\n", Ti, charge);
 	printf("phi[0] = %f\tphi_grid[0] = %f\n", phi[0], phi_grid[0]);
+
+	// Check that phi is monotone; a non-monotone spline indicates the input
+	// potential profile has too much curvature for the grid resolution.
+	{
+		double dphi0 = phi[1] - phi[0];
+		double dphi_prev = dphi0;
+		for (i = 1; i < size_finegrid - 1; i++) {
+			double dphi = phi[i+1] - phi[i];
+			if (dphi * dphi_prev < 0.0) {
+				phi_monotone = 0;
+				if (dphi < 0.0)  phi_imax = i;  // sign went +→−: local max at i
+				else             phi_imin = i;  // sign went −→+: local min at i
+			}
+			dphi_prev = dphi;
+		}
+		if (!phi_monotone)
+			printf("WARNING in densfinorb: phi is not monotone "
+			       "(local max at i=%d, x=%.6f; local min at i=%d, x=%.6f)\n",
+			       phi_imax, xx[phi_imax], phi_imin, xx[phi_imin]);
+		else
+			printf("phi monotonicity check passed\n");
+	}
 
 	// Introduce a cap in energy (U, Uperp) high enough that we can safely assume F = 0
 	Ucap = 12.0 + 10.0/Ti;
