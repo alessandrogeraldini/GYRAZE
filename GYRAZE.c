@@ -119,7 +119,7 @@ OUTPUT: density profile ni_DS
 				}
 				else{
 					intgrd += ( (sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - sqrt(2.0*halfVx0sq)) * Fk + (sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - sqrt(2.0*halfVx0sq)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
-					intgrd_corr += ( (1.0/sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - 1.0/sqrt(2.0*halfVx0sq)) * Fk + (1.0/sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - 1.0/sqrt(2.0*halfVx0sq)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+					intgrd_corr -= ( (1.0/sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - 1.0/sqrt(2.0*halfVx0sq)) * Fk + (1.0/sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - 1.0/sqrt(2.0*halfVx0sq)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
 
  
 

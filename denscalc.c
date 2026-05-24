@@ -966,12 +966,22 @@ static double uperp_from_mu(int j, double mu_target,
 }
 
 static double uperp_from_mu2(int j, double mu_target,
-                              double **mu, double **Uperp, int lowerlimit, int upperlimit, int current_j, int current_k, int *k_out)
+                              double **mu, double **Uperp, int lowerlimit, int upperlimit, int maxk, int current_j, int current_k, int *k_out, double phi_imin)
 {
 	int k;
 	if (upperlimit < 0)
 		return -1.0;
-	for (k = lowerlimit; k < upperlimit; k++) {
+	double mu_min = 1e20;
+	double Uperp_min = 1e20;
+	double mu_max = -1.0;
+	for (k = lowerlimit; k <= maxk; k++) {
+		if(mu[j][k] < mu_min){
+			mu_min = mu[j][k];
+			Uperp_min = Uperp[j][k];
+		}
+		if(mu[j][k] > mu_max){
+			mu_max = mu[j][k];
+		}
 		double lo = mu[j][k+1], hi = mu[j][k];
 		if (lo > hi) { double tmp = lo; lo = hi; hi = tmp; }
 		if (lo <= mu_target && mu_target <= hi) {
@@ -983,7 +993,33 @@ static double uperp_from_mu2(int j, double mu_target,
 			return Uperp[j][k] + t * (Uperp[j][k+1] - Uperp[j][k]);
 		}
 	}
-	return -1e30;
+	//printf("Couldn't find mu! mu_target = %f, mu_min = %f, mu_max = %f\n", mu_target,mu_min,mu_max);
+	return -1234;
+	//Try returning min of mu instead
+	//return Uperp_min;
+	//return mu_target + phi_imin;
+}
+
+static double uperp_from_mu3(int j, double mu_target, double *xbarr, double *xx, double *phi, int size_xx)
+{
+	int i, i_closest = 0;
+	double best = fabs(xx[0] - xbarr[j]);
+	for (i = 1; i < size_xx; i++) {
+		double d = fabs(xx[i] - xbarr[j]);
+		if (d < best) { best = d; i_closest = i; }
+	}
+	double dx, phi_pp;
+	if (i_closest == 0)
+		dx = xx[1] - xx[0],          phi_pp = (phi[2] - 2*phi[1] + phi[0]) / (dx*dx);
+	else if (i_closest == size_xx - 1)
+		dx = xx[size_xx-1] - xx[size_xx-2], phi_pp = (phi[size_xx-1] - 2*phi[size_xx-2] + phi[size_xx-3]) / (dx*dx);
+	else {
+		double dxl = xx[i_closest] - xx[i_closest-1];
+		double dxr = xx[i_closest+1] - xx[i_closest];
+		phi_pp = 2.0*(phi[i_closest+1]/dxr - phi[i_closest]*(1.0/dxl + 1.0/dxr) + phi[i_closest-1]/dxl) / (dxl + dxr);
+	}
+	//return (mu_target + phi[i_closest]) / (1.0 - 2.0*phi_pp);
+	return mu_target * sqrtf(1.0 + phi_pp) + phi[i_closest];
 }
 
 void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int *size_ngrid, double* n_grid, double* n_grid_corr_delta, double* n_grid_corr_chiM, double *x_grid, double* phi_grid, double charge, double **FF, double *mumu, double *UU, int sizemumu, int sizeUU, double grid_parameter, double *flux, double *Qflux, int zoomfactor, double margin, double phi_DSbump, double *vy_op, double *mu_op, double *chiMax_op, double *dmudvy_op, int *size_op, char* dirname) {
@@ -1107,22 +1143,24 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 
 	// Check that phi is monotone; a non-monotone spline indicates the input
 	// potential profile has too much curvature for the grid resolution.
-	{
+	// REMEMBER that phi = -phi_grid, since omega_e < 0. so local mins are maxes, and vice versa.
+	if(charge < 0){
 		double dphi0 = phi[1] - phi[0];
 		double dphi_prev = dphi0;
 		for (i = 1; i < size_finegrid - 1; i++) {
 			double dphi = phi[i+1] - phi[i];
 			if (dphi * dphi_prev < 0.0) {
 				phi_monotone = 0;
-				if (dphi < 0.0)  phi_imax = i;  // sign went +→−: local max at i
-				else             phi_imin = i;  // sign went −→+: local min at i
+				if (dphi < 0.0)  phi_imin = i;  // sign went +→−: local max at i
+				else             phi_imax = i;  // sign went −→+: local min at i
 			}
 			dphi_prev = dphi;
 		}
-		if (!phi_monotone)
+		if (phi_monotone != 1){
 			printf("WARNING in densfinorb: phi is not monotone "
-			       "(local max at i=%d, x=%.6f; local min at i=%d, x=%.6f)\n",
-			       phi_imax, xx[phi_imax], phi_imin, xx[phi_imin]);
+					"(local max at i=%d, x=%.6f; local min at i=%d, x=%.6f)\n",
+					phi_imax, xx[phi_imax], phi_imin, xx[phi_imin]);
+		}
 		else
 			printf("phi monotonicity check passed\n");
 	}
@@ -1813,6 +1851,28 @@ if (dirname != NULL && charge < 0) {
 	int upper_printed5 = 0, upper_printed6 = 0;
 	if (charge < 0)
 		fupper = fopen("OUTPUT/upper_diag.txt", "w");
+
+	int i_49 = 0, i_51 = 0;
+	{
+		double diff49 = fabs(xx[0] - 4.5), diff51 = fabs(xx[0] - 5.5);
+		for (int ii = 1; ii < size_finegrid; ii++) {
+			if (fabs(xx[ii] - 4.5) < diff49) { diff49 = fabs(xx[ii] - 4.5); i_49 = ii; }
+			if (fabs(xx[ii] - 5.5) < diff51) { diff51 = fabs(xx[ii] - 5.5); i_51 = ii; }
+		}
+	}
+	FILE *f49 = fopen("OUTPUT/Uperp_min_x49.txt", "w");
+	FILE *f51 = fopen("OUTPUT/Uperp_min_x51.txt", "w");
+
+	int js_phi_imin = -1;
+	if (!phi_monotone && phi_imin >= 0 && sizexbar > 0) {
+		double best_xdiff = fabs(xbar[0] - xx[phi_imin]);
+		js_phi_imin = 0;
+		for (int js = 1; js < sizexbar; js++) {
+			double xdiff = fabs(xbar[js] - xx[phi_imin]);
+			if (xdiff < best_xdiff) { best_xdiff = xdiff; js_phi_imin = js; }
+		}
+	}
+
 	stop = 0; // set stop index to zero; it turns to 1 if density exceeds threshold in the input (expressed as fraction of density at infinity)
 	ic = 0;
 	while (stop == 0) {
@@ -2041,6 +2101,7 @@ if (dirname != NULL && charge < 0) {
 					// 	intdvx_in = 0.0;
 					// 	intdvx_ref = 0.0;
 					// } else {
+					double min_Uperp_j = Ucap, min_Uperp_before_fix_j = Ucap, Uperp_lb_at_min_j = Ucap;
 					for (k=lowerlimit[j]; k<upper[j][i]+1; k++) {
 						vxold = vxnew;
 						intdUold = intdU;
@@ -2093,11 +2154,15 @@ if (dirname != NULL && charge < 0) {
 						   U < Uperps cannot complete the orbit, so raise the lower bound accordingly.*/
 						//if (!phi_monotone && phi_imin >= 0 && xbar[j] < xx[phi_imin]) {
 						//if(charge < 0 && k != upper[j][i]){
+						double Uperpnew_pre = Uperpnew;
+						double Uperp_lb_k = Uperpnew;
 						if(!phi_monotone){
 							double Uperp_lb = Uperpnew;
-							for (int js = j+1; js < sizexbar; js++) {
+
+							for (int js = j+1; js <= (js_phi_imin+sizexbar)/2; js++) {
 								int k_found = -1;
-								double Uperps = uperp_from_mu2(js, munew, mu, Uperp, lowerlimit[js], upper[js][i], j, k, &k_found);
+								double Uperps = uperp_from_mu2(js, munew, mu, Uperp, lowerlimit[js], upper[js][i], upperlimit[js], j, k, &k_found,phi[phi_imin]);
+								//double Uperps = uperp_from_mu3(js, munew, xbar, xx, phi, size_finegrid);
 								if (Uperps > Uperp_lb) {
 									// if (phi_monotone)
 									// 	printf("  RAISE: x[i=%d] = %.6f, j = %d, xbar[j] = %.4f, js=%d xbar[js]=%.4f ll = %d ul=%d munew=%.4e mu[js][%d]=%.4e Uperps=%.6f Uperpnow=%.6f\n",
@@ -2105,16 +2170,32 @@ if (dirname != NULL && charge < 0) {
 									Uperp_lb = Uperps;
 								}
 							}
+
+							//Alternative: only check the single xbar closest to the phi local minimum.
+							// if (js_phi_imin >= 0 && xbar[j] < xx[phi_imin]) {
+							// 	int k_found = -1;
+							// 	double Uperps = uperp_from_mu2(js_phi_imin, munew, mu, Uperp, lowerlimit[js_phi_imin], upper[js_phi_imin][i], upperlimit[js_phi_imin], j, k, &k_found, phi[phi_imin]);
+							// 	//if (Uperps > Uperp_lb) Uperp_lb = Uperps;
+							// 	Uperp_lb = Uperps;
+							// }
+							
 							if (Uperp_lb > Uperpnew) {
 								//Uperp_lb = Uperp[j][k];
+								// if(i == i_49 || i == i_51){
 								// printf("x[i=%d] = %.6f, xbar[j=%d]=%.6f, mu=%.6f: Uperpnew before=%.6f, after=%.6f\n",
 								//        i, xx[i], j, xbar[j], munew, Uperpnew, Uperp_lb);
+								// }
 								Uperpnew = Uperp_lb;
 							}
+							Uperp_lb_k = Uperp_lb;
 						}
 						// With Uperpnew possibly raised, sizeU and U = Uperpnew + 0.5*vz*vz
 						// inside the l loop automatically use the tighter lower bound.
-						
+						if (Uperpnew_pre < min_Uperp_before_fix_j) {
+							min_Uperp_before_fix_j = Uperpnew_pre;
+							Uperp_lb_at_min_j = Uperp_lb_k;
+						}
+						if (Uperpnew < min_Uperp_j) min_Uperp_j = Uperpnew;
 						sizeU = (int) sqrt(2.0*(Ucap - Uperpnew))/dvz;
 						reflected = 1;
 						for (l=0; l < sizeU; l++)
@@ -2185,7 +2266,9 @@ if (dirname != NULL && charge < 0) {
 							}
 						}
 						intdUantycal = exp(-Uperpnew)*(1.0/(2.0*M_PI));// result with phi =0
-						intdU_corr_delta = bilin_interp(munew, Ucrit, FF, mumu, UU, sizemumu, sizeUU, -1, -1);
+						if(Ucrit + munew > Uperpnew){
+							intdU_corr_delta = bilin_interp(munew, Ucrit, FF, mumu, UU, sizemumu, sizeUU, -1, -1);
+						}
 						//intdU = intdUantycal;
 						if (DEBUG == 1) 	
 							printf("Analytical intdU is %f, numerical one is %f\n", intdUantycal, intdU);
@@ -2194,7 +2277,7 @@ if (dirname != NULL && charge < 0) {
 							intdvx_corr_delta += 0.0;
 							if(charge < 0){
 								vx0open = sqrt(2.0*(chiMax[j] - chi[j][i])); 
-								intdvx_corr_chiM = intdU_corr_chiM / vx0open;
+								intdvx_corr_chiM = 2.0*intdU_corr_chiM / vx0open;
 							}
 						}
 							else {	
@@ -2222,7 +2305,7 @@ if (dirname != NULL && charge < 0) {
 								if(fabs(dmu_dUperp) > 10000){
 									printf("munew - muold = %.6e, Uperpnew - Uperpold is %.6e (tol %.6e)\n", dmu, dUperp, dUperp_tol);
 								}
-							intdvx_corr_delta += -2.0*0.5*dvx*(intdU_corr_delta*(1.+Ucritp*dmu_dUperp) + intdU_corr_delta_old*(1.+Ucritpold*dmu_dUperp_old));
+							intdvx_corr_delta += 2.0*0.5*dvx*(intdU_corr_delta*(1.+Ucritp*dmu_dUperp) + intdU_corr_delta_old*(1.+Ucritpold*dmu_dUperp_old));
 						}
 						if (intdvx != intdvx) {
 							printf("intdvx is NAN, j=%d, i=%d\n", j, i);
@@ -2231,6 +2314,8 @@ if (dirname != NULL && charge < 0) {
 					}
 					//END OF FIX
 					//}  // close else for fix above
+					if (i == i_49 && f49 != NULL) fprintf(f49, "%f %f %f %f\n", xbar[j], min_Uperp_before_fix_j, min_Uperp_j, Uperp_lb_at_min_j);
+					if (i == i_51 && f51 != NULL) fprintf(f51, "%f %f %f %f\n", xbar[j], min_Uperp_before_fix_j, min_Uperp_j, Uperp_lb_at_min_j);
 					intdvxantycal = (2.0/(2.0*sqrt(M_PI)))*exp(-(xx[i]-xbar[j])*(xx[i]-xbar[j]))*erf(sqrt(xbar[j]*xbar[j]-(xx[i]-xbar[j])*(xx[i]-xbar[j])));
 					if (DEBUG == 1) {
 						printf("pos=%f, i=%d, j=%d, Uperp is %f, chi is %f\nvxnew and vxold are %f and %f and and vx is %f, dvx is %f\nintdvx is %f, analytical one is %f, upper is %d, upperlimit is %d\n", xx[i], i, j, Uperpnew, chi[j][i], vxnew, vxold, vx[j][i][k], dvx, intdvx, intdvxantycal, upper[j][i], upperlimit[j]); 
@@ -2365,6 +2450,8 @@ if (dirname != NULL && charge < 0) {
 	fclose(fout);
 	if (fout_inref != NULL) fclose(fout_inref);
 	if (fupper != NULL) fclose(fupper);
+	if (f49 != NULL) fclose(f49);
+	if (f51 != NULL) fclose(f51);
 	if (stop == 0) { 
 		printf("ERROR: the density never reached stopdens*n_inf\n"); 
 		exit(-1); 
