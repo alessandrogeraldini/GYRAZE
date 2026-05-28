@@ -2406,7 +2406,9 @@ if (dirname != NULL && charge < 0) {
 			printf("flow velocity at x=0 = %f\n", flux0/n_grid[0]);
 			printf("flux evaluated at x=0 is %f\theat flux = %f\n", flux0, Qflux0);
 		}
-		if ( (ic != size_xlim) && ( ( 1.0 - n_grid[ic]/n_inf <= margin ) ) ) { //|| ( ( (charge < 0.0) && ( - phi_grid[ic] < margin ) ) && ( - phi_grid[0] < 0.2 ) ) ) ) {	
+		//if ( (ic != size_xlim) && ( 1.0 - n_grid[ic]/n_inf <= margin ) && (ic >= 5 && phi_grid[ic] > phi_grid[ic-1] && phi_grid[ic-1] > phi_grid[ic-2] && phi_grid[ic-2] > phi_grid[ic-3] && phi_grid[ic-3] > phi_grid[ic-4] && phi_grid[ic-4] > phi_grid[ic-5]) && (charge >= 0 || x_grid[ic] > 4.0) && phi_grid[ic] < 0.0 ) {
+		if ( (ic != size_xlim) && ( 1.0 - n_grid[ic]/n_inf <= margin ) && (ic > 0 && phi_grid[ic] > phi_grid[ic-1]) && phi_grid[ic] < 0.0) {
+		//if ( (ic != size_xlim) && ( 1.0 - n_grid[ic]/n_inf <= margin )){
 			printf("ic = %d/%d, size_xlim = %d, margin = %f, condition (< margin?) = %f\n", ic, size_phigrid, size_xlim, margin, 1.0 - n_grid[ic]/n_inf);
 			stop = 1;
 			*size_ngrid = ic; 

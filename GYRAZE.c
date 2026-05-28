@@ -1117,7 +1117,7 @@ int main(void) {
 // spatial grid parameters in Debye sheath
 	double deltaxDS; 
 // input parameters set in inputfile.txt
-	int num_spec, fix_current=0;
+	int num_spec, fix_current=0, ds_solver=0;
 	double alpha, *nioverne, *TioverTe, *mioverme, gamma_ref=0.0, gamma_DS, target_current;
 // other parameters derived from input ones
 	double alpha_deg, factor_small_grid_parameter=1.0;
@@ -1259,7 +1259,7 @@ int main(void) {
 		if ( ( (line_hundred[0] != '#') && (line_hundred[0] != ' ') ) && (line_hundred[0] != '\n') ) {
 		storevals = linetodata(line_hundred, strlen(line_hundred), &ncols);
 		//printf("ndirname = %d\n", ndirname);
-			if ( (i!= 8) && (i!=0) ) {
+			if ( (i!= 8) && (i!=10) && (i!=0) ) {
 				for (j=0; j < lenstrqty-1; j++) {
 					dirname[ndirname+j] = strqty[i-fix_current-1][j];
 				}
@@ -1304,16 +1304,18 @@ int main(void) {
 			fix_current = (int) (*storevals); 
 		else if (i==9) {
 			if (fix_current != 0) {
-				target_current = current = *storevals; // in units of thermal electron velocity 
+				target_current = current = *storevals; // in units of thermal electron velocity
 				v_cut = 3.0; // set to a reasonable value
 				// we will set v_cut to some value later
 			}
 			else {
-				v_cut = sqrt(2.0*(*storevals)); 
+				v_cut = sqrt(2.0*(*storevals));
 				target_current = current = 0.0; // gets calculated afterwords
 			}
 		}
-			if (i!=8) {
+		else if (i==10)
+			ds_solver = (int) (*storevals); /* 0 = Picard, 1 = Newton-Raphson */
+			if (i!=8 && i!=10) {
 				ndirname += strlen(line_hundred)-1;
 				dirname[ndirname] = '/';
 				ndirname += 1;
@@ -2218,7 +2220,9 @@ i=0;
 					vpar_e_cut[i] = sqrt((v_cutDS*v_cutDS+EW*EW)*exp(-2.0*EW*sqrt(2.0*mu_e[i])/(v_cutDS*v_cutDS))*gsl_sf_bessel_I0(2.0*EW*sqrt(2.0*mu_e[i])/(v_cutDS*v_cutDS))); 
 				}
 				i=0;
-				while (ne_DSgrid[i] < 1.0-MARGIN_DS) i++;
+				//while (ne_DSgrid[i] < 1.0-MARGIN_DS || i < 5 || phi_DSgrid[i] <= phi_DSgrid[i-1] || phi_DSgrid[i-1] <= phi_DSgrid[i-2] || phi_DSgrid[i-2] <= phi_DSgrid[i-3] || phi_DSgrid[i-3] <= phi_DSgrid[i-4] || phi_DSgrid[i-4] <= phi_DSgrid[i-5] || x_DSgrid[i] <= 4.0 || phi_DSgrid[i] >= 0.0) i++;
+				while (ne_DSgrid[i] < 1.0-MARGIN_DS || phi_DSgrid[i] <= phi_DSgrid[i-1] || phi_DSgrid[i] >= 0.0) i++;
+				//while (ne_DSgrid[i] < 1.0-MARGIN_DS) i++;
 				size_neDSgrid = i;
 				printf("size_neDSgrid = %d\n", size_neDSgrid);
 			}
@@ -2373,7 +2377,15 @@ i=0;
 			else convergence_DS = 0;
 			if (convergence_DS == 0 || convergence_MP == 0 || convergence_j == 0) { 
 				printf("phi_DSgrid[0] = %f\n", phi_DSgrid[0]);
-				newguess(x_DSgrid, ne_DSgrid, sumni_DSgrid, phi_DSgrid, size_phiDSgrid, size_neDSgrid, 1.0/(gamma_DS*gamma_DS), v_cutDS, 2.0, weight_DS);// p, m);
+				printf("MAX ERROR IS %f\n", error_DS[1]);
+				//if (ds_solver == 1 && error_DS[1] < 1.1*tol_DS[1]) {
+				if(ds_solver == 1){
+					printf("AT ITERATION = %d, SWITCHING TO NR\n", N);
+					fprintf(fout, "AT ITERATION = %d, SWITCHING TO NR\n", N);
+					newguess_NR(x_DSgrid, ne_DSgrid, sumni_DSgrid, phi_DSgrid, size_phiDSgrid, size_neDSgrid, 1.0/(gamma_DS*gamma_DS), v_cutDS, 2.0, weight_DS, ne_DSgrid_corr_delta, ne_DSgrid_corr_chiM, sumni_DS_corr);
+				}
+				else
+					newguess(x_DSgrid, ne_DSgrid, sumni_DSgrid, phi_DSgrid, size_phiDSgrid, size_neDSgrid, 1.0/(gamma_DS*gamma_DS), v_cutDS, 2.0, weight_DS);
 				printf("DS not converged\n");
 				fprintf(fout, "DS not converged\n");
 			}
@@ -2450,7 +2462,9 @@ i=0;
 			}
 			
 			i=0;
-			while (ne_DSgrid[i] < 1.0 - MARGIN_DS) i++;
+			//while (ne_DSgrid[i] < 1.0 - MARGIN_DS || i < 5 || phi_DSgrid[i] <= phi_DSgrid[i-1] || phi_DSgrid[i-1] <= phi_DSgrid[i-2] || phi_DSgrid[i-2] <= phi_DSgrid[i-3] || phi_DSgrid[i-3] <= phi_DSgrid[i-4] || phi_DSgrid[i-4] <= phi_DSgrid[i-5] || x_DSgrid[i] <= 4.0 || phi_DSgrid[i] >= 0.0) i++;
+			while (ne_DSgrid[i] < 1.0 - MARGIN_DS || phi_DSgrid[i] <= phi_DSgrid[i-1] || phi_DSgrid[i] >= 0.0) i++;
+			//while (ne_DSgrid[i] < 1.0 - MARGIN_DS) i++;
 			size_neDSgrid = i;
 			printf("size_neDSgrid = %d\n", size_neDSgrid);
 		}

@@ -328,3 +328,118 @@ if (attempt_at_adapting_grid==1) {
 	return;
 
 }
+
+/*
+	NEWTON-RAPHSON UPDATE OF THE DEBYE SHEATH POTENTIAL
+
+	Solves  phi'' - gamma^2*(ne - ni) = 0  for the Debye sheath region via one
+	Newton-Raphson step:  J * dphi = -F,  phi += weight * dphi
+
+	The Jacobian is tridiagonal:
+	  off-diagonal:   1/dx^2
+	  diagonal:      -2/dx^2  -  gamma^2 * (ne_corr_delta[i] + ne_corr_chiM[i] + ne_grid[i] - ni_corr[i])
+	where i is the matrix row (0 = first interior point).
+	ne_corr_chiM[0] is NaN; ne_corr_chiM[1] is used in its place.
+
+	Boundary condition and asymptotic extension are kept identical to newguess.
+*/
+void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_grid,
+                 int size_phigrid, int size_ngridin, double invgammasq, double v_cutDS,
+                 double pfac, double weight,
+                 double *ne_corr_delta, double *ne_corr_chiM, double *ni_corr)
+{
+	int i, j, s;
+	int size_ngrid = size_ngridin;
+	int ninner = size_ngrid - 2;  /* unknowns: phi_grid[1] .. phi_grid[size_ngrid-2] */
+	double gamma2   = 1.0 / invgammasq;
+	double deltaxsq = x_grid[1] * x_grid[1];
+	double pdec     = 2.0 / (1.0 - pfac);
+	double phiW_impose = -(0.5 * v_cutDS * v_cutDS);
+	double phi0, phip0, CC, temp;
+
+	double *F_vec      = malloc(ninner * sizeof(double));
+	double *ne_corr_total = malloc(ninner * sizeof(double));
+	gsl_vector   *dphi_gsl = gsl_vector_alloc(ninner);
+	gsl_matrix   *J        = gsl_matrix_alloc(ninner, ninner);
+
+	printf("weight= %f, phi_grid[0] = %f\n", weight, phi_grid[0]);
+	printf("0.5*v_cutDS*v_cutDS = %f\n", 0.5 * v_cutDS * v_cutDS);
+
+	/* Build ne_corr_total = ne_grid + ne_corr_delta + ne_corr_chiM,
+	 * skipping NaN entries at both ends of ne_corr_chiM. */
+	for (i = 0; i < ninner; i++) {
+		double chiM_i;
+		if      (i == 0)        chiM_i = ne_corr_chiM[1];
+		//else if (i == ninner-1) chiM_i = ne_corr_chiM[ninner-2];
+		else                    chiM_i = ne_corr_chiM[i];
+		ne_corr_total[i] = ne_grid[i] + ne_corr_delta[i] + chiM_i;
+	}
+
+	/* Normalize so ne_corr_total[ninner-1] == ni_corr[ninner-1] */
+	double scale = ni_corr[ninner-1] / ne_corr_total[ninner-1];
+	for (i = 0; i < ninner; i++)
+		ne_corr_total[i] *= scale;
+
+	/* Enforce wall boundary condition */
+	phi_grid[0] = phiW_impose;
+
+	/* Build Jacobian J (tridiagonal) */
+	for (i = 0; i < ninner; i++) {
+		double jac_dens = gamma2 * (ne_corr_total[i] - ni_corr[i]);
+		for (j = 0; j < ninner; j++) {
+			if (i == j)
+				gsl_matrix_set(J, i, j, -2.0 / deltaxsq - jac_dens);
+			else if ((i == j + 1) || (i == j - 1))
+				gsl_matrix_set(J, i, j, 1.0 / deltaxsq);
+			else
+				gsl_matrix_set(J, i, j, 0.0);
+		}
+	}
+
+	/* Build -F[i] = -(phi''[i+1]/dx^2 - gamma^2*(ne[i+1] - ni[i+1]))
+	 * phi_grid[0] = phiW_impose is already set; phi_grid[size_ngrid-1] is from
+	 * the previous iteration's asymptotic extension (right boundary of last row). */
+	for (i = 0; i < ninner; i++) {
+		double phipp = (phi_grid[i+2] - 2.0*phi_grid[i+1] + phi_grid[i]) / deltaxsq;
+		F_vec[i] = -(phipp - gamma2 * (ne_grid[i+1] - ni_grid[i+1]));  /* = -F */
+	}
+
+	gsl_vector_view rhs = gsl_vector_view_array(F_vec, ninner);
+	gsl_permutation *p  = gsl_permutation_alloc(ninner);
+	clock_t t1 = clock();
+	gsl_linalg_LU_decomp(J, p, &s);
+	clock_t t2 = clock();
+	printf("NR LU decomposition time = %f\n", (double)(t2 - t1) / CLOCKS_PER_SEC);
+	gsl_linalg_LU_solve(J, p, &rhs.vector, dphi_gsl);
+
+	/* Apply damped Newton step; check for non-monotonicity */
+	phi_grid[0] = phiW_impose;
+	for (i = 0; i < ninner; i++) {
+		temp = phi_grid[i+1] + weight * gsl_vector_get(dphi_gsl, i);
+		if (temp > 0.0)
+			printf("WARNING: phi > 0.0 at x = %f, non-monotonic in Debye sheath\n", x_grid[i+1]);
+		if (temp < phi_grid[i])
+			printf("WARNING: phi non-monotonic at x = %f\n", x_grid[i+1]);
+		phi_grid[i+1] = temp;
+	}
+
+	/* Asymptotic extension from size_ngrid-1 to size_phigrid (same as newguess) */
+	printf("In Debye sheath NR, asymptotic result starts at x = %f\n\n", x_grid[size_ngrid-1]);
+	phip0 = (phi_grid[size_ngrid-1] - phi_grid[size_ngrid-2]) / (x_grid[size_ngrid-1] - x_grid[size_ngrid-2]);
+	CC    = pdec * phi_grid[size_ngrid-1] / phip0 - x_grid[size_ngrid-1];
+	printf("In Debye sheath NR CC = %f\n\n", CC);
+	if (CC < -x_grid[size_ngrid-1]) {
+		printf("Warning: CC clamped to 0.0\n");
+		CC = 0.0;
+	}
+	phi0 = phi_grid[size_ngrid-1] / pow(x_grid[size_ngrid-1] + CC, pdec);
+	printf("pdec = %f\nphi0 = %f\n", pdec, phi0);
+	for (i = size_ngrid-1; i < size_phigrid; i++)
+		phi_grid[i] = phi0 * pow(x_grid[i] + CC, pdec);
+
+	gsl_permutation_free(p);
+	gsl_matrix_free(J);
+	gsl_vector_free(dphi_gsl);
+	free(F_vec);
+	free(ne_corr_total);
+}
