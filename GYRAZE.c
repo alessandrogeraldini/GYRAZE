@@ -1095,6 +1095,36 @@ double vparcut_mu(double mu, double vcut) {
 	return vparcutn;
 }
 
+static void load_phi_restart(const char *filename, double *x_grid, double *phi_grid, int size_grid) {
+    FILE *fp = fopen(filename, "r");
+    if (fp == NULL) {
+        printf("WARNING: could not open restart file %s, skipping\n", filename);
+        return;
+    }
+    int nlines = 0;
+    char buf[200];
+    while (fgets(buf, sizeof(buf), fp) != NULL)
+        if (buf[0] != '#' && buf[0] != ' ' && buf[0] != '\n') nlines++;
+    if (nlines < 2) {
+        printf("WARNING: restart file %s has fewer than 2 data points, skipping\n", filename);
+        fclose(fp); return;
+    }
+    double *rx = malloc(nlines * sizeof(double));
+    double *rphi = malloc(nlines * sizeof(double));
+    rewind(fp);
+    int k = 0;
+    while (fgets(buf, sizeof(buf), fp) != NULL)
+        if (buf[0] != '#' && buf[0] != ' ' && buf[0] != '\n') {
+            sscanf(buf, "%lf %lf", &rx[k], &rphi[k]);
+            k++;
+        }
+    fclose(fp);
+    for (int ii = 0; ii < size_grid; ii++)
+        if (x_grid[ii] >= rx[0] && x_grid[ii] <= rx[nlines-1])
+            phi_grid[ii] = lin_interp(rx, rphi, x_grid[ii], nlines, 9999);
+    free(rx); free(rphi);
+}
+
 // The main function of MAGSHEATH
 int main(void) {
 // computation time
@@ -1117,7 +1147,7 @@ int main(void) {
 // spatial grid parameters in Debye sheath
 	double deltaxDS; 
 // input parameters set in inputfile.txt
-	int num_spec, fix_current=0, ds_solver=0;
+	int num_spec, fix_current=0, ds_solver=0, restart_flag=0;
 	double alpha, *nioverne, *TioverTe, *mioverme, gamma_ref=0.0, gamma_DS, target_current;
 // other parameters derived from input ones
 	double alpha_deg, factor_small_grid_parameter=1.0;
@@ -1215,7 +1245,10 @@ int main(void) {
 				MARGIN_MP =  storevals[0]; MARGIN_DS =  storevals[1]; 
 			}
 			if (i==7) {
-				ZOOM_MP =  storevals[0]; ZOOM_DS =  storevals[1]; 
+				ZOOM_MP =  storevals[0]; ZOOM_DS =  storevals[1];
+			}
+			if (i==8) {
+				restart_flag = (int)(*storevals);
 			}
 			i+=1;
 		}
@@ -1800,14 +1833,15 @@ i=0;
 		printf("\nITERATION # = %d\n", N);
 		fprintf(fout, "ITERATION # = %d\n", N);
 		current = target_current;
-		if (phi_grid[0] + 0.5*v_cut*v_cut < 0.0) 
+		if (phi_grid[0] + 0.5*v_cut*v_cut < 0.0)
 			grid_parameter = 0.0001;
-		if ( (2.0*factor_small_grid_parameter*(phi_grid[0] + 0.5*v_cut*v_cut) < grid_parameter) ) { // && (grid_parameter > 0.0001) )  
+		if ( (2.0*factor_small_grid_parameter*(phi_grid[0] + 0.5*v_cut*v_cut) < grid_parameter) ) { // && (grid_parameter > 0.0001) )
 			grid_parameter = 2.0*factor_small_grid_parameter*(phi_grid[0] + 0.5*v_cut*v_cut);
 		}
 		//if (grid_parameter < 0.001)
 		//	grid_parameter = 0.001;
 		make_phigrid(x_grid, phi_grid, size_phigrid, grid_parameter, deltax, N, phi0_init_MP, 1.0, alpha);
+		if (restart_flag && N == 0) load_phi_restart("restart_phi_MP.txt", x_grid, phi_grid, size_phigrid);
 		printf("grid_parameter = %f\n", grid_parameter);
 		fprintf(fout, "grid parameter = %f\n", grid_parameter);
 		printf("\t(phi_mp0, phi_ds0, phi_wall) = (%f, %f, %f)\n", phi_grid[0], -0.5*v_cut*v_cut - phi_grid[0], -0.5*v_cut*v_cut);
@@ -2096,14 +2130,15 @@ i=0;
 		}
 		//make_phigrid(x_grid, phi_grid, size_phigrid, grid_parameter, deltax, N, phi0_init_MP, 1.0, alpha);
 		v_cutDS = sqrt(v_cut*v_cut + 2.0*phi_grid[0]);
-		if (gamma_DS < 1.0){ 
+		if (gamma_DS < 1.0){
 			//make_phigrid(x_DSgrid, phi_DSgrid, size_phiDSgrid, 0.0, deltaxDS, 0, -phi_grid[0] - 0.5*v_cut*v_cut, 1.0/gamma_DS, alpha);
 			//make_phigrid(x_DSgrid, phi_DSgrid, size_phiDSgrid, 0.0, deltaxDS, 0, -phi_grid[0] - 0.5*v_cut*v_cut, 0.5*v_cutDS*v_cutDS/EW, alpha);
 			printf("BLAH v_cutDS = %f, EW = %f\n", v_cutDS, EW);
 			make_phigrid(x_DSgrid, phi_DSgrid, size_phiDSgrid, 0.0, deltaxDS, 0, -phi_grid[0] - 0.5*v_cut*v_cut, 2.0*0.5*v_cutDS*v_cutDS/EW, alpha);
 		}
-		else 
+		else
 			make_phigrid(x_DSgrid, phi_DSgrid, size_phiDSgrid, 0.0, deltaxDS, 0, -phi_grid[0] - 0.5*v_cut*v_cut, 1.0, alpha);
+		if (restart_flag) load_phi_restart("restart_phi_DS.txt", x_DSgrid, phi_DSgrid, size_phiDSgrid);
 		printf("At beginning phi_DSgrid[1] = %f, phi_DSgrid[0] = %f\n", phi_DSgrid[1], phi_DSgrid[0]);
 
 		if (gamma_DS >= TINY) {

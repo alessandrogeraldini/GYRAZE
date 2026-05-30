@@ -350,7 +350,7 @@ void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_g
 {
 	int i, j, s;
 	int size_ngrid = size_ngridin;
-	int ninner = size_ngrid - 2;  /* unknowns: phi_grid[1] .. phi_grid[size_ngrid-2] */
+	int ninner = size_ngrid - 1;  /* unknowns: phi_grid[1] .. phi_grid[size_ngrid-1] */
 	double gamma2   = 1.0 / invgammasq;
 	double deltaxsq = x_grid[1] * x_grid[1];
 	double pdec     = 2.0 / (1.0 - pfac);
@@ -397,7 +397,7 @@ void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_g
 	}
 
 	/* Build -F[i] = -(phi''[i+1]/dx^2 - gamma^2*(ne[i+1] - ni[i+1]))
-	 * phi_grid[0] = phiW_impose is already set; phi_grid[size_ngrid-1] is from
+	 * phi_grid[0] = phiW_impose is already set; phi_grid[size_ngrid] is from
 	 * the previous iteration's asymptotic extension (right boundary of last row). */
 	for (i = 0; i < ninner; i++) {
 		double phipp = (phi_grid[i+2] - 2.0*phi_grid[i+1] + phi_grid[i]) / deltaxsq;
@@ -423,8 +423,9 @@ void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_g
 		phi_grid[i+1] = temp;
 	}
 
-	/* Asymptotic extension from size_ngrid-1 to size_phigrid (same as newguess) */
-	printf("In Debye sheath NR, asymptotic result starts at x = %f\n\n", x_grid[size_ngrid-1]);
+	/* Asymptotic extension from size_ngrid to size_phigrid.
+	 * phi_grid[size_ngrid-1] is now solved by NR; anchor the power law there. */
+	printf("In Debye sheath NR, asymptotic result starts at x = %f\n\n", x_grid[size_ngrid]);
 	phip0 = (phi_grid[size_ngrid-1] - phi_grid[size_ngrid-2]) / (x_grid[size_ngrid-1] - x_grid[size_ngrid-2]);
 	CC    = pdec * phi_grid[size_ngrid-1] / phip0 - x_grid[size_ngrid-1];
 	printf("In Debye sheath NR CC = %f\n\n", CC);
@@ -434,7 +435,7 @@ void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_g
 	}
 	phi0 = phi_grid[size_ngrid-1] / pow(x_grid[size_ngrid-1] + CC, pdec);
 	printf("pdec = %f\nphi0 = %f\n", pdec, phi0);
-	for (i = size_ngrid-1; i < size_phigrid; i++)
+	for (i = size_ngrid; i < size_phigrid; i++)
 		phi_grid[i] = phi0 * pow(x_grid[i] + CC, pdec);
 
 	gsl_permutation_free(p);
