@@ -365,14 +365,17 @@ void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_g
 	printf("weight= %f, phi_grid[0] = %f\n", weight, phi_grid[0]);
 	printf("0.5*v_cutDS*v_cutDS = %f\n", 0.5 * v_cutDS * v_cutDS);
 
-	/* Build ne_corr_total = ne_grid + ne_corr_delta + ne_corr_chiM,
-	 * skipping NaN entries at both ends of ne_corr_chiM. */
+	/* Build ne_corr_total at grid point i+1 (same index as residual row i).
+	 * ne_corr_chiM[size_ngrid-1] is NaN; substitute [size_ngrid-2] there. */
 	for (i = 0; i < ninner; i++) {
+		int idx = i + 1;
 		double chiM_i;
-		if      (i == 0)        chiM_i = ne_corr_chiM[1];
-		//else if (i == ninner-1) chiM_i = ne_corr_chiM[ninner-2];
-		else                    chiM_i = ne_corr_chiM[i];
-		ne_corr_total[i] = ne_grid[i] + ne_corr_delta[i] + chiM_i;
+		// if (idx == size_ngrid - 1)
+		// 	chiM_i = ne_corr_chiM[size_ngrid - 2];
+		// else
+		// 	chiM_i = ne_corr_chiM[idx];
+		chiM_i = ne_corr_chiM[idx];
+		ne_corr_total[i] = ne_grid[idx] + ne_corr_delta[idx] + chiM_i;
 	}
 
 	/* Normalize so ne_corr_total[ninner-1] == ni_corr[ninner-1] */
