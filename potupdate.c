@@ -415,10 +415,35 @@ void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_g
 	printf("NR LU decomposition time = %f\n", (double)(t2 - t1) / CLOCKS_PER_SEC);
 	gsl_linalg_LU_solve(J, p, &rhs.vector, dphi_gsl);
 
-	/* Apply damped Newton step; check for non-monotonicity */
+	/* Backtracking: start at alpha=weight, halve until max relative Poisson error decreases.
+	 * This matches the error_DS[1] criterion computed by error_Poisson in GYRAZE.c. */
+	double E0 = 0.0;
+	for (i = 0; i < ninner; i++) {
+		double dev = fabs(F_vec[i]) * invgammasq / ni_grid[i+1];
+		if (dev > E0) E0 = dev;
+	}
+
+	double alpha = weight;
+	int bt;
+	for (bt = 0; bt < 0 && alpha > weight / 10.; bt++) {
+		double Enew = 0.0;
+		for (i = 0; i < ninner; i++) {
+			double phi_l = (i == 0)        ? phi_grid[0]        : phi_grid[i]   + alpha*gsl_vector_get(dphi_gsl, i-1);
+			double phi_c =                                         phi_grid[i+1] + alpha*gsl_vector_get(dphi_gsl, i);
+			double phi_r = (i == ninner-1) ? phi_grid[ninner+1] : phi_grid[i+2] + alpha*gsl_vector_get(dphi_gsl, i+1);
+			double phipp_trial = (phi_r - 2.0*phi_c + phi_l) / deltaxsq;
+			double dev = fabs((-ne_grid[i+1] + phipp_trial*invgammasq)/ni_grid[i+1] + 1.0);
+			if (dev > Enew) Enew = dev;
+		}
+		if (Enew <= E0) break;
+		alpha *= 0.5;
+	}
+	printf("NR backtracking: alpha = %f after %d halvings (E0=%f)\n", alpha, bt, E0);
+
+	/* Apply step with backtracked alpha; check for non-monotonicity */
 	phi_grid[0] = phiW_impose;
 	for (i = 0; i < ninner; i++) {
-		temp = phi_grid[i+1] + weight * gsl_vector_get(dphi_gsl, i);
+		temp = phi_grid[i+1] + alpha * gsl_vector_get(dphi_gsl, i);
 		if (temp > 0.0)
 			printf("WARNING: phi > 0.0 at x = %f, non-monotonic in Debye sheath\n", x_grid[i+1]);
 		if (temp < phi_grid[i])
