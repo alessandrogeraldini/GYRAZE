@@ -383,7 +383,13 @@ void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_g
 	for (i = 0; i < ninner; i++)
 		ne_corr_total[i] *= scale;
 
-	/* Enforce wall boundary condition */
+	/* Save phi_grid[0] so the Apply step can weight the BC change by alpha,
+	 * matching what is done for all interior points.  The residual and
+	 * Jacobian are still built with the target phiW_impose so that the NR
+	 * step (dphi[0] ~ delta/2) already accounts for the BC shift. */
+	double phi0_before = phi_grid[0];
+
+	/* Enforce wall boundary condition for residual/Jacobian computation */
 	phi_grid[0] = phiW_impose;
 
 	/* Build Jacobian J (tridiagonal) */
@@ -425,10 +431,11 @@ void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_g
 
 	double alpha = weight;
 	int bt;
-	for (bt = 0; bt < 0 && alpha > weight / 10.; bt++) {
+	for (bt = 0; bt < 30 && alpha > weight / 10.; bt++) {
 		double Enew = 0.0;
 		for (i = 0; i < ninner; i++) {
-			double phi_l = (i == 0)        ? phi_grid[0]        : phi_grid[i]   + alpha*gsl_vector_get(dphi_gsl, i-1);
+			double phi_l = (i == 0) ? phi0_before + alpha*(phiW_impose - phi0_before)
+			                        : phi_grid[i] + alpha*gsl_vector_get(dphi_gsl, i-1);
 			double phi_c =                                         phi_grid[i+1] + alpha*gsl_vector_get(dphi_gsl, i);
 			double phi_r = (i == ninner-1) ? phi_grid[ninner+1] : phi_grid[i+2] + alpha*gsl_vector_get(dphi_gsl, i+1);
 			double phipp_trial = (phi_r - 2.0*phi_c + phi_l) / deltaxsq;
@@ -440,8 +447,11 @@ void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_g
 	}
 	printf("NR backtracking: alpha = %f after %d halvings (E0=%f)\n", alpha, bt, E0);
 
-	/* Apply step with backtracked alpha; check for non-monotonicity */
-	phi_grid[0] = phiW_impose;
+	/* Apply step with backtracked alpha.
+	 * phi_grid[0] gets the same alpha weighting as interior points so that
+	 * the BC change propagates at the same rate as the NR correction to
+	 * phi_grid[1], avoiding a phi'' spike at x=0. */
+	phi_grid[0] = phi0_before + alpha * (phiW_impose - phi0_before);
 	for (i = 0; i < ninner; i++) {
 		temp = phi_grid[i+1] + alpha * gsl_vector_get(dphi_gsl, i);
 		if (temp > 0.0)

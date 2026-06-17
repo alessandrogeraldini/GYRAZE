@@ -2138,7 +2138,21 @@ i=0;
 		}
 		else
 			make_phigrid(x_DSgrid, phi_DSgrid, size_phiDSgrid, 0.0, deltaxDS, 0, -phi_grid[0] - 0.5*v_cut*v_cut, 1.0, alpha);
-		if (restart_flag) load_phi_restart("restart_phi_DS.txt", x_DSgrid, phi_DSgrid, size_phiDSgrid);
+		if (restart_flag) {
+			load_phi_restart("restart_phi_DS.txt", x_DSgrid, phi_DSgrid, size_phiDSgrid);
+			/* Rescale phi_DS so its wall value matches the current phiW_impose.
+			 * Handles small mismatches (e.g. different v_cut between runs). */
+			double phiW_target = -0.5*v_cutDS*v_cutDS;
+			if (fabs(phi_DSgrid[0]) > 1e-10) {
+				double rescale = phiW_target / phi_DSgrid[0];
+				if (fabs(rescale - 1.0) > 1e-6) {
+					printf("Restart DS: rescaling phi by %f (phi_wall %f -> %f)\n",
+					       rescale, phi_DSgrid[0], phiW_target);
+					for (i = 0; i < size_phiDSgrid; i++)
+						phi_DSgrid[i] *= rescale;
+				}
+			}
+		}
 		printf("At beginning phi_DSgrid[1] = %f, phi_DSgrid[0] = %f\n", phi_DSgrid[1], phi_DSgrid[0]);
 
 		if (gamma_DS >= TINY) {
@@ -2413,6 +2427,7 @@ i=0;
 			if (convergence_DS == 0 || convergence_MP == 0 || convergence_j == 0) { 
 				printf("phi_DSgrid[0] = %f\n", phi_DSgrid[0]);
 				printf("MAX ERROR IS %f\n", error_DS[1]);
+				printf("AVG ERROR IS %f\n", error_DS[0]);
 				//if (ds_solver == 1 && error_DS[1] < 1.1*tol_DS[1]) {
 				if(ds_solver == 1){
 					printf("AT ITERATION = %d, SWITCHING TO NR\n", N);
