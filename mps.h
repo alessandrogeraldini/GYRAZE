@@ -14,6 +14,7 @@ struct distfuncDKGK { // contains the distribution function on a 2D grid and the
 double tophat(double x1, double x2, double x); 
 void newguess(double *x_grid, double* ne_grid, double *ni, double* phi_grid,int p_size, int size_ngrid, double lambdaDoverl, double v_cutDS, double pfac, double weight); // gsl_permutation *p, gsl_matrix *m);
 void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_grid, int size_phigrid, int size_ngridin, double invgammasq, double v_cutDS, double pfac, double weight, double *ne_corr_delta, double *ne_corr_chiM, double *ni_corr);
+void correct_phi_DS_restart(double *x_DSgrid, double *phi_DSgrid, int size_phiDSgrid, double invgammasq, double v_cutDS, double *ne_DSgrid, double *ne_DSgrid_corr_delta, double *ne_DSgrid_corr_chiM, double *ni_corr, int N_bvp);
 void newvcut(double *v_cut, double v_cutDS, double u_i, double u_e, double current, double error_current, double weight);
 void error_Poisson(double *error, double *x_grid, double *ne_grid, double *ni_grid, double *nioverne, double *phi_grid, int size_phigrid, int size_ngrid, double invgammasq);
 void denszeroorb(double charge, double TeovTs, double *phi,double *n_grid, int p_size, double *Phi_e_point, double *Qe_point, double **distfunc, double *vpar, double *mu, int size_vpar, int size_mu, double *vpar_cut_lookup, double gamma, double *x_grid, double *n_inf); 

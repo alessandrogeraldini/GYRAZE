@@ -376,6 +376,7 @@ void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_g
 		// 	chiM_i = ne_corr_chiM[idx];
 		chiM_i = ne_corr_chiM[idx];
 		ne_corr_total[i] = ne_grid[idx] + ne_corr_delta[idx] + chiM_i;
+		//ne_corr_total[i] = ne_grid[idx];
 	}
 
 	/* Normalize so ne_corr_total[ninner-1] == ni_corr[ninner-1] */
@@ -481,4 +482,66 @@ void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_g
 	gsl_vector_free(dphi_gsl);
 	free(F_vec);
 	free(ne_corr_total);
+}
+
+/* Linearized BVP correction for DS phi when restarting from a different phi_wall.
+ * Solves: delta_phi'' = gamma2*(f(x)*delta_phi - g(x)*delta_phi_wall)
+ * where f = ne_corr_total, g = ni_corr (sumni_DS_corr).
+ * BC: delta_phi[0] = phiW_target - phi_DSgrid[0], delta_phi[N_bvp] = 0.
+ * Adds the correction to phi_DSgrid[0..N_bvp]. */
+void correct_phi_DS_restart(double *x_DSgrid, double *phi_DSgrid, int size_phiDSgrid,
+                             double invgammasq, double v_cutDS,
+                             double *ne_DSgrid, double *ne_DSgrid_corr_delta, double *ne_DSgrid_corr_chiM,
+                             double *ni_corr, int N_bvp)
+{
+	double phiW_target = -0.5 * v_cutDS * v_cutDS;
+	double delta_phi_wall = phiW_target - phi_DSgrid[0];
+	if (fabs(delta_phi_wall) < 1e-2) return;
+	printf("Restart DS BVP: delta_phi_wall = %.6f (phi_DSgrid[0]=%.6f -> phiW_target=%.6f)\n",
+	       delta_phi_wall, phi_DSgrid[0], phiW_target);
+	double gamma2 = 1.0 / invgammasq;
+	double dx  = x_DSgrid[1] - x_DSgrid[0];
+	double dx2 = dx * dx;
+	int n = N_bvp - 1;
+	if (n <= 0) { printf("Restart DS BVP: domain too small, skipping.\n"); return; }
+	gsl_matrix      *A    = gsl_matrix_alloc(n, n);
+	gsl_vector      *b    = gsl_vector_alloc(n);
+	gsl_vector      *dphi = gsl_vector_alloc(n);
+	gsl_permutation *p    = gsl_permutation_alloc(n);
+	/* ne_DSgrid_corr_delta[0] is NaN; set it from index 1 */
+	ne_DSgrid_corr_chiM[0] = ne_DSgrid_corr_chiM[1];
+
+	/* Normalize ne_corr_total so it matches ni_corr at the outer boundary (idx = N_bvp-1) */
+	//double ne_total_outer = ne_DSgrid[N_bvp-1] + ne_DSgrid_corr_delta[N_bvp-1] + ne_DSgrid_corr_chiM[N_bvp-1];
+	double ne_total_outer = ne_DSgrid[N_bvp-1];
+	printf("ne_total_outer is %f\n", ne_total_outer);
+	double scale = (fabs(ne_total_outer) > 1e-14) ? ni_corr[N_bvp-1] / ne_total_outer : 1.0;
+	printf("ni_corr[-1] = %f\n", ni_corr[N_bvp-1]);
+	printf("scale is %f\n", scale);
+	gsl_matrix_set_zero(A);
+	for (int j = 0; j < n; j++) {
+		int idx = j + 1;
+		//double f_j = scale * (ne_DSgrid[idx] + ne_DSgrid_corr_delta[idx] + ne_DSgrid_corr_chiM[idx]) - ni_corr[idx];
+		double f_j = scale * (ne_DSgrid[idx]) - ni_corr[idx];
+		//double g_j = ne_DSgrid_corr_chiM[idx];
+		double g_j = 0.0;
+		gsl_matrix_set(A, j, j, -2.0/dx2 - gamma2*f_j);
+		if (j > 0)   gsl_matrix_set(A, j, j-1, 1.0/dx2);
+		if (j < n-1) gsl_matrix_set(A, j, j+1, 1.0/dx2);
+		double rhs = -gamma2 * g_j * delta_phi_wall;
+		if (j == 0) rhs -= delta_phi_wall / dx2;
+		gsl_vector_set(b, j, rhs);
+		printf("ne_DSgrid[%d] = %f, ni_corr[%d] = %f, rhs = %f\n", j, ne_DSgrid[idx], j, ni_corr[idx], rhs);
+	}
+	int signum;
+	gsl_linalg_LU_decomp(A, p, &signum);
+	gsl_linalg_LU_solve(A, p, b, dphi);
+	phi_DSgrid[0] = phiW_target;
+	for (int j = 0; j < n; j++)
+		phi_DSgrid[j + 1] += gsl_vector_get(dphi, j);
+	printf("Restart DS BVP correction applied (N_bvp=%d).\n", N_bvp);
+	gsl_matrix_free(A);
+	gsl_vector_free(b);
+	gsl_vector_free(dphi);
+	gsl_permutation_free(p);
 }

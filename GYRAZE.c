@@ -1125,6 +1125,31 @@ static void load_phi_restart(const char *filename, double *x_grid, double *phi_g
     free(rx); free(rphi);
 }
 
+/* Find the grid index N_bvp such that x_DSgrid[N_bvp] is the last point where ne > 0
+ * in the restart file. This is the right BC for the linearized BVP (delta_phi=0 there). */
+static int find_bvp_right_bc(const char *filename, double *x_DSgrid, int size_phiDSgrid) {
+    FILE *fp = fopen(filename, "r");
+    if (!fp) { printf("WARNING: cannot open %s for BVP BC\n", filename); return -1; }
+    double rx, rphi, rni, rne, x_last = -1.0;
+    char buf[256];
+    while (fgets(buf, sizeof(buf), fp) != NULL) {
+        if (buf[0] == '#' || buf[0] == ' ' || buf[0] == '\n') continue;
+        if (sscanf(buf, "%lf %lf %lf %lf", &rx, &rphi, &rni, &rne) < 4) continue;
+        if (rne > 1e-10) x_last = rx;
+        else break;
+    }
+    fclose(fp);
+    if (x_last < 0.0) { printf("WARNING: no ne>0 found in %s\n", filename); return -1; }
+    int N_bvp = 1;
+    for (int ii = 1; ii < size_phiDSgrid; ii++) {
+        if (x_DSgrid[ii] <= x_last) N_bvp = ii;
+        else break;
+    }
+    printf("BVP right BC from %s: x_last=%.4f, N_bvp=%d (x=%.4f)\n",
+           filename, x_last, N_bvp, x_DSgrid[N_bvp]);
+    return N_bvp;
+}
+
 // The main function of MAGSHEATH
 int main(void) {
 // computation time
@@ -2138,21 +2163,8 @@ i=0;
 		}
 		else
 			make_phigrid(x_DSgrid, phi_DSgrid, size_phiDSgrid, 0.0, deltaxDS, 0, -phi_grid[0] - 0.5*v_cut*v_cut, 1.0, alpha);
-		if (restart_flag) {
+		if (restart_flag)
 			load_phi_restart("restart_phi_DS.txt", x_DSgrid, phi_DSgrid, size_phiDSgrid);
-			/* Rescale phi_DS so its wall value matches the current phiW_impose.
-			 * Handles small mismatches (e.g. different v_cut between runs). */
-			double phiW_target = -0.5*v_cutDS*v_cutDS;
-			if (fabs(phi_DSgrid[0]) > 1e-10) {
-				double rescale = phiW_target / phi_DSgrid[0];
-				if (fabs(rescale - 1.0) > 1e-6) {
-					printf("Restart DS: rescaling phi by %f (phi_wall %f -> %f)\n",
-					       rescale, phi_DSgrid[0], phiW_target);
-					for (i = 0; i < size_phiDSgrid; i++)
-						phi_DSgrid[i] *= rescale;
-				}
-			}
-		}
 		printf("At beginning phi_DSgrid[1] = %f, phi_DSgrid[0] = %f\n", phi_DSgrid[1], phi_DSgrid[0]);
 
 		if (gamma_DS >= TINY) {
@@ -2274,6 +2286,14 @@ i=0;
 				//while (ne_DSgrid[i] < 1.0-MARGIN_DS) i++;
 				size_neDSgrid = i;
 				printf("size_neDSgrid = %d\n", size_neDSgrid);
+			}
+			if (restart_flag && N_DS == 0 && gamma_DS > SMALLGAMMA) {
+				int N_bvp = find_bvp_right_bc("restart_phi_DS.txt", x_DSgrid, size_phiDSgrid);
+				if (N_bvp <= 0 || N_bvp > size_neDSgrid) N_bvp = size_neDSgrid;
+				correct_phi_DS_restart(x_DSgrid, phi_DSgrid, size_phiDSgrid,
+				                       1.0/(gamma_DS*gamma_DS), v_cutDS,
+				                       ne_DSgrid, ne_DSgrid_corr_delta, ne_DSgrid_corr_chiM,
+				                       sumni_DS_corr, N_bvp);
 			}
 			error_Poisson(error_MP, x_grid, ne_grid, sumni_grid, nioverne, phi_grid, size_phigrid, size_sumnigrid, 0.0);
 			printf("error_av = %f\terror_max = %f\n", error_MP[0], error_MP[1]);
