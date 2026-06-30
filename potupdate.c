@@ -512,8 +512,8 @@ void correct_phi_DS_restart(double *x_DSgrid, double *phi_DSgrid, int size_phiDS
 	ne_DSgrid_corr_chiM[0] = ne_DSgrid_corr_chiM[1];
 
 	/* Normalize ne_corr_total so it matches ni_corr at the outer boundary (idx = N_bvp-1) */
-	//double ne_total_outer = ne_DSgrid[N_bvp-1] + ne_DSgrid_corr_delta[N_bvp-1] + ne_DSgrid_corr_chiM[N_bvp-1];
-	double ne_total_outer = ne_DSgrid[N_bvp-1];
+	double ne_total_outer = ne_DSgrid[N_bvp-1] + ne_DSgrid_corr_delta[N_bvp-1] + ne_DSgrid_corr_chiM[N_bvp-1];
+	//double ne_total_outer = ne_DSgrid[N_bvp-1];
 	printf("ne_total_outer is %f\n", ne_total_outer);
 	double scale = (fabs(ne_total_outer) > 1e-14) ? ni_corr[N_bvp-1] / ne_total_outer : 1.0;
 	printf("ni_corr[-1] = %f\n", ni_corr[N_bvp-1]);
@@ -521,10 +521,10 @@ void correct_phi_DS_restart(double *x_DSgrid, double *phi_DSgrid, int size_phiDS
 	gsl_matrix_set_zero(A);
 	for (int j = 0; j < n; j++) {
 		int idx = j + 1;
-		//double f_j = scale * (ne_DSgrid[idx] + ne_DSgrid_corr_delta[idx] + ne_DSgrid_corr_chiM[idx]) - ni_corr[idx];
-		double f_j = scale * (ne_DSgrid[idx]) - ni_corr[idx];
-		//double g_j = ne_DSgrid_corr_chiM[idx];
-		double g_j = 0.0;
+		double f_j = scale * (ne_DSgrid[idx] + ne_DSgrid_corr_delta[idx] + ne_DSgrid_corr_chiM[idx]) - ni_corr[idx];
+		//double f_j = scale * (ne_DSgrid[idx]) - ni_corr[idx];
+		double g_j = ne_DSgrid_corr_chiM[idx];
+		//double g_j = 0.0;
 		gsl_matrix_set(A, j, j, -2.0/dx2 - gamma2*f_j);
 		if (j > 0)   gsl_matrix_set(A, j, j-1, 1.0/dx2);
 		if (j < n-1) gsl_matrix_set(A, j, j+1, 1.0/dx2);
