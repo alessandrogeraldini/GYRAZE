@@ -84,6 +84,63 @@ OUTPUT: density profile ni_DS
 	printf("momfluxinf = %f\n", momfluxinf);
 	*Bohm = Bohm1/n_inf;
 	printf("Bohm = %f\n", *Bohm);
+
+	int i_peak = -1;
+	double phi_peak = 0.0;
+	for (i = 1; i < size_phi - 1; i++) {
+		if (phi_DS[i] > phi_DS[i-1] && phi_DS[i] > phi_DS[i+1] && phi_DS[i] > phi_peak) {
+			phi_peak = phi_DS[i];
+			i_peak = i;
+		}
+	}
+	if (i_peak >= 0)
+		printf("phi local max: phi_peak = %f at i_peak = %d\n", phi_peak, i_peak);
+
+	int *i_turn = malloc(size_op_i * sizeof(int));
+	double *phi_DS_turn = malloc(size_op_i * sizeof(double));
+	for (j = 0; j < size_op_i; j++) {
+		i_turn[j] = -1;
+		phi_DS_turn[j] = 0.0;
+		if (i_peak < 0) continue;
+		double halfVx0sq_dse = (phi0 == 0.0) ? 0.0 : chiM[j] - 0.5*vy[j]*vy[j] - phi0/TiovTe;
+		double prev = halfVx0sq_dse - phi_DS[0]/TiovTe;
+		for (i = 1; i < size_phi; i++) {
+			double curr = halfVx0sq_dse - phi_DS[i]/TiovTe;
+			if (prev > 0.0 && curr <= 0.0) {
+				i_turn[j] = i;
+				phi_DS_turn[j] = phi_DS[i];
+				break;
+			}
+			prev = curr;
+		}
+	}
+
+	int **i_turn_dM = malloc(size_op_i * sizeof(int *));
+	double **phi_DS_turn_dM = malloc(size_op_i * sizeof(double *));
+	for (j = 0; j < size_op_i; j++) {
+		i_turn_dM[j] = malloc(size_U * sizeof(int));
+		phi_DS_turn_dM[j] = malloc(size_U * sizeof(double));
+		double halfVx0sq_dse = (phi0 == 0.0) ? 0.0 : chiM[j] - 0.5*vy[j]*vy[j] - phi0/TiovTe;
+		double deltaUperp_j = mu_op[j] - chiM[j];
+		for (k = 0; k < size_U; k++) {
+			i_turn_dM[j][k] = -1;
+			phi_DS_turn_dM[j][k] = 0.0;
+			if (i_peak < 0) continue;
+			double vzk_j = sqrt(2.0*(deltaUperp_j + Uminmu[k]));
+			double halfVx0sq_deltaM_dse = halfVx0sq_dse + alpha*vzk_j*twopidmudvy[j];
+			double prev = halfVx0sq_deltaM_dse - phi_DS[0]/TiovTe;
+			for (i = 1; i < size_phi; i++) {
+				double curr = halfVx0sq_deltaM_dse - phi_DS[i]/TiovTe;
+				if (prev > 0.0 && curr <= 0.0) {
+					i_turn_dM[j][k] = i;
+					phi_DS_turn_dM[j][k] = phi_DS[i];
+					break;
+				}
+				prev = curr;
+			}
+		}
+	}
+
 	for (i=0; i < size_phi; i++) {
 		ni_DS[i] = 0.0;
 		ni_DScorr[i] = 0.0;
@@ -102,8 +159,11 @@ OUTPUT: density profile ni_DS
 			intgrd_corr = 0.0;
 			intgrd_refl = 0.0;
 			//count = 0;
+			double halfVx0sq_dse = (phi0 == 0.0) ? 0.0 : chiM[j] - 0.5*vy[j]*vy[j] - phi0/TiovTe;
+			int blocked_by_peak = (i_peak >= 0 && halfVx0sq_dse - phi_DS[i_peak]/TiovTe < 0.0);
 			for (k=1; k < size_U; k++) {
 				halfVx0sq = chiM[j] - 0.5*vy[j]*vy[j] - phi_DS[i]/TiovTe - phi0/TiovTe;
+				//halfVx0sq = chiM[j] - 0.5*vy[j]*vy[j] + fabs(phi_DS[i])/TiovTe - phi0/TiovTe;
 				deltaUperp = mu_op[j] - chiM[j];
 				if (phi0 == 0.0) {
 					halfVx0sq = -phi_DS[i]; 
@@ -116,26 +176,63 @@ OUTPUT: density profile ni_DS
 
 				if(halfVx0sq + alpha*vzkm*twopidmudvy[j] < 0.0){
 					intgrd += 0.0;
-					intgrd_refl += ( (sqrt(2.0*(fabs(halfVx0sq + alpha*vzk*twopidmudvy[j]))) - sqrt(2.0*fabs(halfVx0sq))) * Fk + (sqrt(2.0*(fabs(halfVx0sq + alpha*vzkm*twopidmudvy[j]))) - sqrt(2.0*fabs(halfVx0sq))) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+					//intgrd_refl += ( (sqrt(2.0*(fabs(halfVx0sq + alpha*vzk*twopidmudvy[j]))) - sqrt(2.0*fabs(halfVx0sq))) * Fk + (sqrt(2.0*(fabs(halfVx0sq + alpha*vzkm*twopidmudvy[j]))) - sqrt(2.0*fabs(halfVx0sq))) * Fkm1 ) * 0.5 * ( vzk - vzkm );
 				}
 				else{
-				
-				if(halfVx0sq < 0.0){
-					double absH = fabs(halfVx0sq);
-					intgrd += ( (sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j]))) * Fk + (sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j]))) * Fkm1 ) * 0.5 * ( vzk - vzkm );
-					intgrd_corr -= ( (1.0/sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j]))) * Fk + (1.0/sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j]))) * Fkm1 ) * 0.5 * ( vzk - vzkm );
-					//intgrd_refl += ( (sqrt(2.0*absH)) * Fk + (sqrt(2.0*absH)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
-					intgrd_refl += ( (sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j]))) * Fk + (sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j]))) * Fkm1 ) * 0.5 * ( vzk - vzkm );
-				}
-				else{
-					intgrd += ( (sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - sqrt(2.0*halfVx0sq)) * Fk + (sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - sqrt(2.0*halfVx0sq)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
-					intgrd_corr -= ( (1.0/sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - 1.0/sqrt(2.0*halfVx0sq)) * Fk + (1.0/sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - 1.0/sqrt(2.0*halfVx0sq)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+					if(i >= i_peak){
+						if(halfVx0sq < 0.0){
+							double absH = fabs(halfVx0sq);
+							intgrd += ( (sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j]))) * Fk + (sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j]))) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+							//intgrd += ( (sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - sqrt(2.0*absH)) * Fk + (sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - sqrt(2.0*absH)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+							intgrd_corr -= ( (1.0/sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j]))) * Fk + (1.0/sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j]))) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+							//intgrd_refl += ( (sqrt(2.0*absH)) * Fk + (sqrt(2.0*absH)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+							//intgrd_refl += ( (sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j]))) * Fk + (sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j]))) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+						}
+						else{
+							intgrd += ( (sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - sqrt(2.0*halfVx0sq)) * Fk + (sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - sqrt(2.0*halfVx0sq)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+							intgrd_corr -= ( (1.0/sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - 1.0/sqrt(2.0*halfVx0sq)) * Fk + (1.0/sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - 1.0/sqrt(2.0*halfVx0sq)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+						}
+					}
+					else{
+						if (blocked_by_peak) {
+							double phi_lo_i = phi_peak - phi_DS[i];
+							intgrd += ( (sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - sqrt(2.0*phi_lo_i)) * Fk + (sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - sqrt(2.0*phi_lo_i)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+							intgrd_corr -= ( (1.0/sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - 1.0/sqrt(2.0*phi_lo_i)) * Fk + (1.0/sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - 1.0/sqrt(2.0*phi_lo_i)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+						} else {
+							intgrd += ( (sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - sqrt(2.0*halfVx0sq)) * Fk + (sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - sqrt(2.0*halfVx0sq)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+							intgrd_corr -= ( (1.0/sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - 1.0/sqrt(2.0*halfVx0sq)) * Fk + (1.0/sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - 1.0/sqrt(2.0*halfVx0sq)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+						}
+					}
 
- 
-
-				}
+				// if(halfVx0sq < 0.0){
+				// 	double absH = fabs(halfVx0sq);
+				// 	intgrd += ( (sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j]))) * Fk + (sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j]))) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+				// 	intgrd_corr -= ( (1.0/sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j]))) * Fk + (1.0/sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j]))) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+				// 	//intgrd_refl += ( (sqrt(2.0*absH)) * Fk + (sqrt(2.0*absH)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+				// 	//intgrd_refl += ( (sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j]))) * Fk + (sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j]))) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+				// }
+				// else{
+				// 	if (blocked_by_peak && i < i_peak) {
+				// 		double phi_lo_i = phi_peak - phi_DS[i];
+				// 		intgrd += ( (sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - sqrt(2.0*phi_lo_i)) * Fk + (sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - sqrt(2.0*phi_lo_i)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+				// 	} else {
+				// 		intgrd += ( (sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - sqrt(2.0*halfVx0sq)) * Fk + (sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - sqrt(2.0*halfVx0sq)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+				// 	}
+				// 	intgrd_corr -= ( (1.0/sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - 1.0/sqrt(2.0*halfVx0sq)) * Fk + (1.0/sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - 1.0/sqrt(2.0*halfVx0sq)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+				// }
 				if (i==0)
 					intgrdmfl += (1.0/3.0)*( ( pow(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j]), 1.5) - pow(2.0*halfVx0sq, 1.5) ) * Fk + (pow(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j]), 1.5) - pow(2.0*halfVx0sq, 1.5)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+				}
+				if (i_peak >= 0 && i > i_peak && i_turn[j] >= 0) {
+					double phi_lo    = phi_DS[i_turn[j]];
+					double phi_up_k  = (i_turn_dM[j][k]   >= 0) ? phi_DS[i_turn_dM[j][k]]   : phi_peak;
+					double phi_up_km = (i_turn_dM[j][k-1] >= 0) ? phi_DS[i_turn_dM[j][k-1]] : phi_peak;
+					double arg_lo    = phi_lo    - phi_DS[i];
+					double arg_up_k  = phi_up_k  - phi_DS[i];
+					double arg_up_km = phi_up_km - phi_DS[i];
+					if (arg_lo >= 0.0 && arg_up_k >= 0.0 && arg_up_km >= 0.0)
+						intgrd_refl += ( (sqrt(2.0*arg_up_k)  - sqrt(2.0*arg_lo)) * Fk
+						              + (sqrt(2.0*arg_up_km) - sqrt(2.0*arg_lo)) * Fkm1 ) * 0.5*(vzk - vzkm);
 				}
 				//if ((count == 0) && (intgrd != intgrd) ) {
 				//	count = 1;
@@ -150,7 +247,7 @@ OUTPUT: density profile ni_DS
 				if(isnan(intgrdold)){
 					intgrdold += 0.0;
 				}*/
-				ni_DS[i] += (intgrd + intgrdold)*0.5*(vy[j] - vy[j-1]);
+				ni_DS[i] += (intgrd + intgrd_refl + intgrdold + intgrd_refl_old)*0.5*(vy[j] - vy[j-1]);
 				ni_DScorr[i] += (intgrd_corr + intgrd_corr_old)*0.5*(vy[j] - vy[j-1]);
 				ni_DS_reflected[i] += (intgrd_refl + intgrd_refl_old)*0.5*(vy[j] - vy[j-1]);
  
@@ -172,6 +269,14 @@ OUTPUT: density profile ni_DS
 		if (i == size_phi-1) 
 			printf("in densionDS: derivative wrt phi is dndphi = %f\n", (ni_DS[i] - ni_DS[i-1])/(phi_DS[i] - phi_DS[i-1]));
 	}
+	free(i_turn);
+	free(phi_DS_turn);
+	for (j = 0; j < size_op_i; j++) {
+		free(i_turn_dM[j]);
+		free(phi_DS_turn_dM[j]);
+	}
+	free(i_turn_dM);
+	free(phi_DS_turn_dM);
 	}
 	else { // method == 2
 	n_inf = 0.0;
