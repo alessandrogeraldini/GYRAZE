@@ -1291,6 +1291,9 @@ int main(void) {
 	double deltaxDS; 
 // input parameters set in inputfile.txt
 	int num_spec, fix_current=0, ds_solver=0, restart_flag=0;
+	int use_linearization = 0, n_lin_refs = 0;
+	double *phi_DS_lin_ref = NULL;
+	double **ni_DS_lin_ref = NULL;
 	double alpha, *nioverne, *TioverTe, *mioverme, gamma_ref=0.0, gamma_DS, target_current;
 // other parameters derived from input ones
 	double alpha_deg, factor_small_grid_parameter=1.0;
@@ -1393,6 +1396,7 @@ int main(void) {
 			if (i==8) {
 				restart_flag = (int)(*storevals);
 			}
+			if (i==9) use_linearization = (int)(*storevals);
 			i+=1;
 		}
 	}
@@ -1905,8 +1909,8 @@ i=0;
 		make_phigrid(x_grid, phi_grid, size_phigrid, grid_parameter, deltax, 0, phi0_init_MP, 1.0, alpha);
 		//size_ngrid = (int) ( ( pow(sqrt(grid_parameter) + sqrt(system_size - 5.0), 2.0) - grid_parameter ) / deltax );
 		for (n=0; n<num_spec; n++) 
-			densfinorb(TioverTe[n], lenfactor[n], alpha, size_phigrid, size_ngrid+n, ne_grid, ni_grid_corr_delta[n], ni_grid_corr_chiM[n], x_grid, phi_grid, ioncharge, dist_i_GK[n], mu_i[n], U_i[n], size_mu_i[n], size_U_i[n], grid_parameter, flux_i+n, Q_i+n, zoomfactor, MARGIN_MP, -999.9, vy_i_wall[n], mu_i_op[n], chiM_i[n], twopidmudvy_i[n], size_op_i+n, dirnameit);
-		FILE *fout; 
+			densfinorb(TioverTe[n], lenfactor[n], alpha, size_phigrid, size_ngrid+n, ne_grid, ni_grid_corr_delta[n], ni_grid_corr_chiM[n], x_grid, phi_grid, ioncharge, dist_i_GK[n], mu_i[n], U_i[n], size_mu_i[n], size_U_i[n], grid_parameter, flux_i+n, Q_i+n, zoomfactor, MARGIN_MP, -999.9, vy_i_wall[n], mu_i_op[n], chiM_i[n], twopidmudvy_i[n], size_op_i+n, NULL, NULL);
+		FILE *fout;
 		if ((fout = fopen("TESTS/densfinorbflat.txt", "w")) == NULL) {	
 			printf("Cannot open TESTS/densfinorbflat_out.txt");
 			exit(EXIT_FAILURE);
@@ -1945,7 +1949,7 @@ i=0;
 		denszeroorb(-1.0, 1.0, phi_grid, ne_grid, size_phigrid, &flux_e, &Q_e, dist_e_DK, vpar_e, mu_e, size_vpar_e, size_mu_e, vpar_e_cut, 0.0, x_grid, &ne_inf);
 		printf("now evaluate ion density in MPS\n");
 		for (n=0; n<num_spec; n++) 
-			densfinorb(TioverTe[n], lenfactor[n], alpha, size_phigrid, size_ngrid+n, ne_grid, ni_grid_corr_delta[n], ni_grid_corr_chiM[n], x_grid, phi_grid, ioncharge, dist_i_GK[n], mu_i[n], U_i[n], size_mu_i[n], size_U_i[n], grid_parameter, flux_i+n, Q_i+n, zoomfactor, -MARGIN_MP, -999.9, vy_i_wall[n], mu_i_op[n], chiM_i[n], twopidmudvy_i[n], size_op_i+n, dirnameit);
+			densfinorb(TioverTe[n], lenfactor[n], alpha, size_phigrid, size_ngrid+n, ne_grid, ni_grid_corr_delta[n], ni_grid_corr_chiM[n], x_grid, phi_grid, ioncharge, dist_i_GK[n], mu_i[n], U_i[n], size_mu_i[n], size_U_i[n], grid_parameter, flux_i+n, Q_i+n, zoomfactor, -MARGIN_MP, -999.9, vy_i_wall[n], mu_i_op[n], chiM_i[n], twopidmudvy_i[n], size_op_i+n, NULL, NULL);
 		for (ncols=0; ncols<size_mu_e; ncols+=1) {
 			for (ind=0; ind<size_vpar_e; ind+=1) {
 				U_e_DS[ind] = 0.5*ind*DVPAR*ind*DVPAR;
@@ -1955,7 +1959,7 @@ i=0;
 			}
 		}
 		printf("size grid = %d\n", size_phiDSgrid);
-		densfinorb(1.0, 1.0, alpha, size_phiDSgrid, &size_neDSgrid, ne_DSgrid, ne_DSgrid_corr_delta, ne_DSgrid_corr_chiM, x_DSgrid, phi_DSgrid, -1.0, dist_e_GK, mu_e, U_e_DS, size_mu_e, size_vpar_e, 0.0, &flux_eDS, &garbage, ZOOM_DS, -0.5, -999.9, vy_e_wall, mu_e_op, chiM_e, twopidmudvy_e, &size_op_e, dirnameit); 
+		densfinorb(1.0, 1.0, alpha, size_phiDSgrid, &size_neDSgrid, ne_DSgrid, ne_DSgrid_corr_delta, ne_DSgrid_corr_chiM, x_DSgrid, phi_DSgrid, -1.0, dist_e_GK, mu_e, U_e_DS, size_mu_e, size_vpar_e, 0.0, &flux_eDS, &garbage, ZOOM_DS, -0.5, -999.9, vy_e_wall, mu_e_op, chiM_e, twopidmudvy_e, &size_op_e, NULL, NULL);
 		printf("size_neDSgrid = %d\n", size_neDSgrid);
 		for (i=0; i< size_phiDSgrid; i++) printf("ne = %f at x = %f\n", ne_DSgrid[i], x_DSgrid[i]);
 		exit(1);
@@ -2008,7 +2012,7 @@ i=0;
 		THE DENSITY IS EVALUATED ONLY ASSUMING SMALL MAGNETIC FIELD ANGLE AT THE WALL
 		ARBITRARY ORBIT DISTORTION (NON-CIRCULAR) IS INCLUDED
 */
-			densfinorb(TioverTe[n], lenfactor[n], alpha, size_phigrid, size_ngrid+n, ni_grid[n], ni_grid_corr_delta[n], ni_grid_corr_chiM[n], x_grid, phi_grid, ioncharge, dist_i_GK[n], mu_i[n], U_i[n], size_mu_i[n], size_U_i[n], grid_parameter, flux_i+n, Q_i+n, zoomfactor, MARGIN_MP, -999.9, vy_i_wall[n], mu_i_op[n], chiM_i[n], twopidmudvy_i[n], size_op_i+n, dirnameit);
+			densfinorb(TioverTe[n], lenfactor[n], alpha, size_phigrid, size_ngrid+n, ni_grid[n], ni_grid_corr_delta[n], ni_grid_corr_chiM[n], x_grid, phi_grid, ioncharge, dist_i_GK[n], mu_i[n], U_i[n], size_mu_i[n], size_U_i[n], grid_parameter, flux_i+n, Q_i+n, zoomfactor, MARGIN_MP, -999.9, vy_i_wall[n], mu_i_op[n], chiM_i[n], twopidmudvy_i[n], size_op_i+n, NULL, NULL);
 			do
 				size_sumnigrid = size_ngrid[n] ;
 			while (size_sumnigrid > size_ngrid[n]) ;
@@ -2211,7 +2215,7 @@ i=0;
 	for (n=0; n<num_spec; n++) {
 		// CALCULATE DENSITY OVER ENTIRE DOMAIN 
 		// UNTIL 6 or 7 rho_i FROM THE DOMAIN CEILING
-		densfinorb(TioverTe[n], lenfactor[n], alpha, size_phigrid, size_ngrid+n, ni_grid[n], ni_grid_corr_delta[n], ni_grid_corr_chiM[n], x_grid, phi_grid, ioncharge, dist_i_GK[n], mu_i[n], U_i[n], size_mu_i[n], size_U_i[n], grid_parameter, flux_i+n, Q_i+n, zoomfactor, -1.0, -999.9, vy_i_wall[n], mu_i_op[n], chiM_i[n], twopidmudvy_i[n], size_op_i+n, dirnameit);
+		densfinorb(TioverTe[n], lenfactor[n], alpha, size_phigrid, size_ngrid+n, ni_grid[n], ni_grid_corr_delta[n], ni_grid_corr_chiM[n], x_grid, phi_grid, ioncharge, dist_i_GK[n], mu_i[n], U_i[n], size_mu_i[n], size_U_i[n], grid_parameter, flux_i+n, Q_i+n, zoomfactor, -1.0, -999.9, vy_i_wall[n], mu_i_op[n], chiM_i[n], twopidmudvy_i[n], size_op_i+n, NULL, NULL);
 		do
 			size_sumnigrid = size_ngrid[n] ;
 		while (size_sumnigrid > size_ngrid[n]) ;
@@ -2307,6 +2311,13 @@ i=0;
 		weight_j = WEIGHT_j;
 		error_MP[0] = error_DS[0] = 100000.0;
 		if (fix_current == 0) convergence_j=2;
+		n_lin_refs = 0;
+		if (use_linearization) {
+			phi_DS_lin_ref = malloc(size_phiDSgrid * sizeof(double));
+			ni_DS_lin_ref  = malloc(num_spec * sizeof(double *));
+			for (n = 0; n < num_spec; n++)
+				ni_DS_lin_ref[n] = calloc(size_phiDSgrid, sizeof(double));
+		}
 		while ( ( ( convergence_MP <= 1) || (convergence_DS <= 1) || (convergence_j <= 1) ) && (N_DS < MAX_IT) ) {
 			if (gammaflag == 1)
 				gamma_DS = gamma_ref*sqrt(ne_grid[0]);
@@ -2327,7 +2338,7 @@ i=0;
 			sumflux_i = 0.0;
 			sumQ_i = 0.0;
 			for (n=0; n<num_spec; n++) {
-				densfinorb(TioverTe[n], lenfactor[n], alpha, size_phigrid, size_ngrid+n, ni_grid[n], ni_grid_corr_delta[n], ni_grid_corr_chiM[n], x_grid, phi_grid, ioncharge, dist_i_GK[n], mu_i[n], U_i[n], size_mu_i[n], size_U_i[n], grid_parameter, flux_i+n, Q_i+n, zoomfactor, MARGIN_MP, -999.9, vy_i_wall[n], mu_i_op[n], chiM_i[n], twopidmudvy_i[n], size_op_i+n, dirnameit);
+				densfinorb(TioverTe[n], lenfactor[n], alpha, size_phigrid, size_ngrid+n, ni_grid[n], ni_grid_corr_delta[n], ni_grid_corr_chiM[n], x_grid, phi_grid, ioncharge, dist_i_GK[n], mu_i[n], U_i[n], size_mu_i[n], size_U_i[n], grid_parameter, flux_i+n, Q_i+n, zoomfactor, MARGIN_MP, -999.9, vy_i_wall[n], mu_i_op[n], chiM_i[n], twopidmudvy_i[n], size_op_i+n, NULL, NULL);
 				do
 					size_sumnigrid = size_ngrid[n] ;
 				while (size_sumnigrid > size_ngrid[n]) ;
@@ -2357,12 +2368,36 @@ i=0;
 				//printf("n (species index) = %d\n", n);
 				densionDS(alpha, TioverTe[n], &Bohm, ni_DSgrid[n], phi_DSgrid, phi_grid[0], dist_i_GK[n], mu_i[n], U_i[n], vy_i_wall[n], mu_i_op[n], chiM_i[n], twopidmudvy_i[n], size_phiDSgrid, size_mu_i[n], size_U_i[n], size_op_i[n], ni_DS_corr[n], ni_DS_reflected[n]);
 				//printf("nioverne[0]=%f\n", nioverne[n]);
-				for (i=0; i<size_phiDSgrid; i++){
-					sumni_DSgrid[i] += (nioverne[n]*ni_DSgrid[n][i]);
-					sumni_DS_corr[i] += (nioverne[n]*ni_DS_corr[n][i]);
-					sumni_DS_reflected[i] += (nioverne[n]*ni_DS_reflected[n][i]);
-					//printf("niDS[%d] = %f, sumni = %f\n", i, ni_DSgrid[n][i], sumni_DSgrid[i]);
+				if (!use_linearization || n_lin_refs == 0) {
+					// standard: use densionDS output directly
+					for (i=0; i<size_phiDSgrid; i++){
+						sumni_DSgrid[i]     += (nioverne[n]*ni_DSgrid[n][i]);
+						sumni_DS_corr[i]    += (nioverne[n]*ni_DS_corr[n][i]);
+						sumni_DS_reflected[i] += (nioverne[n]*ni_DS_reflected[n][i]);
+					}
+				} else {
+					// linearized: ni_n = ni_{n-1} + (dni/dphi) * (phi_n - phi_{n-1})
+					// dni/dphi = ni_DS_corr[n][i] (analytical derivative from densionDS)
+					printf("[lin] species %d: using linearized DS ion density (n_lin_refs = %d)\n", n, n_lin_refs);
+					printf("[lin]  i   dphi              ni_DS_corr\n");
+					for (i=0; i<size_phiDSgrid; i++){
+						double dphi = phi_DSgrid[i] - phi_DS_lin_ref[i];
+						printf("[lin]  %d  %.6e  %.6e\n", i, dphi, ni_DS_corr[n][i]);
+						double ni_lin = ni_DS_lin_ref[n][i] + ni_DS_corr[n][i] * dphi;
+						if (ni_lin < 0.0) ni_lin = 0.0;
+						ni_DSgrid[n][i] = ni_lin;
+						sumni_DSgrid[i]       += nioverne[n] * ni_lin;
+						sumni_DS_corr[i]      += (nioverne[n]*ni_DS_corr[n][i]);
+						sumni_DS_reflected[i] += (nioverne[n]*ni_DS_reflected[n][i]);
+					}
 				}
+			}
+			if (use_linearization) {
+				// advance rolling reference for next iteration
+				memcpy(phi_DS_lin_ref, phi_DSgrid, size_phiDSgrid * sizeof(double));
+				for (n = 0; n < num_spec; n++)
+					memcpy(ni_DS_lin_ref[n], ni_DSgrid[n], size_phiDSgrid * sizeof(double));
+				n_lin_refs++;
 			}
 			printf("evaluate electron density in DS\n");
 			for (ncols=0; ncols<size_mu_e; ncols+=1) {
@@ -2378,7 +2413,24 @@ i=0;
 			printf("wall electric field EW = %f\n", EW/gamma_DS);
 			if (gamma_DS > SMALLGAMMA) {
 				printf("gamma = %f > SMALLGAMMA = %f : use parallel velocity cutoff from full Debye sheath solution\n", gamma_DS, SMALLGAMMA);
-				densfinorb(1.0, 1.0, alpha, size_phiDSgrid, &size_neDSgrid, ne_DSgrid, ne_DSgrid_corr_delta, ne_DSgrid_corr_chiM, x_DSgrid, phi_DSgrid, -1.0, dist_e_GK, mu_e, U_e_DS, size_mu_e, size_vpar_e, 0.0, &flux_eDS, &garbage, ZOOM_DS, MARGIN_DS, -999.9, vy_e_wall, mu_e_op, chiM_e, twopidmudvy_e, &size_op_e, dirnameit);
+				{
+					char mu_e_DS_path[310];
+					char jmc_e_DS_path[310];
+					char iter_dir_cur[160];
+					snprintf(iter_dir_cur, sizeof(iter_dir_cur), "%s%d", dirname_it, N);
+					mkdir(iter_dir_cur, S_IRWXU);
+					snprintf(mu_e_DS_path, sizeof(mu_e_DS_path), "%s/mu_full_e_DS.txt", iter_dir_cur);
+					snprintf(jmc_e_DS_path, sizeof(jmc_e_DS_path), "%s/xbar_jm_e_DS.txt", iter_dir_cur);
+					FILE *fmu_DS = fopen(mu_e_DS_path, "w");
+					if (fmu_DS == NULL)
+						printf("error when opening file %s\n", mu_e_DS_path);
+					FILE *fjmc_DS = fopen(jmc_e_DS_path, "w");
+					if (fjmc_DS == NULL)
+						printf("error when opening file %s\n", jmc_e_DS_path);
+					densfinorb(1.0, 1.0, alpha, size_phiDSgrid, &size_neDSgrid, ne_DSgrid, ne_DSgrid_corr_delta, ne_DSgrid_corr_chiM, x_DSgrid, phi_DSgrid, -1.0, dist_e_GK, mu_e, U_e_DS, size_mu_e, size_vpar_e, 0.0, &flux_eDS, &garbage, ZOOM_DS, MARGIN_DS, -999.9, vy_e_wall, mu_e_op, chiM_e, twopidmudvy_e, &size_op_e, fmu_DS, fjmc_DS);
+					if (fmu_DS != NULL) fclose(fmu_DS);
+					if (fjmc_DS != NULL) fclose(fjmc_DS);
+				}
 				/* 3-point moving average to reduce noise in corr arrays (skip index 0: NaN) */
 				{
 					double *tmp = malloc(size_neDSgrid * sizeof(double));
@@ -2625,6 +2677,12 @@ i=0;
 			//gsl_permutation_free (p);
 			//gsl_matrix_free (m);
 		}
+		if (use_linearization) {
+			free(phi_DS_lin_ref);  phi_DS_lin_ref = NULL;
+			for (n = 0; n < num_spec; n++)
+				free(ni_DS_lin_ref[n]);
+			free(ni_DS_lin_ref);  ni_DS_lin_ref = NULL;
+		}
 		printf("FINAL CHECK on accuracy of electrostatic potential solutions in MP and DS\n");
 		fprintf(fout, "FINAL CHECK on accuracy of electrostatic potential solutions in MP and DS\n");
 		for (i=0; i<size_sumnigrid; i++) {
@@ -2634,7 +2692,7 @@ i=0;
 		sumflux_i = 0.0;
 		sumQ_i = 0.0;
 		for (n=0; n<num_spec; n++) {
-			densfinorb(TioverTe[n], lenfactor[n], alpha, size_phigrid, size_ngrid+n, ni_grid[n], ni_grid_corr_delta[n], ni_grid_corr_chiM[n], x_grid, phi_grid, ioncharge, dist_i_GK[n], mu_i[n], U_i[n], size_mu_i[n], size_U_i[n], grid_parameter, flux_i+n, Q_i+n, zoomfactor, -1.0, -999.9, vy_i_wall[n], mu_i_op[n], chiM_i[n], twopidmudvy_i[n], size_op_i+n, dirname);
+			densfinorb(TioverTe[n], lenfactor[n], alpha, size_phigrid, size_ngrid+n, ni_grid[n], ni_grid_corr_delta[n], ni_grid_corr_chiM[n], x_grid, phi_grid, ioncharge, dist_i_GK[n], mu_i[n], U_i[n], size_mu_i[n], size_U_i[n], grid_parameter, flux_i+n, Q_i+n, zoomfactor, -1.0, -999.9, vy_i_wall[n], mu_i_op[n], chiM_i[n], twopidmudvy_i[n], size_op_i+n, NULL, NULL);
 			do
 				size_sumnigrid = size_ngrid[n] ;
 			while (size_sumnigrid > size_ngrid[n]) ;
@@ -2647,7 +2705,7 @@ i=0;
 			}
 		}
 		if (gamma_DS > SMALLGAMMA) {
-			densfinorb(1.0, 1.0, alpha, size_phiDSgrid, &size_neDSgrid, ne_DSgrid, ne_DSgrid_corr_delta, ne_DSgrid_corr_chiM, x_DSgrid, phi_DSgrid, -1.0, dist_e_GK, mu_e, U_e_DS, size_mu_e, size_vpar_e, 0.0, &flux_eDS, &garbage, ZOOM_DS, 0.0, -999.9, vy_e_wall, mu_e_op, chiM_e, twopidmudvy_e, &size_op_e, dirname); 
+			densfinorb(1.0, 1.0, alpha, size_phiDSgrid, &size_neDSgrid, ne_DSgrid, ne_DSgrid_corr_delta, ne_DSgrid_corr_chiM, x_DSgrid, phi_DSgrid, -1.0, dist_e_GK, mu_e, U_e_DS, size_mu_e, size_vpar_e, 0.0, &flux_eDS, &garbage, ZOOM_DS, 0.0, -999.9, vy_e_wall, mu_e_op, chiM_e, twopidmudvy_e, &size_op_e, NULL, NULL);
 			//printf("chiM mu\n");
 			for (i=0; i<size_op_e; i++) {
 				vpar_e_cut_lookup[i] = sqrt(2.0*(chiM_e[i] - mu_e_op[i]));

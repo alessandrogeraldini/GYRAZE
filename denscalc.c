@@ -1022,7 +1022,7 @@ static double uperp_from_mu3(int j, double mu_target, double *xbarr, double *xx,
 	return mu_target * sqrtf(1.0 + phi_pp) + phi[i_closest];
 }
 
-void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int *size_ngrid, double* n_grid, double* n_grid_corr_delta, double* n_grid_corr_chiM, double *x_grid, double* phi_grid, double charge, double **FF, double *mumu, double *UU, int sizemumu, int sizeUU, double grid_parameter, double *flux, double *Qflux, int zoomfactor, double margin, double phi_DSbump, double *vy_op, double *mu_op, double *chiMax_op, double *dmudvy_op, int *size_op, char* dirname) {
+void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int *size_ngrid, double* n_grid, double* n_grid_corr_delta, double* n_grid_corr_chiM, double *x_grid, double* phi_grid, double charge, double **FF, double *mumu, double *UU, int sizemumu, int sizeUU, double grid_parameter, double *flux, double *Qflux, int zoomfactor, double margin, double phi_DSbump, double *vy_op, double *mu_op, double *chiMax_op, double *dmudvy_op, int *size_op, FILE *fmu, FILE *fjmc_out) {
 	// declare variables
 	clock_t begin = clock(); // Finds the start time of the computation
 	double limit_rho = 8.0;
@@ -1561,13 +1561,10 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 
 	upperlimit[sizexbar-1] = upperlimit[sizexbar-2] +1;
 
-	if (charge < 0) {
-		FILE *fjmc = fopen("OUTPUT/jmclosed_xbar.txt", "w");
-		if (fjmc != NULL) {
-			for (i = 0; i < size_finegrid; i++)
-				fprintf(fjmc, "%f %f\n", xx[i], xbar[jmclosed[i]]);
-			fclose(fjmc);
-		}
+	if (charge < 0 && fjmc_out != NULL) {
+		fprintf(fjmc_out, "# x xbar_jmclosed xbar_jmopen\n");
+		for (i = 0; i < size_finegrid; i++)
+			fprintf(fjmc_out, "%f %f %f\n", xx[i], xbar[jmclosed[i]], xbar[jmopen[i]]);
 	}
 
 	//printf("xbar[maxj=%d] = %f\n", maxj, xbar[maxj]);
@@ -1677,16 +1674,7 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 	if (DEBUG == 1) 
 		printf("in densfinorb: Array filling DONE: time is %f\n", inttime);
 	
-	FILE *fmu = NULL;
-char mu_path[300];
-
-if (dirname != NULL && charge < 0) {
-    snprintf(mu_path, sizeof(mu_path), "%s/mu_full_e_DS.txt", dirname);
-    fmu = fopen(mu_path, "w");
-    if (fmu == NULL) {
-        printf("Cannot open %s\n", mu_path);
-    }
-    else {
+	if (fmu != NULL && charge < 0) {
         fprintf(fmu, "# j k xbar Uperp mu chiMax upperlimit\n");
         for (j = 0; j < sizexbar; j++) {
             for (k = 0; k <= upperlimit[j]; k++) {
@@ -1702,10 +1690,7 @@ if (dirname != NULL && charge < 0) {
             }
             fprintf(fmu, "\n");
         }
-
-        fclose(fmu);
     }
-}
 
 	
 	/* DENSITY INTEGRALS 
@@ -2185,6 +2170,8 @@ if (dirname != NULL && charge < 0) {
 								// printf("x[i=%d] = %.6f, xbar[j=%d]=%.6f, mu=%.6f: Uperpnew before=%.6f, after=%.6f\n",
 								//        i, xx[i], j, xbar[j], munew, Uperpnew, Uperp_lb);
 								// }
+
+								//CHANGE HERE
 								Uperpnew = Uperp_lb;
 							}
 							Uperp_lb_k = Uperp_lb;
