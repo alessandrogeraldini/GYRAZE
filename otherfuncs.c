@@ -348,3 +348,96 @@ double *linetodatanew(char *line, int *size) {
 	return line_broken;
 }
 
+void Figen2(double ***ffarr, double **Uminmuarr, double **muarr, int num_spec, double *nioverne, double *mioverme, double *TioverTe, int *sizevpar, int *sizevperp, double dvpar, double dvperp) {
+	int n, i, j, coldelectrons;
+	double mu, Uminmu, ff;
+	double u, condition, chodura, normalization;
+
+	for (n=0; n<num_spec; n++) {
+		if (TioverTe[n] > 10.0) coldelectrons = 1;
+		else coldelectrons = 0;
+		printf("are electrons cold (1=yes, 0=no): %d\n", coldelectrons);
+		u = 0.0;
+		condition = TioverTe[n];
+		if (coldelectrons == 0) {
+			if (TioverTe[n]<=1.0) {
+				chodura = 9999999.0;
+				u = 0.0;
+				while ( (chodura > condition) || (chodura < condition - 0.05) ) {
+					if (chodura > condition)
+						u += 0.0001;
+					else
+						u -= 0.0001;
+					normalization =  sqrt(2.0)*(1 + erf(u/sqrt(2.0)))*(1.0+u*u) + sqrt(2.0/M_PI)*u*exp(-0.5*u*u);
+					chodura = sqrt(2.0)*(1+erf(u/sqrt(2.0)))/(normalization);
+				}
+			}
+			else {
+				chodura = 0.0;
+				u = 0.1;
+				while  ( (chodura > condition) || (chodura < condition - 0.05) ) {
+					if (chodura > condition)
+						u -= 0.001;
+					else
+						u += 0.001;
+					normalization = (1.0/sqrt(2.0))*2.0*(sqrt(M_PI*u) - M_PI*exp(1/u)*(1-erf(1.0/sqrt(u))))/(2.0*u*sqrt(u));
+					chodura = (1.0/sqrt(2.0))*0.5*2.0*M_PI*exp(1.0/u)*(1.0-erf(1.0/sqrt(u)))/(2.0*sqrt(u)*normalization);
+				}
+			}
+		}
+
+		if (coldelectrons == 0) {
+			if ( TioverTe[n] <= 1.0 )
+				normalization =  sqrt(2.0)*(1 + erf(u/sqrt(2.0)))*(1.0+u*u) + sqrt(2.0/M_PI)*u*exp(-0.5*u*u);
+			else
+				normalization = (1.0/sqrt(2.0))*2.0*(sqrt(M_PI*u) - M_PI*exp(1/u)*(1-erf(1.0/sqrt(u))))/(2.0*u*sqrt(u));
+		}
+
+		if (coldelectrons == 0) {
+			if (TioverTe[n]<=1.0) {
+				printf("normalization = %f\n", normalization);
+				for (i=0; i<sizevperp[n]; i++) {
+					mu = 0.5*i*dvperp*i*dvperp;
+					muarr[n][i] = mu;
+					for (j=0; j<sizevpar[n]; j++) {
+						Uminmu = 0.5*j*dvpar*j*dvpar;
+						if (i==0)
+							Uminmuarr[n][j] = Uminmu;
+						ff = (2.0/(M_PI*sqrt(M_PI)))*(1.0/normalization)*(Uminmu)*exp(- Uminmu - mu + u*sqrt(2.0*Uminmu) - 0.5*u*u);
+						ffarr[n][i][j] = ff;
+					}
+				}
+			}
+			else {
+				for (i=0; i<sizevperp[n]; i++) {
+					mu = 0.5*i*dvperp*i*dvperp;
+					muarr[n][i] = mu;
+					for (j=0; j<sizevpar[n]; j++) {
+						Uminmu = 0.5*j*dvpar*j*dvpar;
+						if (i==0)
+							Uminmuarr[n][j] = Uminmu;
+						ff = (1.0/M_PI)*(1.0/normalization)*((Uminmu)/(1+u*(Uminmu)))*exp(- Uminmu - mu );
+						ffarr[n][i][j] = ff;
+					}
+				}
+			}
+		}
+		else {
+			printf("TioverTe[%d] = infinite: ELECTRONS ARE COLD\n", n);
+			normalization = 1.0;
+			for (i=0; i<sizevperp[n]; i++) {
+				mu = 0.5*i*dvperp*i*dvperp;
+				muarr[n][i] = mu;
+				for (j=0; j<sizevpar[n]; j++) {
+					Uminmu = 0.5*j*dvpar*j*dvpar;
+					if (i==0)
+						Uminmuarr[n][j] = Uminmu;
+					ff = (1.0/(sqrt(2.0)*(M_PI)*sqrt(M_PI)))*exp(- Uminmu - mu );
+					ffarr[n][i][j] = ff;
+				}
+			}
+		}
+	}
+	return;
+}
+

@@ -991,6 +991,7 @@ static double uperp_from_mu2(int j, double mu_target,
 				return Uperp[j][k];
 			double t = (mu_target - mu[j][k]) / dmu;
 			return Uperp[j][k] + t * (Uperp[j][k+1] - Uperp[j][k]);
+			//return Uperp[j][k+1];
 		}
 	}
 	//printf("Couldn't find mu! mu_target = %f, mu_min = %f, mu_max = %f\n", mu_target,mu_min,mu_max);
@@ -2145,6 +2146,7 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 							double Uperp_lb = Uperpnew;
 
 							for (int js = j+1; js <= (js_phi_imin+sizexbar)/2; js++) {
+							//for (int js = j+1; js <= (js_phi_imin+1); js++) {
 								int k_found = -1;
 								double Uperps = uperp_from_mu2(js, munew, mu, Uperp, lowerlimit[js], upper[js][i], upperlimit[js], j, k, &k_found,phi[phi_imin]);
 								//double Uperps = uperp_from_mu3(js, munew, xbar, xx, phi, size_finegrid);
@@ -2172,6 +2174,9 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 								// }
 
 								//CHANGE HERE
+								// if(Uperpnew < 0){
+								// 	printf("At x = %f, xbar = %f, Uperp = %f, Uperp_lb = %f\n", xx[i], xbar[j], Uperpnew, Uperp_lb);
+								// }
 								Uperpnew = Uperp_lb;
 							}
 							Uperp_lb_k = Uperp_lb;
@@ -2288,9 +2293,14 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 								}
 								else {
 									dmu_dUperp = dmu / dUperp;
-								}
-								if(fabs(dmu_dUperp) > 10000){
-									printf("munew - muold = %.6e, Uperpnew - Uperpold is %.6e (tol %.6e)\n", dmu, dUperp, dUperp_tol);
+									/* dUperp is above the zero-tolerance but the ratio still blows up —
+									   this happens near the barrier orbit where the Uperp-mu curve is
+									   nearly flat (slope_js -> 0 via uperp_from_mu2 correction).
+									   Fall back to the previous value, same as the dUperp<=tol case. */
+									if (fabs(dmu_dUperp) > 10000) {
+										printf("At x = %f, xbar = %f, munew - muold = %.6e, Uperpnew - Uperpold is %.6e (tol %.6e), clamping\n", xx[i], xbar[j], dmu, dUperp, dUperp_tol);
+										dmu_dUperp = dmu_dUperp_old;
+									}
 								}
 							intdvx_corr_delta += 2.0*0.5*dvx*(intdU_corr_delta*(1.+Ucritp*dmu_dUperp) + intdU_corr_delta_old*(1.+Ucritpold*dmu_dUperp_old));
 						}
@@ -2537,5 +2547,269 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 	printf("in densfinorb: module ran in %f seconds\n", jobtime);
 	return;
 }
-// closed densfinorb function 
+// closed densfinorb function
 
+void densionDS2(double alpha, double TiovTe, double *Bohm, double *ni_DS, double *phi_DS, double phi0, double **FF, double *mu, double *Uminmu, double *vy, double *mu_op, double *chiM, double *twopidmudvy, int size_phi, int size_mu, int size_U, int size_op_i, double* ni_DScorr, double *ni_DS_reflected) {
+	int i, j, k, count, method = 1, sizevx = 200, l;
+	double Bohm1, deltaUperp, halfVx0sq, intgrd, intgrdold, intgrd_corr, intgrd_corr_old, vzk, vzkm, n_inf;
+	double intgrd_refl, intgrd_refl_old;
+	double intgrdBohmold, intgrdBohm, intgrdmfl, intgrdmflold, momfluxinf=0.0, momflux0=0.0;
+	double Fk, Fkm1, vx[sizevx], fvx[sizevx], Bohmval=0.0;
+	(void)count; (void)l; (void)size_mu;
+	n_inf = 0.0;
+	Bohm1 = 0.0;
+	intgrd = 0.0;
+	intgrdmfl = 0.0;
+	intgrdBohm = 0.0;
+	if (method == 1) {
+	for (j=0; j< size_op_i; j++) {
+		intgrdold = intgrd;
+		intgrdmflold = intgrdmfl;
+		intgrdBohmold = intgrdBohm;
+		intgrd=0.0;
+		intgrdmfl=0.0;
+		intgrdBohm=0.0;
+		for (k=1; k < size_U; k++) {
+			halfVx0sq = chiM[j] - 0.5*vy[j]*vy[j] - phi0/TiovTe;
+			if (halfVx0sq < 0.0) halfVx0sq = 0.0;
+			deltaUperp = mu_op[j] - chiM[j] ;
+			vzk = sqrt(2.0*(deltaUperp + Uminmu[k]));
+			vzkm = sqrt(2.0*(deltaUperp + Uminmu[k-1]));
+			Fk = bilin_interp(mu_op[j], Uminmu[k], FF, mu, Uminmu, size_mu, size_U, -1, -1);
+			Fkm1 = bilin_interp(mu_op[j], Uminmu[k-1], FF, mu, Uminmu, size_mu, size_U, -1, -1);
+			intgrd += ( (sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - sqrt(2.0*halfVx0sq)) * Fk + (sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - sqrt(2.0*halfVx0sq)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+			intgrdmfl += (1.0/3.0)*( ( pow(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j]), 1.5) - pow(2.0*halfVx0sq, 1.5) ) * Fk + (pow(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j]), 1.5) - pow(2.0*halfVx0sq, 1.5)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+			if (halfVx0sq > 0.0)
+				intgrdBohm += ( (-1.0/sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) + 1.0/sqrt(2.0*halfVx0sq)) * Fk + (-1.0/sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) + 1.0/sqrt(2.0*halfVx0sq)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+		}
+		if (j > 0) {
+			n_inf += (intgrd + intgrdold)*0.5*(vy[j] - vy[j-1]);
+			Bohm1 += (intgrdBohm + intgrdBohmold)*0.5*(vy[j] - vy[j-1]);
+			momfluxinf += (intgrdmfl + intgrdmflold)*0.5*(vy[j] - vy[j-1]);
+		}
+		else if (j==0) {
+			intgrd = 0.0;
+			intgrdBohm = 0.0;
+		}
+	}
+	printf("n_inf = %f\n", n_inf);
+	momfluxinf /= n_inf;
+	printf("momfluxinf = %f\n", momfluxinf);
+	*Bohm = Bohm1/n_inf;
+	printf("Bohm = %f\n", *Bohm);
+
+	int i_peak = -1;
+	double phi_peak = 0.0;
+	for (i = 1; i < size_phi - 1; i++) {
+		if (phi_DS[i] > phi_DS[i-1] && phi_DS[i] > phi_DS[i+1] && phi_DS[i] > phi_peak) {
+			phi_peak = phi_DS[i];
+			i_peak = i;
+		}
+	}
+	if (i_peak >= 0)
+		printf("phi local max: phi_peak = %f at i_peak = %d\n", phi_peak, i_peak);
+
+	int *i_turn = malloc(size_op_i * sizeof(int));
+	double *phi_DS_turn = malloc(size_op_i * sizeof(double));
+	for (j = 0; j < size_op_i; j++) {
+		i_turn[j] = -1;
+		phi_DS_turn[j] = 0.0;
+		if (i_peak < 0) continue;
+		double halfVx0sq_dse = (phi0 == 0.0) ? 0.0 : chiM[j] - 0.5*vy[j]*vy[j] - phi0/TiovTe;
+		double prev = halfVx0sq_dse - phi_DS[0]/TiovTe;
+		for (i = 1; i < size_phi; i++) {
+			double curr = halfVx0sq_dse - phi_DS[i]/TiovTe;
+			if (prev > 0.0 && curr <= 0.0) {
+				i_turn[j] = i;
+				phi_DS_turn[j] = phi_DS[i];
+				break;
+			}
+			prev = curr;
+		}
+	}
+	(void)phi_DS_turn;
+
+	int **i_turn_dM = malloc(size_op_i * sizeof(int *));
+	double **phi_DS_turn_dM = malloc(size_op_i * sizeof(double *));
+	for (j = 0; j < size_op_i; j++) {
+		i_turn_dM[j] = malloc(size_U * sizeof(int));
+		phi_DS_turn_dM[j] = malloc(size_U * sizeof(double));
+		double halfVx0sq_dse = (phi0 == 0.0) ? 0.0 : chiM[j] - 0.5*vy[j]*vy[j] - phi0/TiovTe;
+		double deltaUperp_j = mu_op[j] - chiM[j];
+		for (k = 0; k < size_U; k++) {
+			i_turn_dM[j][k] = -1;
+			phi_DS_turn_dM[j][k] = 0.0;
+			if (i_peak < 0) continue;
+			double vzk_j = sqrt(2.0*(deltaUperp_j + Uminmu[k]));
+			double halfVx0sq_deltaM_dse = halfVx0sq_dse + alpha*vzk_j*twopidmudvy[j];
+			double prev = halfVx0sq_deltaM_dse - phi_DS[0]/TiovTe;
+			for (i = 1; i < size_phi; i++) {
+				double curr = halfVx0sq_deltaM_dse - phi_DS[i]/TiovTe;
+				if (prev > 0.0 && curr <= 0.0) {
+					i_turn_dM[j][k] = i;
+					phi_DS_turn_dM[j][k] = phi_DS[i];
+					break;
+				}
+				prev = curr;
+			}
+		}
+	}
+
+	for (i=0; i < size_phi; i++) {
+		ni_DS[i] = 0.0;
+		ni_DScorr[i] = 0.0;
+		ni_DS_reflected[i] = 0.0;
+		intgrd = 0.0;
+		intgrdmfl = 0.0;
+		intgrd_corr = 0.0;
+		intgrd_refl = 0.0;
+		for (j=0; j< size_op_i; j++) {
+			intgrdold = intgrd;
+			intgrdmflold = intgrdmfl;
+			intgrd_corr_old = intgrd_corr;
+			intgrd_refl_old = intgrd_refl;
+			intgrd = 0.0;
+			intgrdmfl = 0.0;
+			intgrd_corr = 0.0;
+			intgrd_refl = 0.0;
+			double halfVx0sq_dse = (phi0 == 0.0) ? 0.0 : chiM[j] - 0.5*vy[j]*vy[j] - phi0/TiovTe;
+			if (halfVx0sq_dse < 0.0) halfVx0sq_dse = 0.0;
+			int blocked_by_peak = (i_peak >= 0 && halfVx0sq_dse - phi_DS[i_peak]/TiovTe < 0.0);
+			for (k=1; k < size_U; k++) {
+				halfVx0sq = chiM[j] - 0.5*vy[j]*vy[j] - phi_DS[i]/TiovTe - phi0/TiovTe;
+				deltaUperp = mu_op[j] - chiM[j];
+				if (phi0 == 0.0) {
+					halfVx0sq = -phi_DS[i];
+					deltaUperp = 0.0;
+				}
+				vzk = sqrt(2.0*(deltaUperp + Uminmu[k]));
+				vzkm = sqrt(2.0*(deltaUperp + Uminmu[k-1]));
+				Fk = bilin_interp(mu_op[j], Uminmu[k], FF, mu, Uminmu, size_mu, size_U, -1, -1);
+				Fkm1 = bilin_interp(mu_op[j], Uminmu[k-1], FF, mu, Uminmu, size_mu, size_U, -1, -1);
+
+				if(halfVx0sq + alpha*vzkm*twopidmudvy[j] < 0.0){
+					intgrd += 0.0;
+				}
+				else{
+					if(i >= i_peak){
+						if(halfVx0sq < 0.0){
+							intgrd += ( (sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j]))) * Fk + (sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j]))) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+							intgrd_corr -= ( (1.0/sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j]))) * Fk + (1.0/sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j]))) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+						}
+						else{
+							intgrd += ( (sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - sqrt(2.0*halfVx0sq)) * Fk + (sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - sqrt(2.0*halfVx0sq)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+							intgrd_corr -= ( (1.0/sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - 1.0/sqrt(2.0*halfVx0sq)) * Fk + (1.0/sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - 1.0/sqrt(2.0*halfVx0sq)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+						}
+					}
+					else{
+						if (blocked_by_peak) {
+							double phi_lo_i = phi_peak - phi_DS[i];
+							intgrd += ( (sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - sqrt(2.0*phi_lo_i)) * Fk + (sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - sqrt(2.0*phi_lo_i)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+							intgrd_corr -= ( (1.0/sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - 1.0/sqrt(2.0*phi_lo_i)) * Fk + (1.0/sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - 1.0/sqrt(2.0*phi_lo_i)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+						} else {
+							intgrd += ( (sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - sqrt(2.0*halfVx0sq)) * Fk + (sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - sqrt(2.0*halfVx0sq)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+							intgrd_corr -= ( (1.0/sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - 1.0/sqrt(2.0*halfVx0sq)) * Fk + (1.0/sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - 1.0/sqrt(2.0*halfVx0sq)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+						}
+					}
+
+				if (i==0)
+					intgrdmfl += (1.0/3.0)*( ( pow(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j]), 1.5) - pow(2.0*halfVx0sq, 1.5) ) * Fk + (pow(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j]), 1.5) - pow(2.0*halfVx0sq, 1.5)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+				}
+				if (i_peak >= 0 && i > i_peak && i_turn[j] >= 0) {
+					double phi_lo    = phi_DS[i_turn[j]];
+					double phi_up_k  = (i_turn_dM[j][k]   >= 0) ? phi_DS[i_turn_dM[j][k]]   : phi_peak;
+					double phi_up_km = (i_turn_dM[j][k-1] >= 0) ? phi_DS[i_turn_dM[j][k-1]] : phi_peak;
+					double arg_lo    = phi_lo    - phi_DS[i];
+					double arg_up_k  = phi_up_k  - phi_DS[i];
+					double arg_up_km = phi_up_km - phi_DS[i];
+					if (arg_lo >= 0.0 && arg_up_k >= 0.0 && arg_up_km >= 0.0)
+						intgrd_refl += ( (sqrt(2.0*arg_up_k)  - sqrt(2.0*arg_lo)) * Fk
+						              + (sqrt(2.0*arg_up_km) - sqrt(2.0*arg_lo)) * Fkm1 ) * 0.5*(vzk - vzkm);
+				}
+			}
+			if (j > 0) {
+				if (i==0)
+					momflux0 += (intgrdmfl + intgrdmflold)*0.5*(vy[j] - vy[j-1]);
+				ni_DS[i] += (intgrd + intgrd_refl + intgrdold + intgrd_refl_old)*0.5*(vy[j] - vy[j-1]);
+				ni_DScorr[i] += (intgrd_corr + intgrd_corr_old)*0.5*(vy[j] - vy[j-1]);
+				ni_DS_reflected[i] += (intgrd_refl + intgrd_refl_old)*0.5*(vy[j] - vy[j-1]);
+			}
+			else if (j==0) {
+				intgrd = 0.0;
+				intgrd_corr = 0.0;
+				intgrd_refl = 0.0;
+			}
+		}
+		if (i==0)
+			momflux0 /= n_inf;
+		ni_DS[i] /= n_inf;
+		ni_DScorr[i] /= n_inf;
+		ni_DS_reflected[i] /= n_inf;
+		if (i == size_phi-1)
+			printf("in densionDS2: derivative wrt phi is dndphi = %f\n", (ni_DS[i] - ni_DS[i-1])/(phi_DS[i] - phi_DS[i-1]));
+	}
+	free(i_turn);
+	free(phi_DS_turn);
+	for (j = 0; j < size_op_i; j++) {
+		free(i_turn_dM[j]);
+		free(phi_DS_turn_dM[j]);
+	}
+	free(i_turn_dM);
+	free(phi_DS_turn_dM);
+	}
+	else { // method == 2 — retained for reference, not executed
+	n_inf = 0.0;
+	Bohmval = 0.0;
+	intgrd = 0.0;
+	momflux0 = 0.0;
+	momfluxinf = 0.0;
+	for (i=0; i<sizevx; i+=1) {
+		vx[i] = sqrt(i*5.0/sizevx);
+		fvx[i] = 0.0;
+		for (j=0; j< size_mu; j++) {
+			intgrdold = intgrd;
+			intgrd = 0.0;
+			for (k=1; k < size_U; k++) {
+				halfVx0sq = chiM[j] - 0.5*vy[j]*vy[j] - phi0/TiovTe;
+				deltaUperp = mu[j] - chiM[j];
+				vzk = sqrt(2.0*(deltaUperp + Uminmu[k]));
+				vzkm = sqrt(2.0*(deltaUperp + Uminmu[k-1]));
+				if ( (0.5*vx[i]*vx[i] > halfVx0sq) && (0.5*vx[i]*vx[i] < halfVx0sq + alpha*vzk*twopidmudvy[j]) && (0.5*vx[i]*vx[i] < halfVx0sq + alpha*vzkm*twopidmudvy[j]) )
+					intgrd += 0.5*( (FF[j][k] + FF[j][k-1])*(vzk - vzkm) );
+				else if ( (0.5*vx[i]*vx[i] > halfVx0sq) && (0.5*vx[i]*vx[i] < halfVx0sq + alpha*vzk*twopidmudvy[j]) && (0.5*vx[i]*vx[i] > halfVx0sq + alpha*vzkm*twopidmudvy[j]) )
+					intgrd += 0.5*( (FF[j][k] + 0.0)*(vzk - sqrt((0.5*vx[i]*vx[i]-halfVx0sq)/(alpha*twopidmudvy[j])) ) );
+			}
+			if (j > 1)
+				fvx[i] += (intgrd + intgrdold)*0.5*(vy[j] - vy[j-1]);
+			else if (j==1)
+				intgrd = 0.0;
+		}
+		if (i > 1) {
+			Bohmval += ( 2.0*(fvx[i] - fvx[i-1])/(vx[i] + vx[i-1])) ;
+			n_inf += ( 0.5*(fvx[i] + fvx[i-1])*(vx[i] - vx[i-1]) );
+			momfluxinf += ( 0.5*(fvx[i]*vx[i]*vx[i] + fvx[i-1]*vx[i-1]*vx[i-1])*(vx[i] - vx[i-1]) );
+		}
+	}
+	momfluxinf /= n_inf;
+	for (l=0; l< size_phi; l++) {
+		ni_DS[l] = 0.0;
+		for (i=0; i<sizevx; i+=1) {
+			vx[i] = sqrt(i*5.0/sizevx - 2.0*phi_DS[l]);
+			if (i>1) {
+				ni_DS[l] += ( 0.5 * ( fvx[i] + fvx[i-1] ) * (vx[i] - vx[i-1]) );
+				if (l==0)
+					momflux0 += ( 0.5 * ( fvx[i]*vx[i]*vx[i] + fvx[i-1]*vx[i-1]*vx[i-1] ) * (vx[i] - vx[i-1]) );
+			}
+		}
+		ni_DS[l] /= n_inf;
+		if (l==0)
+			momflux0 /= n_inf;
+	}
+	}
+	*Bohm = Bohmval/n_inf;
+	printf("Bohm = %f\n", *Bohm);
+	printf("momfluxinf = %f\n", momfluxinf);
+	printf("momflux0 = %f\n", momflux0);
+	printf("ion 2*(momflux0 - momfluxinf) = %f\n", 2.0*(momflux0 - momfluxinf));
+	return;
+} 
