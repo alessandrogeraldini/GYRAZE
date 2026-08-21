@@ -18,7 +18,7 @@
 #include <gsl/gsl_interp.h>
 #include "mps.h"
 
-#define APPROXMUFORSMALLORBIT 0
+#define APPROXMUFORSMALLPHI 0
 #define TESTELL 0
 #ifndef numb
 #define numb 0.00000001
@@ -492,20 +492,22 @@ void densfinorb_par(double Ti, double lenfactor, double alpha,
         mu[j][upperlimit[j]] = 0.0;
         chiMopen[j+1] = chiMax[j];
         k = 0;
-        if (APPROXMUFORSMALLORBIT == 1) {
-            if (fabs(phi[0]) < minphiformucalc) {
-                if (xbar[j] > 0.0) {
-                    phibar   = lin_interp(xx, phi, xbar[j], size_finegrid, 1);
-                    Omegaell = sqrt(1.0 + lin_interp(xx, phipp, xbar[j], size_finegrid, 1));
-                    muell    = Uperp[j][upperlimit[j]-k] - phibar + 0.5 * pow(lin_interp(xx, phip, xbar[j], size_finegrid, 1) / Omegaell, 2.0);
-                    muell   /= Omegaell;
-                    musmall  = 0.5 * pow(xx[imin[j]] - xx[imin[j]-k], 2.0) * pow(chimpp[j], 0.5);
-                    if (muapproxtype == 1) mu[j][upperlimit[j]-k] = muell;
-                    else                   mu[j][upperlimit[j]-k] = musmall;
-                    k++;
+        if (APPROXMUFORSMALLPHI == 1) {
+            for (k = 0; k < upperlimit[j] + 1; k++) {
+                if (fabs(phi[0]) < minphiformucalc) {
+                    if (xbar[j] > 0.0) {
+                        phibar   = lin_interp(xx, phi, xbar[j], size_finegrid, 1);
+                        Omegaell = sqrt(1.0 + lin_interp(xx, phipp, xbar[j], size_finegrid, 1));
+                        muell    = Uperp[j][upperlimit[j]-k] - phibar + 0.5 * pow(lin_interp(xx, phip, xbar[j], size_finegrid, 1) / Omegaell, 2.0);
+                        muell   /= Omegaell;
+                        musmall  = 0.5 * pow(xx[imin[j]] - xx[imin[j]-k], 2.0) * pow(chimpp[j], 0.5);
+                        if (muapproxtype == 1) mu[j][upperlimit[j]-k] = muell;
+                        else                   mu[j][upperlimit[j]-k] = musmall;
+                    }
                 }
             }
         }
+        
         muopen[j+1]       = mu[j][0];
         xbaropen[j+1]     = xbar[j];
         Ucritf[j+1]       = chiMax[j] - mu[j][0];

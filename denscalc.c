@@ -12,7 +12,7 @@ MODIFIED on 15 JUL 2022 by Alessandro Geraldini
 */
 
 #define TESTELL 0
-#define APPROXMUFORSMALLORBIT 0
+#define APPROXMUFORSMALLPHI 0
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -1593,31 +1593,31 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 		//mu[j][upperlimit[j]-1] = 0.5*pow(xx[imin[j]] - xx[imin[j]-1], 2.0)*pow(chimpp[j], 0.5);
 		chiMopen[j+1] = chiMax[j];
 		k=0;
-		if (APPROXMUFORSMALLORBIT == 1) {
-			if (fabs(phi[0]) < minphiformucalc) {
-				if (xbar[j] > 0.0) { //otherwise lin_interp fails
-					phibar = lin_interp(xx, phi, xbar[j], size_finegrid, 1);
-					//printf("APPROXIMATE MU if potential drop across region is small\n");
-					//while (fabs(phibar) < minphiformucalc && k < upperlimit[j]) {
-					//while (fabs(lin_interp(xx, phi, xbar[j]+0.1, size_finegrid, 1) - phibar)/0.1 < minphiformucalc && k <= upperlimit[j]) {
-					Omegaell = sqrt(1.0 + lin_interp(xx, phipp, xbar[j], size_finegrid, 1));
-					//printf("Omegaell = %f\n", Omegaell);
-					muell = Uperp[j][upperlimit[j]-k] - phibar + 0.5*pow(lin_interp(xx, phip, xbar[j], size_finegrid, 1)/Omegaell, 2.0);
-					//printf("Uperp[j][k] = %f\n", muell);
-					muell /= Omegaell;
-					//printf("muell = %f\n", muell);
-					//mu[j][upperlimit[j]-k] = 0.5*pow(xx[imin[j]] - xx[imin[j]-k], 2.0)*pow(chimpp[j], 0.5);
-					musmall = 0.5*pow(xx[imin[j]] - xx[imin[j]-k], 2.0)*pow(chimpp[j], 0.5);
-					//if ( (xbar[j] < 8.0) ) // (muell < 1.0) ) //&& 
-					//	printf("at xbar[j] = %f\tmu[j][k] = %f\tmuell = %f\tfractional error = %f\tmuexp = %f\tfractional error = %f\n", xbar[j], mu[j][upperlimit[j]-k], muell, muell/mu[j][upperlimit[j]-k] - 1.0, muexp, muexp/mu[j][upperlimit[j]-k] - 1.0);
-					if (muapproxtype == 1) 
-						mu[j][upperlimit[j]-k] = muell;
-					else
-						mu[j][upperlimit[j]-k] = musmall;
-					k++;
+		if (APPROXMUFORSMALLPHI == 1) {
+			for (k=0; k<upperlimit[j]+1; k++) {
+				if (fabs(phi[0]) < minphiformucalc) {
+					if (xbar[j] > 0.0) { //otherwise lin_interp fails
+						phibar = lin_interp(xx, phi, xbar[j], size_finegrid, 1);
+						//printf("APPROXIMATE MU if potential drop across region is small\n");
+						Omegaell = sqrt(1.0 + lin_interp(xx, phipp, xbar[j], size_finegrid, 1));
+						//printf("Omegaell = %f\n", Omegaell);
+						muell = Uperp[j][upperlimit[j]-k] - phibar + 0.5*pow(lin_interp(xx, phip, xbar[j], size_finegrid, 1)/Omegaell, 2.0);
+						//printf("Uperp[j][k] = %f\n", muell);
+						muell /= Omegaell;
+						//printf("muell = %f\n", muell);
+						//mu[j][upperlimit[j]-k] = 0.5*pow(xx[imin[j]] - xx[imin[j]-k], 2.0)*pow(chimpp[j], 0.5);
+						musmall = 0.5*pow(xx[imin[j]] - xx[imin[j]-k], 2.0)*pow(chimpp[j], 0.5);
+						//if ( (xbar[j] < 8.0) ) // (muell < 1.0) ) //&&
+						//      printf("at xbar[j] = %f\tmu[j][k] = %f\tmuell = %f\tfractional error = %f\tmuexp = %f\tfractional error = %f\n", xbar[j], mu[j][upperlimit[j]-k], muell, muell/mu[j][upperlimit[j]-k] - 1.0, muexp, muexp/mu[j][upperlimit[j]-k] - 1.0);
+						if (muapproxtype == 1)
+								mu[j][upperlimit[j]-k] = muell;
+						else
+								mu[j][upperlimit[j]-k] = musmall;
+					}
 				}
 			}
 		}
+
 		muopen[j+1] = mu[j][0]; //*
 		xbaropen[j+1] = xbar[j];
 		Ucritf[j+1] = chiMax[j] - mu[j][0] ; //*
