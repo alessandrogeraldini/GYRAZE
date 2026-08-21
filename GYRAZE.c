@@ -179,28 +179,30 @@ OUTPUT: density profile ni_DS
 					//intgrd_refl += ( (sqrt(2.0*(fabs(halfVx0sq + alpha*vzk*twopidmudvy[j]))) - sqrt(2.0*fabs(halfVx0sq))) * Fk + (sqrt(2.0*(fabs(halfVx0sq + alpha*vzkm*twopidmudvy[j]))) - sqrt(2.0*fabs(halfVx0sq))) * Fkm1 ) * 0.5 * ( vzk - vzkm );
 				}
 				else{
+					if(halfVx0sq >= 0.0){
+						intgrd_corr -= ( (1.0/sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - 1.0/sqrt(2.0*halfVx0sq)) * Fk + (1.0/sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - 1.0/sqrt(2.0*halfVx0sq)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+					}
 					if(i >= i_peak){
 						if(halfVx0sq < 0.0){
 							double absH = fabs(halfVx0sq);
 							intgrd += ( (sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j]))) * Fk + (sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j]))) * Fkm1 ) * 0.5 * ( vzk - vzkm );
-							//intgrd += ( (sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - sqrt(2.0*absH)) * Fk + (sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - sqrt(2.0*absH)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
-							intgrd_corr -= ( (1.0/sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j]))) * Fk + (1.0/sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j]))) * Fkm1 ) * 0.5 * ( vzk - vzkm );
-							//intgrd_refl += ( (sqrt(2.0*absH)) * Fk + (sqrt(2.0*absH)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
-							//intgrd_refl += ( (sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j]))) * Fk + (sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j]))) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+							
+							//intgrd_corr -= ( (1.0/sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j]))) * Fk + (1.0/sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j]))) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+							
 						}
 						else{
 							intgrd += ( (sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - sqrt(2.0*halfVx0sq)) * Fk + (sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - sqrt(2.0*halfVx0sq)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
-							intgrd_corr -= ( (1.0/sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - 1.0/sqrt(2.0*halfVx0sq)) * Fk + (1.0/sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - 1.0/sqrt(2.0*halfVx0sq)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+							//intgrd_corr -= ( (1.0/sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - 1.0/sqrt(2.0*halfVx0sq)) * Fk + (1.0/sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - 1.0/sqrt(2.0*halfVx0sq)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
 						}
 					}
 					else{
 						if (blocked_by_peak) {
 							double phi_lo_i = phi_peak - phi_DS[i];
 							intgrd += ( (sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - sqrt(2.0*phi_lo_i)) * Fk + (sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - sqrt(2.0*phi_lo_i)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
-							intgrd_corr -= ( (1.0/sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - 1.0/sqrt(2.0*phi_lo_i)) * Fk + (1.0/sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - 1.0/sqrt(2.0*phi_lo_i)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+							//intgrd_corr -= ( (1.0/sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - 1.0/sqrt(2.0*phi_lo_i)) * Fk + (1.0/sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - 1.0/sqrt(2.0*phi_lo_i)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
 						} else {
 							intgrd += ( (sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - sqrt(2.0*halfVx0sq)) * Fk + (sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - sqrt(2.0*halfVx0sq)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
-							intgrd_corr -= ( (1.0/sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - 1.0/sqrt(2.0*halfVx0sq)) * Fk + (1.0/sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - 1.0/sqrt(2.0*halfVx0sq)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+							//intgrd_corr -= ( (1.0/sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - 1.0/sqrt(2.0*halfVx0sq)) * Fk + (1.0/sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - 1.0/sqrt(2.0*halfVx0sq)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
 						}
 					}
 
@@ -2753,6 +2755,17 @@ i=0;
 		if ( error_DS[1] > tol_DS[1]) {
 			printf("WARNING: DS solution should be rejected because it does not satisfy Poisson's equation accurately enough on the extended domain\n");
 			fprintf(fout, "WARNING: DS solution should be rejected because it does not satisfy Poisson's equation accurately enough on the extended domain\n");
+			snprintf(fpstr, 150, "%s/misc_output.txt", dirname);
+			fp = fopen(fpstr, "w");
+			if (fp != NULL) {
+				fprintf(fp, "%f\n", sumflux_i-flux_e);
+				fprintf(fp, "%f\n", 0.5*v_cut*v_cut);
+				fprintf(fp, "%f\n", Q_e);
+				fprintf(fp, "%f\n", sumQ_i);
+				fprintf(fp, "%f\n", flux_e);
+				fprintf(fp, "%f\n", sumflux_i);
+				fclose(fp);
+			}
 			exit(-1);
 		}
 		//printf("FINAL CHECK passed. HURRAY!\n");
@@ -2811,22 +2824,24 @@ i=0;
 	else 
 		fprintf(fp, "%f\n", -0.5*v_cutDS*v_cutDS);
 	fclose(fp);
-	snprintf(fpstr, 150, "%s/phi_corr_DS.txt", dirname);
-	fp = fopen(fpstr, "w");
-	if (fp == NULL)  
-		printf("error when opening file %s\n", fpstr);
-	for (i=0; i<size_phiDSgrid; i++) {
-		fprintf(fp, "%f %f %f %f %f\n", x_DSgrid[i], ne_DSgrid[i], ne_DSgrid_corr_delta[i], ne_DSgrid_corr_chiM[i], sumni_DS_corr[i]);
+	if (N_DS != 0) {
+		snprintf(fpstr, 150, "%s/phi_corr_DS.txt", dirname);
+		fp = fopen(fpstr, "w");
+		if (fp == NULL)
+			printf("error when opening file %s\n", fpstr);
+		for (i=0; i<size_phiDSgrid; i++) {
+			fprintf(fp, "%f %f %f %f %f\n", x_DSgrid[i], ne_DSgrid[i], ne_DSgrid_corr_delta[i], ne_DSgrid_corr_chiM[i], sumni_DS_corr[i]);
+		}
+		fclose(fp);
+		snprintf(fpstr, 150, "%s/mu_e_op.txt", dirname);
+		fp = fopen(fpstr, "w");
+		if (fp == NULL)
+			printf("error when opening file %s\n", fpstr);
+		for (i=0; i<size_phiDSgrid; i++) {
+			fprintf(fp, "%f %f\n", vy_e_wall[i],mu_e_op[i]);
+		}
+		fclose(fp);
 	}
-	fclose(fp);
-	snprintf(fpstr, 150, "%s/mu_e_op.txt", dirname);
-	fp = fopen(fpstr, "w");
-	if (fp == NULL)  
-		printf("error when opening file %s\n", fpstr);
-	for (i=0; i<size_phiDSgrid; i++) {
-		fprintf(fp, "%f %f\n", vy_e_wall[i],mu_e_op[i]);
-	}
-	fclose(fp);
 	snprintf(fpstr, 150, "%s/phi_n_MP.txt", dirname);
 	fp = fopen(fpstr, "w");
 	if (fp == NULL) {

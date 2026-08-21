@@ -82,6 +82,15 @@ int main(int argc, char *argv[])
         for (int z = 0; z < 4; z++) zooms[z] = def[z];
     }
 
+    char ds_base[256];
+    {
+        const char *s = strrchr(phi_DS_file, '/');
+        strncpy(ds_base, s ? s + 1 : phi_DS_file, sizeof(ds_base) - 1);
+        ds_base[sizeof(ds_base) - 1] = '\0';
+        char *dot = strrchr(ds_base, '.');
+        if (dot) *dot = '\0';
+    }
+
     double *x_DS, *phi_DS;
     int n_phi;
     read_phi_file(phi_DS_file, &x_DS, &phi_DS, &n_phi);
@@ -167,19 +176,25 @@ int main(int argc, char *argv[])
         memset(corr_c, 0, n_ext * sizeof(double));
 
         printf("\n=== zoom = %d ===\n", zoom);
+        char mupath[256];
+        snprintf(mupath, sizeof(mupath),
+                 "OUTPUT/test_DS_mu_%s_zoom%d.txt", ds_base, zoom);
+        FILE *fmu = fopen(mupath, "w");
+        if (!fmu) fprintf(stderr, "Cannot open %s\n", mupath);
         densfinorb(1.0, 1.0, alpha, n_ext, &size_ne,
                    ne, corr_d, corr_c, x_ext, phi_ext, -1.0,
                    dist, mu_e, U_e_DS, size_mu, size_vpar,
                    0.0, &flux, &garbage, zoom,
                    margin, -999.9,
                    vy_wall, mu_op, chiM, dmudvy, &size_op,
-                   NULL, NULL);
+                   fmu, NULL);
+        if (fmu) { fclose(fmu); printf("Wrote %s\n", mupath); }
         printf("size_ne = %d, flux = %.6f\n", size_ne, flux);
 
         int n_out = (size_ne < n_phi) ? size_ne : n_phi;
         char outpath[256];
         snprintf(outpath, sizeof(outpath),
-                 "OUTPUT/test_DS_ne_zoom%d.txt", zoom);
+                 "OUTPUT/test_DS_ne_%s_zoom%d.txt", ds_base, zoom);
         FILE *fo = fopen(outpath, "w");
         if (!fo) { fprintf(stderr, "Cannot open %s\n", outpath); continue; }
         fprintf(fo, "# x phi ne corr_d corr_c\n");

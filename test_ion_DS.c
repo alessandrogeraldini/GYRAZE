@@ -104,6 +104,15 @@ int main(int argc, char *argv[])
     }
 
     double *x_MP, *phi_MP, *x_DS, *phi_DS;
+    char ds_base[256];
+    {
+        const char *s = strrchr(phi_DS_file, '/');
+        strncpy(ds_base, s ? s + 1 : phi_DS_file, sizeof(ds_base) - 1);
+        ds_base[sizeof(ds_base) - 1] = '\0';
+        char *dot = strrchr(ds_base, '.');
+        if (dot) *dot = '\0';
+    }
+
     int n_MP, n_DS;
     read_phi_file(phi_MP_file, &x_MP, &phi_MP, &n_MP);
     read_phi_file(phi_DS_file, &x_DS, &phi_DS, &n_DS);
@@ -188,13 +197,13 @@ int main(int argc, char *argv[])
 
         char outpath[256];
         snprintf(outpath, sizeof(outpath),
-                 "OUTPUT/test_ion_DS_ni_zoom%d.txt", zoom);
+                 "OUTPUT/test_ion_DS_ni_%s_zoom%d.txt", ds_base, zoom);
         FILE *fo = fopen(outpath, "w");
         if (!fo) { fprintf(stderr, "Cannot open %s\n", outpath); continue; }
-        fprintf(fo, "# x phi ni ni_corr\n");
+        fprintf(fo, "# x phi ni ni_corr, ni_ref\n");
         for (int i = 0; i < n_DS; i++)
-            fprintf(fo, "%.12e %.12e %.12e %.12e\n",
-                    x_DS[i], phi_DS[i], ni_DS[i], ni_DS_corr[i]);
+            fprintf(fo, "%.12e %.12e %.12e %.12e %.12e\n",
+                    x_DS[i], phi_DS[i], ni_DS[i], ni_DS_corr[i], ni_DS_refl[i]);
         fclose(fo);
         printf("Wrote %s (%d points)\n", outpath, n_DS);
     }

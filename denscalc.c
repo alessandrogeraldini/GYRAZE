@@ -1063,7 +1063,7 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 	// values of various integrals
 	double oorbintgrdold=0.0, Fopen=0.0, intdUopenold=0.0, intdUopenener=0.0, intdUopenenerold = 0.0, intdxbaropenener = 0.0, Qflux0 = 0.0;
 	double vx0open; 
-	double intdUantycal=0.0, intdvxantycal=0.0, vxnew=0.0, vxold = 0.0, Uperpnew = 0.0, *xtop, intdUopenantycal=0.0;
+	double intdUantycal=0.0, intdvxantycal=0.0, vxnew=0.0, vxold = 0.0, Uperpnew = 0.0, U_lb = 0.0, *xtop, intdUopenantycal=0.0;
 	double openorbitnew, chinew, munew = 0.0, muold = 0.0, Uperpold = 0.0, dmu_dUperp = 0.0, dmu_dUperp_old = 0.0;
 	/* intdUantycal is the integral over U (or v_z) for a flat potential profile (phi =0) for some value of xbar and Uperp; intdvxantycal  is the integral over Uperp (or vx) for a flat potential profile for some value of xbar; vxnew is the value of vx at the 'new' grid point, used in the vx integral (taken using the trapezium rule); vxold is the value of vx at the 'old' grid point, used in the vx integral; Uperpnew is the value of Uperp (used in the closed orbit density integral); munew is the valye of mu (used in the closed orbit density integral); xtop is the top bounce point x_t of the last closed orbit; intdUopenantycal is the analytical value of the integral over U  in the open orbit density integral */
 	double xi, *gg, *ff;
@@ -2114,8 +2114,8 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 								munew = mu[j][k]; 
 								//printf("why would I ever be here? i = %d mu = %f\n\n\n", i, munew);
 							}
-							else if (k == upperlimit[j]) // correct but unnecessary as taken ino account below
-								munew = 0.0;
+							// else if (k == upperlimit[j]) // correct but unnecessary as taken ino account below
+							// 	munew = 0.0;
 							else {
 								munew = ((chi[j][i] - Uperp[j][k])*mu[j][k-1] + (Uperp[j][k-1] - chi[j][i])*mu[j][k])/(Uperp[j][k-1] - Uperp[j][k]);
 							}
@@ -2142,6 +2142,7 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 						//if(charge < 0 && k != upper[j][i]){
 						double Uperpnew_pre = Uperpnew;
 						double Uperp_lb_k = Uperpnew;
+						U_lb = Uperpnew;
 						if(!phi_monotone){
 							double Uperp_lb = Uperpnew;
 
@@ -2177,7 +2178,8 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 								// if(Uperpnew < 0){
 								// 	printf("At x = %f, xbar = %f, Uperp = %f, Uperp_lb = %f\n", xx[i], xbar[j], Uperpnew, Uperp_lb);
 								// }
-								Uperpnew = Uperp_lb;
+								//Uperpnew = Uperp_lb;
+								U_lb = Uperp_lb;
 							}
 							Uperp_lb_k = Uperp_lb;
 						}
@@ -2188,7 +2190,8 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 							Uperp_lb_at_min_j = Uperp_lb_k;
 						}
 						if (Uperpnew < min_Uperp_j) min_Uperp_j = Uperpnew;
-						sizeU = (int) sqrt(2.0*(Ucap - Uperpnew))/dvz;
+						//sizeU = (int) sqrt(2.0*(Ucap - Uperpnew))/dvz;
+						sizeU = (int) sqrt(2.0*(Ucap - U_lb))/dvz;
 						reflected = 1;
 						for (l=0; l < sizeU; l++)
 						{	
@@ -2196,11 +2199,17 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 							{	
 								Fold = F;
 								Fold_ref = F;
-								vz = dvz*l;
+								//vz = dvz*l;
+								
+								
 								//vz = sqrt(2.0*(munew - Uperpnew)) + dvz*l;
-								U = Uperpnew + 0.5*vz*vz;
+								//U = Uperpnew + 0.5*vz*vz;
+								
+								//U = U_lb + 0.5*vz*vz;
+								U = U_lb + 0.5*(dvz*l)*(dvz*l);
+								vz = dvz*l;
 								if ( (U > munew) && (U - 0.5*vz*vz + 0.5*(vz-dvz)*(vz-dvz) < munew) ) {
-									frac = (vz - sqrt(2.0*(munew - Uperpnew+TINY)))/dvz;
+									frac = (vz - sqrt(2.0*(munew - U_lb+TINY)))/dvz;
 									Fold = bilin_interp(munew, 0.0, FF, mumu, UU, sizemumu, sizeUU, -1, -1); 
 									F = bilin_interp(munew, U-munew, FF, mumu, UU, sizemumu, sizeUU, -1, -1); 
 								}
@@ -2217,9 +2226,9 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 									frac_reflected = 1.0;
 								else if ( (U-munew > Ucrit - numb) && (reflected == 1) ) {
 									reflected = 0;
-									if (Ucrit < Uperpnew - munew + numb) frac_reflected = 0.0;
+									if (Ucrit < U_lb - munew + numb) frac_reflected = 0.0;
 									else {
-										vzcrit = sqrt(2.0*(Ucrit + munew - Uperpnew));
+										vzcrit = sqrt(2.0*(Ucrit + munew - U_lb));
 										Fold_ref = bilin_interp(munew, Ucrit, FF, mumu, UU, sizemumu, sizeUU, -1, -1); 
 										frac_reflected = (vzcrit - (vz - dvz))/dvz;
 									}
@@ -2233,6 +2242,10 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 								}
 								//frac_reflected = 0.0;
 								intdU += 0.5*frac*dvz*((F+Fold) + frac_reflected*(F + Fold_ref));
+								if (intdU != intdU) {
+									printf("intdU is NAN, j=%d, i=%d\n", j, i);
+									exit(-1);
+								}
 								if (charge < 0) {
 									intdU_in  += 0.5*frac*dvz*(F+Fold);
 									intdU_ref += 0.5*frac*dvz*frac_reflected*(F + Fold_ref);
@@ -2242,7 +2255,8 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 							else {	
 								//vz = dvz*l;
 
-								U = Uperpnew ;//+ 0.5*vz*vz;
+								//U = Uperpnew ;//+ 0.5*vz*vz;
+								U = U_lb;
 
 								//if (phi[0] < 0.0) reflected = 0.0;
 								//if (U-munew > Ucrit) 
@@ -2298,7 +2312,7 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 									   nearly flat (slope_js -> 0 via uperp_from_mu2 correction).
 									   Fall back to the previous value, same as the dUperp<=tol case. */
 									if (fabs(dmu_dUperp) > 10000) {
-										printf("At x = %f, xbar = %f, munew - muold = %.6e, Uperpnew - Uperpold is %.6e (tol %.6e), clamping\n", xx[i], xbar[j], dmu, dUperp, dUperp_tol);
+										printf("At x = %f, xbar = %f, Uperp = %.6e, Uperpold = %.6e, munew = %.6e, muold = %.6e, munew - muold = %.6e, Uperpnew - Uperpold is %.6e (tol %.6e), clamping, k - upperlimit[j] = %d\n", xx[i], xbar[j], Uperpnew, Uperpold, munew, muold, dmu, dUperp, dUperp_tol, k - upperlimit[j]);
 										dmu_dUperp = dmu_dUperp_old;
 									}
 								}
@@ -2691,25 +2705,43 @@ void densionDS2(double alpha, double TiovTe, double *Bohm, double *ni_DS, double
 					intgrd += 0.0;
 				}
 				else{
-					if(i >= i_peak){
-						if(halfVx0sq < 0.0){
-							intgrd += ( (sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j]))) * Fk + (sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j]))) * Fkm1 ) * 0.5 * ( vzk - vzkm );
-							intgrd_corr -= ( (1.0/sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j]))) * Fk + (1.0/sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j]))) * Fkm1 ) * 0.5 * ( vzk - vzkm );
-						}
-						else{
-							intgrd += ( (sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - sqrt(2.0*halfVx0sq)) * Fk + (sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - sqrt(2.0*halfVx0sq)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
-							intgrd_corr -= ( (1.0/sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - 1.0/sqrt(2.0*halfVx0sq)) * Fk + (1.0/sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - 1.0/sqrt(2.0*halfVx0sq)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
-						}
+					// if(halfVx0sq >= 0.0){
+					// 	intgrd_corr -= ( (1.0/sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - 1.0/sqrt(2.0*halfVx0sq)) * Fk + (1.0/sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - 1.0/sqrt(2.0*halfVx0sq)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+					// }
+					// if(i >= i_peak){
+					// 	if(halfVx0sq < 0.0){
+					// 		intgrd += ( (sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j]))) * Fk + (sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j]))) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+					// 		//intgrd_corr -= ( (1.0/sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j]))) * Fk + (1.0/sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j]))) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+					// 	}
+					// 	else{
+					// 		intgrd += ( (sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - sqrt(2.0*halfVx0sq)) * Fk + (sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - sqrt(2.0*halfVx0sq)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+					// 		//intgrd_corr -= ( (1.0/sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - 1.0/sqrt(2.0*halfVx0sq)) * Fk + (1.0/sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - 1.0/sqrt(2.0*halfVx0sq)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+					// 	}
+					// }
+					// else{
+					// 	if (blocked_by_peak) {
+					// 		double phi_lo_i = phi_peak - phi_DS[i];
+					// 		intgrd += ( (sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - sqrt(2.0*phi_lo_i)) * Fk + (sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - sqrt(2.0*phi_lo_i)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+					// 		//intgrd_corr -= ( (1.0/sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - 1.0/sqrt(2.0*phi_lo_i)) * Fk + (1.0/sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - 1.0/sqrt(2.0*phi_lo_i)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+					// 	} else {
+					// 		intgrd += ( (sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - sqrt(2.0*halfVx0sq)) * Fk + (sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - sqrt(2.0*halfVx0sq)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+					// 		//intgrd_corr -= ( (1.0/sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - 1.0/sqrt(2.0*halfVx0sq)) * Fk + (1.0/sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - 1.0/sqrt(2.0*halfVx0sq)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+					// 	}
+					// }
+
+					if(halfVx0sq < 0.0){
+						//printf("halfVx0sq = %f, chiM = %f, halfVx0sq + alpha*vzk*twopidmudvy[j] = %f\n", halfVx0sq, chiM[j], halfVx0sq + alpha*vzk*twopidmudvy[j]);
+						intgrd += ( (sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j]))) * Fk + (sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j]))) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+						//intgrd += ( (sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - sqrt(fabs(2.0*halfVx0sq))) * Fk + (sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - sqrt(fabs(2.0*halfVx0sq))) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+						//intgrd += 0.0;
+						//intgrd += ( (sqrt(2.0*(halfVx0sq_dse + alpha*vzk*twopidmudvy[j]))) * Fk + (sqrt(2.0*(halfVx0sq_dse + alpha*vzkm*twopidmudvy[j]))) * Fkm1 ) * 0.5 * ( vzk - vzkm );
 					}
 					else{
-						if (blocked_by_peak) {
-							double phi_lo_i = phi_peak - phi_DS[i];
-							intgrd += ( (sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - sqrt(2.0*phi_lo_i)) * Fk + (sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - sqrt(2.0*phi_lo_i)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
-							intgrd_corr -= ( (1.0/sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - 1.0/sqrt(2.0*phi_lo_i)) * Fk + (1.0/sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - 1.0/sqrt(2.0*phi_lo_i)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
-						} else {
-							intgrd += ( (sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - sqrt(2.0*halfVx0sq)) * Fk + (sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - sqrt(2.0*halfVx0sq)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
-							intgrd_corr -= ( (1.0/sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - 1.0/sqrt(2.0*halfVx0sq)) * Fk + (1.0/sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - 1.0/sqrt(2.0*halfVx0sq)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
-						}
+						intgrd += ( (sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - sqrt(2.0*halfVx0sq)) * Fk + (sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - sqrt(2.0*halfVx0sq)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+						intgrd_corr -= ( (1.0/sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - 1.0/sqrt(2.0*halfVx0sq)) * Fk + (1.0/sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - 1.0/sqrt(2.0*halfVx0sq)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+
+	
+
 					}
 
 				if (i==0)
@@ -2730,7 +2762,8 @@ void densionDS2(double alpha, double TiovTe, double *Bohm, double *ni_DS, double
 			if (j > 0) {
 				if (i==0)
 					momflux0 += (intgrdmfl + intgrdmflold)*0.5*(vy[j] - vy[j-1]);
-				ni_DS[i] += (intgrd + intgrd_refl + intgrdold + intgrd_refl_old)*0.5*(vy[j] - vy[j-1]);
+				//ni_DS[i] += (intgrd + intgrd_refl + intgrdold + intgrd_refl_old)*0.5*(vy[j] - vy[j-1]);
+				ni_DS[i] += (intgrd + intgrdold)*0.5*(vy[j] - vy[j-1]);
 				ni_DScorr[i] += (intgrd_corr + intgrd_corr_old)*0.5*(vy[j] - vy[j-1]);
 				ni_DS_reflected[i] += (intgrd_refl + intgrd_refl_old)*0.5*(vy[j] - vy[j-1]);
 			}
