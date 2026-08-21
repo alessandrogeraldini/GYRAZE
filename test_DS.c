@@ -20,6 +20,7 @@
 #include <math.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <omp.h>
 #include "mps.h"
 
 #define MAXMU    10.0
@@ -57,14 +58,15 @@ int main(int argc, char *argv[])
 {
     if (argc < 5) {
         fprintf(stderr,
-            "Usage: %s <phi_DS_file> <phi_MP_file> <alpha> <margin> [zoom1 zoom2 ...]\n"
+            "Usage: %s <phi_DS_file> <phi_MP_file> <alpha> <margin> [--parallel] [zoom1 zoom2 ...]\n"
             "  phi_DS_file: DS potential (x=0 wall, phi->0 at DSE)\n"
             "  phi_MP_file: MP potential (x=0 DSE, phi->0 upstream); phi_MP[0] sets\n"
             "               the presheath energy shift for the electron distribution.\n"
             "  margin: stopping threshold (same as MARGIN_DS in GYRAZE).\n"
             "          Use a negative value (e.g. -1.0) to disable the\n"
             "          density-overshoot stop and always run to the end\n"
-            "          of the phi grid.\n",
+            "          of the phi grid.\n"
+            "  --parallel: use OpenMP parallel densfinorb_par instead of serial densfinorb\n",
             argv[0]);
         return 1;
     }
@@ -73,14 +75,25 @@ int main(int argc, char *argv[])
     double alpha  = atof(argv[3])*M_PI/180;
     double margin = atof(argv[4]);
 
-    int nzooms = (argc > 5) ? argc - 5 : 4;
+    int use_parallel = 0;
+    int zoom_argc = 0;
+    char **zoom_argv = malloc(argc * sizeof(char *));
+    for (int i = 5; i < argc; i++) {
+        if (strcmp(argv[i], "--parallel") == 0) use_parallel = 1;
+        else zoom_argv[zoom_argc++] = argv[i];
+    }
+    printf("use_parallel = %d\n", use_parallel);
+#define DENSFINORB(...) (use_parallel ? densfinorb_par(__VA_ARGS__) : densfinorb(__VA_ARGS__))
+
+    int nzooms = (zoom_argc > 0) ? zoom_argc : 4;
     int *zooms = malloc(nzooms * sizeof(int));
-    if (argc > 5) {
-        for (int z = 0; z < nzooms; z++) zooms[z] = atoi(argv[5 + z]);
+    if (zoom_argc > 0) {
+        for (int z = 0; z < nzooms; z++) zooms[z] = atoi(zoom_argv[z]);
     } else {
         int def[] = {1, 2, 4, 8};
         for (int z = 0; z < 4; z++) zooms[z] = def[z];
     }
+    free(zoom_argv);
 
     char ds_base[256];
     {
@@ -181,7 +194,7 @@ int main(int argc, char *argv[])
                  "OUTPUT/test_DS_mu_%s_zoom%d.txt", ds_base, zoom);
         FILE *fmu = fopen(mupath, "w");
         if (!fmu) fprintf(stderr, "Cannot open %s\n", mupath);
-        densfinorb(1.0, 1.0, alpha, n_ext, &size_ne,
+        DENSFINORB(1.0, 1.0, alpha, n_ext, &size_ne,
                    ne, corr_d, corr_c, x_ext, phi_ext, -1.0,
                    dist, mu_e, U_e_DS, size_mu, size_vpar,
                    0.0, &flux, &garbage, zoom,

@@ -2161,7 +2161,9 @@ i=0;
 		if (convergence_MP == 0) { // calculate new guess
 			printf("MP not converged --> calculate new MP potential guess\n");
 			fprintf(fout, "MP not converged --> calculate new MP potential guess\n");
+			{ double _wt0 = omp_get_wtime();
 			newguess(x_grid, ne_grid, sumni_grid, phi_grid, size_phigrid, size_sumnigrid, 0.0, 0.0, 1.5, weight_MP);// p, m);
+			printf("newguess (MP, early) took %.4f s\n", omp_get_wtime() - _wt0); }
 		}
 		else { // don't calculate new guess, potential is converged
 			printf("MP converged --> no iteration needed\n");
@@ -2497,7 +2499,9 @@ i=0;
 			else 
 				convergence_MP = 0;
 			if (convergence_MP == 0) { // || (convergence_j == 0) ) 
+				{ double _wt0 = omp_get_wtime();
 				newguess(x_grid, ne_grid, sumni_grid, phi_grid, size_phigrid, size_sumnigrid, 0.0, 0.0, 1.5, weight_MP);
+				printf("newguess (MP, main) took %.4f s\n", omp_get_wtime() - _wt0); }
 				printf("MP not converged\n");
 				fprintf(fout, "MP not converged\n");
 			}
@@ -2655,10 +2659,14 @@ i=0;
 				if(ds_solver == 1){
 					printf("AT ITERATION = %d, SWITCHING TO NR\n", N);
 					fprintf(fout, "AT ITERATION = %d, SWITCHING TO NR\n", N);
+					{ double _wt0 = omp_get_wtime();
 					newguess_NR(x_DSgrid, ne_DSgrid, sumni_DSgrid, phi_DSgrid, size_phiDSgrid, size_neDSgrid, 1.0/(gamma_DS*gamma_DS), v_cutDS, 2.0, weight_DS, ne_DSgrid_corr_delta, ne_DSgrid_corr_chiM, sumni_DS_corr);
+					printf("newguess_NR (DS) took %.4f s\n", omp_get_wtime() - _wt0); }
 				}
 				else
+					{ double _wt0 = omp_get_wtime();
 					newguess(x_DSgrid, ne_DSgrid, sumni_DSgrid, phi_DSgrid, size_phiDSgrid, size_neDSgrid, 1.0/(gamma_DS*gamma_DS), v_cutDS, 2.0, weight_DS);
+					printf("newguess (DS, standard) took %.4f s\n", omp_get_wtime() - _wt0); }
 				printf("DS not converged\n");
 				fprintf(fout, "DS not converged\n");
 			}
