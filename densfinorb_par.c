@@ -18,7 +18,7 @@
 #include <gsl/gsl_interp.h>
 #include "mps.h"
 
-#define APPROXMUFORSMALLPHI 0
+#define APPROXMUFORSMALLPHI 1
 #define TESTELL 0
 #ifndef numb
 #define numb 0.00000001
@@ -425,16 +425,24 @@ void densfinorb_par(double Ti, double lenfactor, double alpha,
                 }
             } else if ((crossed_min[j] == 1) && (crossed_max[j] == 1) && (chi[j][i-1] < chiMax[j]) && (i-1 != imin[j])) {
                 for (k = 0; k <= upperlimit[j]; k++) {
+                    /* k = imin-imax-1+kdrop already holds its whole-orbit harmonic value; adding
+                     * trapezoids or endpoint pieces to it double counts. */
+                    int harmonic_k = (k == imin[j] - imax[j] - 1 + kdrop[j]);
                     if ((chi[j][i-1] < Uperp[j][k]) && (chi[j][i-2] < Uperp[j][k])) {
                         vx[j][i-1][k] = sqrt(2.0*(Uperp[j][k] - chi[j][i-1]));
-                        mu[j][k] += (1.0/M_PI) * 0.5 * (vx[j][i-1][k] + vx[j][i-2][k]) * (xx[i-1] - xx[i-2]);
+                        if (!harmonic_k)
+                            mu[j][k] += (1.0/M_PI) * 0.5 * (vx[j][i-1][k] + vx[j][i-2][k]) * (xx[i-1] - xx[i-2]);
                     } else if (Uperp[j][k] <= chi[j][i-1] && Uperp[j][k-1] > chi[j][i-1]) {
                         upper[j][i-1] = k;
                         ind = 0;
                         while (Uperp[j][k] < chi[j][i-2-ind]) ind++;
-                        mu[j][k] += (sqrt(2.0)/M_PI) * (2.0/3.0) * (xx[i-1-ind] - xx[i-2-ind]) * pow(Uperp[j][k] - chi[j][i-2-ind], 1.5) / (chi[j][i-1-ind] - chi[j][i-2-ind]);
+                        /* ind > 0: the turning point is in an earlier cell, whose endpoint piece was
+                         * already added at that step; only add it at the crossing step. */
+                        if (ind == 0 && !harmonic_k)
+                            mu[j][k] += (sqrt(2.0)/M_PI) * (2.0/3.0) * (xx[i-1-ind] - xx[i-2-ind]) * pow(Uperp[j][k] - chi[j][i-2-ind], 1.5) / (chi[j][i-1-ind] - chi[j][i-2-ind]);
                     } else if (Uperp[j][k] <= chi[j][i-1] && Uperp[j][k] > chi[j][i-2]) {
-                        mu[j][k] += (sqrt(2.0)/M_PI) * (2.0/3.0) * (xx[i-1] - xx[i-2]) * pow(Uperp[j][k] - chi[j][i-2], 1.5) / (chi[j][i-1] - chi[j][i-2]);
+                        if (!harmonic_k)
+                            mu[j][k] += (sqrt(2.0)/M_PI) * (2.0/3.0) * (xx[i-1] - xx[i-2]) * pow(Uperp[j][k] - chi[j][i-2], 1.5) / (chi[j][i-1] - chi[j][i-2]);
                     }
                     if (mu[j][k] != mu[j][k]) {
                         printf("mu[%d][%d] is NAN, kdrop[%d] = %d\n", j, k, j, kdrop[j]);
@@ -444,6 +452,7 @@ void densfinorb_par(double Ti, double lenfactor, double alpha,
             } else if ((crossed_min[j] == 1) && (crossed_max[j] == 1) && (chi[j][i-1] > chiMax[j])) {
                 xtop[j] = xx[i-2] + ((chiMax[j] - chi[j][i-2]) / (chi[j][i-1] - chi[j][i-2])) * (xx[i-1] - xx[i-2]);
                 for (k = 0; k < upper[j][i-2]; k++) {
+                    if (k == imin[j] - imax[j] - 1 + kdrop[j]) continue;  /* harmonic value is complete */
                     ind = 0;
                     while (Uperp[j][k] < chi[j][i-2-ind]) ind++;
                     mu[j][k] += (sqrt(2.0)/M_PI) * (2.0/3.0) * (xx[i-1-ind] - xx[i-2-ind]) * pow(Uperp[j][k] - chi[j][i-2-ind], 1.5) / (chi[j][i-1-ind] - chi[j][i-2-ind]);

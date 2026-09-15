@@ -69,6 +69,21 @@ Dependencies:
 - GNU Scientific Library (GSL): `gsl`, <https://www.gnu.org/software/gsl/>
 - CBLAS: `cblas`, <https://www.netlib.org/lapack>
 
+The Makefile auto-detects whether you're on a Mac or the Princeton Stellar
+cluster and includes the matching config from `make/` (`mac.mk` or
+`stellar.mk`). Override with `make SYSTEM=mac` / `make SYSTEM=stellar` if
+detection guesses wrong, or add `make/<name>.mk` (see `make/generic.mk`) to
+support another system.
+
+On Stellar, load the module first:
+
+```sh
+module load gsl/2.6
+```
+
+(Use the system default `gcc`, not the `gcc-toolset` modules — those are
+missing `libasan`, which breaks `PROFILE=debug` builds.)
+
 Compile for release (optimization flags)
 
 ```sh

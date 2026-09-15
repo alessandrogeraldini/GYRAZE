@@ -1,8 +1,28 @@
-# set he compiler if CC and LD are unset
-CC := gcc-15
-LD?=${CC}
+# Platform-specific settings (CC, include/lib paths, ...) live in make/<name>.mk.
+# The right one is auto-detected below; override explicitly with:
+#   $ make SYSTEM=mac
+#   $ make SYSTEM=stellar
+#
+# To add support for another system: copy make/generic.mk to make/<name>.mk,
+# edit it, and either build with SYSTEM=<name> or add a detection rule below.
 
-CFLAGS+= -Wall -Wextra -Wpedantic
+ifeq ($(origin SYSTEM), undefined)
+  UNAME_S := $(shell uname -s)
+  HOSTNAME := $(shell hostname -f 2>/dev/null || hostname)
+  ifneq (,$(findstring stellar,$(HOSTNAME)))
+    SYSTEM := stellar
+  else ifeq ($(UNAME_S),Darwin)
+    SYSTEM := mac
+  else
+    SYSTEM := generic
+  endif
+endif
+
+$(info Building for SYSTEM=$(SYSTEM) (override with `make SYSTEM=<name>`; see make/*.mk))
+
+include make/$(SYSTEM).mk
+
+CFLAGS += -Wall -Wextra -Wpedantic
 
 # to build for release:
 # $ make -B PROFILE=release
@@ -11,18 +31,16 @@ CFLAGS+= -Wall -Wextra -Wpedantic
 PROFILE?=
 
 ifeq ($(PROFILE), release)
-CFLAGS+= -O3 -march=native -I/opt/homebrew/include
+CFLAGS+= -O3 -march=native
 endif
 
 ifeq ($(PROFILE), debug)
-CFLAGS+= -O1 -g -ggdb -fsanitize=address -DDEBUG -fno-omit-frame-pointer -I/opt/homebrew/include
+CFLAGS+= -O1 -g -ggdb -fsanitize=address -DDEBUG -fno-omit-frame-pointer
 endif
 
-LDFLAGS+= $(CFLAGS) $(OMPFLAG) -L/opt/homebrew/lib -lgsl -lgslcblas -lm
+LDFLAGS+= $(CFLAGS) $(OMPFLAG) $(LIBFLAGS)
 
 binaries=GYRAZE test_DS test_ion_DS
-
-OMPFLAG?=-fopenmp
 
 GYRAZE: GYRAZE.o denscalc.o densfinorb_par.o potupdate.o otherfuncs.o
 
@@ -33,7 +51,7 @@ test_ion_DS: test_ion_DS.o denscalc.o densfinorb_par.o otherfuncs.o
 densfinorb_par.o: densfinorb_par.c
 	$(CC) $(CFLAGS) $(OMPFLAG) -c -o $@ $<
 
-.phony: clean
+.PHONY: clean
 
 all: clean $(binaries)
 

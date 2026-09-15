@@ -12,7 +12,7 @@ MODIFIED on 15 JUL 2022 by Alessandro Geraldini
 */
 
 #define TESTELL 0
-#define APPROXMUFORSMALLPHI 0
+#define APPROXMUFORSMALLPHI 1
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -413,11 +413,11 @@ void denszeroorb(double charge, double TeovTs, double *phi_real, double *n_grid,
 			}
 			else {
 				n_grid[p] = 0.0;
-				v_min = sqrt(-2.0 * phi[p]);
+				v_min = sqrt(fmax(-2.0 * phi[p], 0.0)); // phi[p] can be a hair above 0 from floating-point noise near the sheath edge; sqrt of a negative here yields NaN, whose cast to int is UB and produced a wild array index (segfault)
 				for (mu_ind=0; mu_ind<size_mu; mu_ind++) {
 					nepart[mu_ind] = 0.0;
 					//vpar_cut = lin_interp(mue_cut_lookup, vpar_cut_lookup, mu[mu_ind], size_cut, 205);
-					vpar_cut = vpar_cut_lookup[mu_ind] ; 
+					vpar_cut = vpar_cut_lookup[mu_ind] ;
 					vpar_cut = sqrt(vpar_cut*vpar_cut +  (-2.0*phi[0]) + TINY);
 					//printf("vpar_cut = %f\n", vpar_cut);
 					for (vi = 0; vi < len_F - 1; vi++) {
@@ -480,7 +480,7 @@ void denszeroorb(double charge, double TeovTs, double *phi_real, double *n_grid,
 						//n_res[p] = ne[p] - n_pre[p];
 					}
 					else { // now there is a cut-off
-						v_min = sqrt(-2.0 * phi[p]);
+						v_min = sqrt(fmax(-2.0 * phi[p], 0.0)); // see note above: phi[p] can drift slightly positive from floating-point noise
 						if ((int)floor(v_min / v_s) >= len_F - 1)
 						{
 							nepart[mu_ind] = 0.0;
@@ -661,7 +661,7 @@ void denszeroorb(double charge, double TeovTs, double *phi_real, double *n_grid,
 		}
 		p=0;
 		momflux0 = 0.0;
-		v_min = sqrt(-2.0 * phi[p]);
+		v_min = sqrt(fmax(-2.0 * phi[p], 0.0)); // see note above: phi[p] can drift slightly positive from floating-point noise
 		for (mu_ind=0; mu_ind<size_mu; mu_ind++) {
 			nepart[mu_ind] = 0.0;
 			//vpar_cut = lin_interp(mue_cut_lookup, vpar_cut_lookup, mu[mu_ind], size_cut, 205);
@@ -674,7 +674,7 @@ void denszeroorb(double charge, double TeovTs, double *phi_real, double *n_grid,
 				Fp[vi]  = vi*v_s*vi*v_s*ddistdvpar[mu_ind][vi] + 2.0*vi*v_s*distfunc[mu_ind][vi];
 				Fpp[vi] = vi*v_s*vi*v_s*ddistdvpartwo[mu_ind][vi] + 4.0*vi*v_s*ddistdvpar[mu_ind][vi] + 2.0*distfunc[mu_ind][vi];
 			}
-			v_min = sqrt(-2.0 * phi[p]);
+			v_min = sqrt(fmax(-2.0 * phi[p], 0.0)); // see note above: phi[p] can drift slightly positive from floating-point noise
 			if ((int)floor(v_min / v_s) >= len_F - 1) {
 				nepart[mu_ind] = 0.0;
 			}
@@ -1492,7 +1492,9 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 	/* Once we cross the minimum, we stop creating array elements with values of Uperp. However, we keep storing the value of vx associated with any given point x on an effective potential curve with xbar, with energy Uperp and using this value to finish performing the mu integral. This should happen as long the effective potential at the point under consideration is smaller than the effective potential maximum. */
 			else if ( ( crossed_min[j] == 1 && crossed_max[j] == 1 && chi[j][i-1] < chiMax[j] && ( i-1 != imin[j] ) ) ) {
 				for (k=0;k <= upperlimit[j] ;k++)
-				{	
+				{
+					/* k = imin-imax-1+kdrop already holds its whole-orbit harmonic value; adding trapezoids or endpoint pieces to it double counts. */
+					int harmonic_k = (k == imin[j] - imax[j] - 1 + kdrop[j]);
 					//if (i-1 == imin[j] +1) {
 					//	vx[j][i-1][k] = sqrt(2.0*(Uperp[j][k] - chi[j][i-1]));
 					//	mu[j][k] += (1.0/M_PI)*0.5*(vx[j][i-1][k] + vx[j][i-2][k])*(xx[i-1] - xx[i-2]); 
@@ -1500,24 +1502,28 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 					//else if (chi[j][i-1] < Uperp[j][k]) {	
 					if ( (chi[j][i-1] < Uperp[j][k]) && (chi[j][i-2] < Uperp[j][k]) ) {	
 						vx[j][i-1][k] = sqrt(2.0*(Uperp[j][k] - chi[j][i-1]));
-						mu[j][k] += (1.0/M_PI)*0.5*(vx[j][i-1][k] + vx[j][i-2][k])*(xx[i-1] - xx[i-2]); 
+						if (!harmonic_k)
+							mu[j][k] += (1.0/M_PI)*0.5*(vx[j][i-1][k] + vx[j][i-2][k])*(xx[i-1] - xx[i-2]);
 						//printf("vx[j][i-2][k] = %f\n", vx[j][i-2][k]);
 					}
 					else if (Uperp[j][k] <= chi[j][i-1] && Uperp[j][k-1] > chi[j][i-1]) {
 						upper[j][i-1] = k;
 				//mu[j][k] += (2.0/M_PI)*(vx[j][i-2][k])*(xx[i-1] - xx[i-2])*(Uperp[j][k] - chi[j][i-2])/(chi[j][i-1] - chi[j][i-2]);
 						ind = 0;
-						while (Uperp[j][k] < chi[j][i-2-ind]) 
+						while (Uperp[j][k] < chi[j][i-2-ind])
 							ind++;
-						
-						mu[j][k] += (sqrt(2.0)/M_PI)*(2.0/3.0)*(xx[i-1-ind] - xx[i-2-ind])*pow(Uperp[j][k] - chi[j][i-2-ind], 1.5)/(chi[j][i-1-ind] - chi[j][i-2-ind]); // double check normalization
+
+						/* ind > 0: the turning point is in an earlier cell, whose endpoint piece was already added at that step; only add it at the crossing step. */
+						if (ind == 0 && !harmonic_k)
+							mu[j][k] += (sqrt(2.0)/M_PI)*(2.0/3.0)*(xx[i-1-ind] - xx[i-2-ind])*pow(Uperp[j][k] - chi[j][i-2-ind], 1.5)/(chi[j][i-1-ind] - chi[j][i-2-ind]); // double check normalization
 						//}
 						//printf("DEBUG: %f and mu = %f: i = %d, j = %d, k = %d \nchi = %f, %f\n", mu[j][k], (2.0/M_PI)*(2.0/3.0)*(xx[i-1-ind] - xx[i-2-ind])*pow(Uperp[j][k] - chi[j][i-2-ind], 1.5)/(chi[j][i-1-ind] - chi[j][i-2-ind]), i, j, k, chi[j][i-1], chi[j][i-2]);
 						//printf("MORE DEBUG: %f\n", (2.0/M_PI)*(2.0/3.0)*(xx[i-1-ind] - xx[i-2-ind])*pow(Uperp[j][k] - chi[j][i-2-ind], 1.5)/(chi[j][i-1-ind] - chi[j][i-2-ind]));
 			
 					}
 					else if (Uperp[j][k] <= chi[j][i-1] && Uperp[j][k] > chi[j][i-2]) {
-						mu[j][k] += (sqrt(2.0)/M_PI)*(2.0/3.0)*(xx[i-1] - xx[i-2])*pow(Uperp[j][k] - chi[j][i-2], 1.5)/(chi[j][i-1] - chi[j][i-2]); 
+						if (!harmonic_k)
+							mu[j][k] += (sqrt(2.0)/M_PI)*(2.0/3.0)*(xx[i-1] - xx[i-2])*pow(Uperp[j][k] - chi[j][i-2], 1.5)/(chi[j][i-1] - chi[j][i-2]);
 					}
 					if (mu[j][k] != mu[j][k]) {
 						printf("mu[%d][%d] is NAN, kdrop[%d] = %d\n", j, k, j, kdrop[j]); 
@@ -1531,6 +1537,7 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 				//itop[j] = i-2;
 				xtop[j] = xx[i-2] + ((chiMax[j] - chi[j][i-2])/(chi[j][i-1] - chi[j][i-2]))*(xx[i-1] - xx[i-2]);
 				for (k=0; k<upper[j][i-2]; k++) {
+					if (k == imin[j] - imax[j] - 1 + kdrop[j]) continue; /* harmonic value is complete */
 					ind = 0;
 					//while (Uperp[j][0] < chi[j][i-2-ind]) 
 					//	ind++; // find top bounce point index i-2-ind for a given xbar[j] and for Uperp[j][0] = chiMax
