@@ -23,10 +23,19 @@
 #include <omp.h>
 #include "mps.h"
 
+/* velocity grid; override at compile time, e.g. -DDVPAR=0.025 */
+#ifndef MAXMU
 #define MAXMU    10.0
+#endif
+#ifndef MAXVPAR
 #define MAXVPAR  10.0
+#endif
+#ifndef DMU
 #define DMU      0.1
-#define DVPAR    0.05
+#endif
+#ifndef DVPAR
+#define DVPAR    0.0125
+#endif
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif

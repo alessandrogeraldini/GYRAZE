@@ -4,6 +4,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <math.h>
+#include <gsl/gsl_spline.h>
 #include "mps.h"
 #define LEN 200
 
@@ -443,15 +444,20 @@ void Figen2(double ***ffarr, double **Uminmuarr, double **muarr, int num_spec, d
 
 /* Closed-orbit mu by Gauss-Chebyshev quadrature, used by densfinorb(_par) when MUGAUSSQUAD == 1:
  *   mu = (1/pi) int_{xb}^{xt} sqrt(2 (U - chi)) dx,   chi = (x - xbar)^2/2 + phi(x),
- * with phi linear between grid points. Substituting x = c + r cos(theta), theta_i = i pi/(n+1):
+ * with phi between grid points from a natural cubic spline (MUGAUSSSPLINE 1) or linear
+ * interpolation (0). Substituting x = c + r cos(theta), theta_i = i pi/(n+1):
  *   mu = r/(n+1) sum_i sin(theta_i) sqrt(2 (U - chi(x_i))).
  * The substitution absorbs the sqrt zeros at the turning points, so this converges fast and
  * its error vanishes as phi -> 0. The left turning point of level k is grid node imax+k-kdrop
- * (Uperp[j][k] = chi there); the right one is solved exactly within its grid cell.
+ * (Uperp[j][k] = chi there); the right one is found by bisection within its grid cell.
  * Levels above chiMax (k < kdrop) and orbits that leave the grid keep their previous mu. */
 void mu_gaussquad(double **mu, double **Uperp, double *xbar, double *xx, double *phi, int size_grid,
 		  int sizexbar, int *imax, int *imin, int *kdrop, int *upperlimit, int n)
 {
+	gsl_interp_accel *acc = gsl_interp_accel_alloc();
+	gsl_spline *spl = gsl_spline_alloc(MUGAUSSSPLINE ? gsl_interp_cspline : gsl_interp_linear, size_grid);
+	gsl_spline_init(spl, xx, phi, size_grid);
+
 	for (int j = 0; j < sizexbar; j++) {
 		int kbot = imin[j] - imax[j] + kdrop[j];   /* level at the bottom of the well */
 		if (imin[j] < 0 || imax[j] < 0 || kbot != upperlimit[j]) continue;
@@ -462,21 +468,23 @@ void mu_gaussquad(double **mu, double **Uperp, double *xbar, double *xx, double 
 			while (m < size_grid && 0.5*pow(xx[m] - xbar[j], 2.0) + phi[m] < U) m++;
 			if (m == size_grid) break;
 
-			/* right turning point: (x-xbar)^2/2 + phi[m-1] + s (x - xx[m-1]) = U in [xx[m-1], xx[m]] */
-			double s  = (phi[m] - phi[m-1]) / (xx[m] - xx[m-1]);
-			double cq = phi[m-1] + s*(xbar[j] - xx[m-1]) - U;
-			double xt = fmin(fmax(xbar[j] - s + sqrt(fmax(s*s - 2.0*cq, 0.0)), xx[m-1]), xx[m]);
-
-			int il = imax[j] + k - kdrop[j];
-			double c = 0.5*(xx[il] + xt), r = 0.5*(xt - xx[il]), sum = 0.0;
+			/* right turning point: chi = U in [xx[m-1], xx[m]] */
+			double lo = xx[m-1], hi = xx[m];
+			for (int it = 0; it < 60; it++) {
+				double mid = 0.5*(lo + hi);
+				if (0.5*pow(mid - xbar[j], 2.0) + gsl_spline_eval(spl, mid, acc) < U) lo = mid;
+				else hi = mid;
+			}
+			double xb = xx[imax[j] + k - kdrop[j]], xt = 0.5*(lo + hi);
+			double c = 0.5*(xb + xt), r = 0.5*(xt - xb), sum = 0.0;
 			for (int i = 1; i <= n; i++) {
 				double th = i*M_PI/(n + 1), x = c + r*cos(th);
-				int a = il, b = m;   /* bisect for the cell xx[a] <= x < xx[b] */
-				while (b - a > 1) { int h = (a + b)/2; if (xx[h] <= x) a = h; else b = h; }
-				double g = U - 0.5*pow(x - xbar[j], 2.0) - (phi[a] + (phi[b] - phi[a])*(x - xx[a])/(xx[b] - xx[a]));
+				double g = U - 0.5*pow(x - xbar[j], 2.0) - gsl_spline_eval(spl, x, acc);
 				if (g > 0.0) sum += sin(th)*sqrt(2.0*g);
 			}
 			mu[j][k] = r*sum/(n + 1);
 		}
 	}
+	gsl_spline_free(spl);
+	gsl_interp_accel_free(acc);
 }

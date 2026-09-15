@@ -6,6 +6,8 @@
 // 1: mu of closed orbits in densfinorb(_par) by Gauss-Chebyshev quadrature (mu_gaussquad); 0: original grid integration
 #define MUGAUSSN 16
 // quadrature points per orbit when MUGAUSSQUAD == 1
+#define MUGAUSSSPLINE 0
+// phi between grid points in mu_gaussquad: 1 = natural cubic spline, 0 = linear interpolation
 
 struct distfuncDKGK { // contains the distribution function on a 2D grid and the corresponding grid
 	double **F;
