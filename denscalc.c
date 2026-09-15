@@ -12,7 +12,7 @@ MODIFIED on 15 JUL 2022 by Alessandro Geraldini
 */
 
 #define TESTELL 0
-#define APPROXMUFORSMALLPHI 1
+#define APPROXMUFORSMALLPHI 0
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -1568,6 +1568,11 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 
 
 	upperlimit[sizexbar-1] = upperlimit[sizexbar-2] +1;
+
+	if (MUGAUSSQUAD == 1){   /* overwrite the grid-integrated closed-orbit mu (see otherfuncs.c) */
+		printf("USING GAUSSIAN QUADRATURE FOR MU\n");
+		mu_gaussquad(mu, Uperp, xbar, xx, phi, size_finegrid, sizexbar, imax, imin, kdrop, upperlimit, MUGAUSSN);
+	}
 
 	if (charge < 0 && fjmc_out != NULL) {
 		fprintf(fjmc_out, "# x xbar_jmclosed xbar_jmopen\n");

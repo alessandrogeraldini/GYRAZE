@@ -18,7 +18,7 @@
 #include <gsl/gsl_interp.h>
 #include "mps.h"
 
-#define APPROXMUFORSMALLPHI 1
+#define APPROXMUFORSMALLPHI 0
 #define TESTELL 0
 #ifndef numb
 #define numb 0.00000001
@@ -476,6 +476,11 @@ void densfinorb_par(double Ti, double lenfactor, double alpha,
     }
 
     upperlimit[sizexbar-1] = upperlimit[sizexbar-2] + 1;
+
+    if (MUGAUSSQUAD == 1){   /* overwrite the grid-integrated closed-orbit mu (see otherfuncs.c) */
+	printf("USING GUASSIAN QUADRATURE FOR MU\n");
+        mu_gaussquad(mu, Uperp, xbar, xx, phi, size_finegrid, sizexbar, imax, imin, kdrop, upperlimit, MUGAUSSN);
+    }
 
     if (charge < 0 && fjmc_out != NULL) {
         fprintf(fjmc_out, "# x xbar_jmclosed xbar_jmopen\n");

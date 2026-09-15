@@ -2,6 +2,10 @@
 // used to make print statements appear when needed
 #define TINY 1e-12
 // used to make some inequalities work numerically in case of exact equality.
+#define MUGAUSSQUAD 1
+// 1: mu of closed orbits in densfinorb(_par) by Gauss-Chebyshev quadrature (mu_gaussquad); 0: original grid integration
+#define MUGAUSSN 16
+// quadrature points per orbit when MUGAUSSQUAD == 1
 
 struct distfuncDKGK { // contains the distribution function on a 2D grid and the corresponding grid
 	double **F;
@@ -24,5 +28,6 @@ void densfinorb(double Te, double lenfactor, double alpha, int size_phigrid, int
 void densfinorb_par(double Ti, double lenfactor, double alpha, int size_phigrid, int *size_ngrid, double *n_grid, double *n_grid_corr_delta, double *n_grid_corr_chiM, double *x_grid, double *phi_grid, double charge, double **FF, double *mumu, double *UU, int sizemumu, int sizeUU, double grid_parameter, double *flux, double *Qflux, int zoomfactor, double margin, double phi_DSbump, double *vy_op, double *mu_op, double *chiMax_op, double *dmudvy_op, int *size_op, FILE *fmu, FILE *fjmc_out);
 double bilin_interp(double x, double y, double **FF, double *xx, double *yy, int cols, int rows, int guessi, int guessj);
 double lin_interp(double* x_grid, double* y_grid,double given_x ,int n, int line);
+void mu_gaussquad(double **mu, double **Uperp, double *xbar, double *xx, double *phi, int size_grid, int sizexbar, int *imax, int *imin, int *kdrop, int *upperlimit, int n);
 void densionDS2(double alpha, double TiovTe, double *Bohm, double *ni_DS, double *phi_DS, double phi0, double **FF, double *mu, double *Uminmu, double *vy, double *mu_op, double *chiM, double *twopidmudvy, int size_phi, int size_mu, int size_U, int size_op_i, double* ni_DScorr, double *ni_DS_reflected);
 void Figen2(double ***ffarr, double **Uminmuarr, double **muarr, int num_spec, double *nioverne, double *mioverme, double *TioverTe, int *sizevpar, int *sizevperp, double dvpar, double dvperp);
