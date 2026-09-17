@@ -261,8 +261,78 @@ else { // MAGNETIC PRESHEATH ITERATION
 //printf("res = %f, devbig = %f, dev_0 = %f\n", res, devbig, dev_0);
 //printf("conditions %d %d %d\n", res < reslimit, devbig < 5.0*reslimit, dev_0 < 5.0*reslimit);
 
+int mixed = 0;
+#if ANDERSON_M > 0
+/* Anderson acceleration of the Debye sheath Picard map: with f = G(phi) - phi the residual of the
+ * map, take phi + weight*f corrected by the last ANDERSON_M differences of phi and of f, which can
+ * cancel the weakly unstable modes that plain damping cannot. The history is kept through a rising
+ * error (that is when it is needed) and dropped only when the grid changes; the correction is
+ * bounded by DS_DPHIMAX so a bad extrapolation cannot run away. */
+if (invgammasq != 0.0) {
+	static double *px = NULL, *pf = NULL, *dX[ANDERSON_M], *dF[ANDERSON_M];
+	static int nh = 0, nprev = -1;
+	int k, n = size_phigrid;
+	double *f = malloc(n*sizeof(double)), gam[ANDERSON_M], E_act = 0.0;
+	for (i=0; i<n; i++) f[i] = newphi[i] - oldphi[i];
+	for (i=1; i<size_ngrid-1; i++) {
+		double pp = (phi_grid[i+1] - 2.0*phi_grid[i] + phi_grid[i-1])/(x_grid[1]*x_grid[1]);
+		E_act = fmax(E_act, fabs((-ne_grid[i] + pp*invgammasq)/ni_grid[i] + 1.0));
+	}
+	if (px == NULL || nprev != n) {
+		free(px); free(pf);
+		px = malloc(n*sizeof(double)); pf = malloc(n*sizeof(double));
+		for (k=0; k<ANDERSON_M; k++) { if (nprev > 0) { free(dX[k]); free(dF[k]); } dX[k] = malloc(n*sizeof(double)); dF[k] = malloc(n*sizeof(double)); }
+		nh = 0; nprev = n;
+	}
+	else {   /* newest difference first, oldest dropped */
+		double *ox = dX[ANDERSON_M-1], *of = dF[ANDERSON_M-1];
+		for (k=ANDERSON_M-1; k>0; k--) { dX[k] = dX[k-1]; dF[k] = dF[k-1]; }
+		dX[0] = ox; dF[0] = of;
+		for (i=0; i<n; i++) { dX[0][i] = oldphi[i] - px[i]; dF[0][i] = f[i] - pf[i]; }
+		if (nh < ANDERSON_M) nh++;
+	}
+	for (i=0; i<n; i++) { px[i] = oldphi[i]; pf[i] = f[i]; }
+
+	/* least squares min |f - dF*gam| via the (small) normal equations, lightly regularized */
+	for (k=0; k<ANDERSON_M; k++) gam[k] = 0.0;
+	if (nh > 0) {
+		gsl_matrix *A = gsl_matrix_alloc(nh, nh);
+		gsl_vector *b = gsl_vector_alloc(nh), *g = gsl_vector_alloc(nh);
+		gsl_permutation *perm = gsl_permutation_alloc(nh);
+		double tr = 0.0;
+		for (k=0; k<nh; k++) {
+			double bk = 0.0;
+			for (i=0; i<n; i++) bk += dF[k][i]*f[i];
+			gsl_vector_set(b, k, bk);
+			for (j=0; j<nh; j++) {
+				double a = 0.0;
+				for (i=0; i<n; i++) a += dF[k][i]*dF[j][i];
+				if (k == j) tr += a;
+				gsl_matrix_set(A, k, j, a);
+			}
+		}
+		for (k=0; k<nh; k++) gsl_matrix_set(A, k, k, gsl_matrix_get(A, k, k) + 1e-8*tr/nh);
+		gsl_linalg_LU_decomp(A, perm, &s);
+		gsl_linalg_LU_solve(A, perm, b, g);
+		for (k=0; k<nh; k++) gam[k] = gsl_vector_get(g, k);
+		gsl_permutation_free(perm); gsl_vector_free(b); gsl_vector_free(g); gsl_matrix_free(A);
+	}
+	for (i=0; i<n; i++) {
+		newphi[i] = oldphi[i] + weight*f[i];
+		for (k=0; k<nh; k++) newphi[i] -= gam[k]*(dX[k][i] + weight*dF[k][i]);
+	}
+	/* trust region: same limit on the change in phi as the Newton update */
+	double dmax = 0.0;
+	for (i=0; i<n; i++) dmax = fmax(dmax, fabs(newphi[i] - oldphi[i]));
+	if (dmax > DS_DPHIMAX)
+		for (i=0; i<n; i++) newphi[i] = oldphi[i] + (DS_DPHIMAX/dmax)*(newphi[i] - oldphi[i]);
+	printf("Anderson: %d stored iterates, max|dphi| = %f, error %f\n", nh, fmin(dmax, DS_DPHIMAX), E_act);
+	free(f);
+	mixed = 1;
+}
+#endif
 for (i=size_phigrid-1; i>=0; i--) {
-	newphi[i] = weight*newphi[i] + (1.0-weight)*oldphi[i] ; 
+	if (!mixed) newphi[i] = weight*newphi[i] + (1.0-weight)*oldphi[i] ;
 	//printf("newphi[%d] = %f\n", i, newphi[i]);
 	phi_grid[i] = newphi[i];
 }
@@ -468,7 +538,7 @@ void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_g
 	/* Trust region: limit the largest change in phi per step (smooth modes can be near-singular) */
 	double dmax = 0.0;
 	for (i = 0; i < ninner; i++) dmax = fmax(dmax, fabs(gsl_vector_get(dphi_gsl, i)));
-	if (alpha * dmax > NR_DPHIMAX) alpha = NR_DPHIMAX / dmax;
+	if (alpha * dmax > DS_DPHIMAX) alpha = DS_DPHIMAX / dmax;
 	printf("NR: alpha = %f, max|dphi| = %f (error %f)\n", alpha, alpha * dmax, E_act);
 
 	for (i = 0; i < ninner + 2; i++) phi_prev[i] = phi_grid[i];
