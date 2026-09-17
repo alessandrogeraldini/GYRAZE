@@ -35,6 +35,7 @@
 #endif
 #ifndef DVPAR
 #define DVPAR    0.0125
+//#define DVPAR 0.05
 #endif
 #ifndef M_PI
 #define M_PI 3.14159265358979323846

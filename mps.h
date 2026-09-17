@@ -6,6 +6,10 @@
 // 1: mu of closed orbits in densfinorb(_par) by Gauss-Chebyshev quadrature (mu_gaussquad); 0: original grid integration
 #define MUGAUSSN 16
 // quadrature points per orbit when MUGAUSSQUAD == 1
+#define NR_SAFESTEP 1
+// DS Newton (ds solver 1): 1 = steps accepted/rejected on the true residual, with a trust region; 0 = original frozen-density backtracking
+#define NR_DPHIMAX 0.005
+// with NR_SAFESTEP 1: largest change in phi allowed in one DS Newton step
 #define MUGAUSSSPLINE 0
 // phi between grid points in mu_gaussquad: 1 = natural cubic spline, 0 = linear interpolation
 

@@ -766,10 +766,12 @@ void densfinorb_par(double Ti, double lenfactor, double alpha,
                     }
                     U = chinew + 0.5 * vz * vz;
                     if ((U > munew) && (U - 0.5*vz*vz + 0.5*(vz-dvzopen)*(vz-dvzopen) < munew)) {
-                        frac    = (vz - sqrt(2.0 * (munew - chinew))) / dvzopen;
+                        /* munew >= chinew by construction; clamp rounding (e.g. exact mu on a flat phi gives munew == chinew) */
+                        double vmin = sqrt(fmax(2.0 * (munew - chinew), 0.0));
+                        frac    = (vz - vmin) / dvzopen;
                         Fopen   = bilin_interp(munew, 0.0, FF, mumu, UU, sizemumu, sizeUU, -1, -1);
-                        oorbintgrdold = (sqrt(vx0open*vx0open + 2.0*alpha*sqrt(2.0*(munew-chinew))*openorbitnew) - vx0open) * Fopen;
-                        oorbintgrdflowold = 0.5 * alpha * sqrt(2.0*(munew-chinew)) * openorbitnew * Fopen;
+                        oorbintgrdold = (sqrt(vx0open*vx0open + 2.0*alpha*vmin*openorbitnew) - vx0open) * Fopen;
+                        oorbintgrdflowold = 0.5 * alpha * vmin * openorbitnew * Fopen;
                         Fopen   = bilin_interp(munew, U - munew, FF, mumu, UU, sizemumu, sizeUU, -1, -1);
                         oorbintgrd     = (sqrt(vx0open*vx0open + 2.0*alpha*vz*openorbitnew) - vx0open) * Fopen;
                         oorbintgrdflow = 0.5 * alpha * vz * openorbitnew * Fopen;

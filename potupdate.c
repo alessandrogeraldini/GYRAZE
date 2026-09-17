@@ -414,6 +414,48 @@ void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_g
 		F_vec[i] = -(phipp - gamma2 * (ne_grid[i+1] - ni_grid[i+1]));  /* = -F */
 	}
 
+	/* Max relative Poisson error at the current phi (the error_DS[1] criterion in GYRAZE.c).
+	 * The densities were evaluated at this phi, so this is the true residual. */
+	double E0 = 0.0;
+	for (i = 0; i < ninner; i++) {
+		double dev = fabs(F_vec[i]) * invgammasq / ni_grid[i+1];
+		if (dev > E0) E0 = dev;
+	}
+	double alpha = weight;
+
+#if NR_SAFESTEP == 1
+	/* Safeguards: compare the true residual with the previous call's and, if it rose, go back to
+	 * that phi and halve the step. The step is also trust-region limited (see below), since the
+	 * local Jacobian is near-singular for smooth modes where phi approaches 0. */
+	static double *phi_prev = NULL, *F_prev = NULL, E_prev, alpha_prev, phiW_prev, phi0_prev;
+	static int n_prev = -1;
+	/* Error used to accept/reject steps: as E0, but with the wall at its current value rather than
+	 * the imposed one, so a pending wall-potential change doesn't dominate it (matches error_Poisson). */
+	double E_act = fabs(((phi_grid[2] - 2.0*phi_grid[1] + phi0_before)/deltaxsq - gamma2*(ne_grid[1] - ni_grid[1]))
+	                    * invgammasq / ni_grid[1]);
+	for (i = 1; i < ninner; i++) E_act = fmax(E_act, fabs(F_vec[i]) * invgammasq / ni_grid[i+1]);
+	if (phi_prev == NULL || n_prev != ninner || phiW_prev != phiW_impose) {
+		/* first call, or the n_e grid / wall potential changed: no comparable previous state */
+		free(phi_prev); free(F_prev);
+		phi_prev = malloc((ninner + 2) * sizeof(double));
+		F_prev   = malloc(ninner * sizeof(double));
+	}
+	else if (E_act > E_prev) {
+		double E_rose = E_act;
+		for (i = 0; i < ninner + 2; i++) phi_grid[i] = phi_prev[i];
+		for (i = 0; i < ninner; i++) F_vec[i] = F_prev[i];
+		E_act = E_prev;
+		phi0_before = phi0_prev;
+		alpha = 0.5 * alpha_prev;
+		/* At the smallest step the Newton direction still does not reduce the error: keep the best
+		 * phi and stop stepping, rather than rejecting the same step forever. */
+		if (alpha < weight / 64.0) alpha = 0.0;
+		printf("NR: error rose (%f > %f), back to previous phi with alpha = %f\n", E_rose, E_prev, alpha);
+	}
+	else
+		alpha = fmin(weight, fmax(2.0 * alpha_prev, weight / 64.0));   /* fmax: resume stepping after a stall */
+#endif
+
 	gsl_vector_view rhs = gsl_vector_view_array(F_vec, ninner);
 	gsl_permutation *p  = gsl_permutation_alloc(ninner);
 	clock_t t1 = clock();
@@ -422,15 +464,19 @@ void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_g
 	printf("NR LU decomposition time = %f\n", (double)(t2 - t1) / CLOCKS_PER_SEC);
 	gsl_linalg_LU_solve(J, p, &rhs.vector, dphi_gsl);
 
-	/* Backtracking: start at alpha=weight, halve until max relative Poisson error decreases.
-	 * This matches the error_DS[1] criterion computed by error_Poisson in GYRAZE.c. */
-	double E0 = 0.0;
-	for (i = 0; i < ninner; i++) {
-		double dev = fabs(F_vec[i]) * invgammasq / ni_grid[i+1];
-		if (dev > E0) E0 = dev;
-	}
+#if NR_SAFESTEP == 1
+	/* Trust region: limit the largest change in phi per step (smooth modes can be near-singular) */
+	double dmax = 0.0;
+	for (i = 0; i < ninner; i++) dmax = fmax(dmax, fabs(gsl_vector_get(dphi_gsl, i)));
+	if (alpha * dmax > NR_DPHIMAX) alpha = NR_DPHIMAX / dmax;
+	printf("NR: alpha = %f, max|dphi| = %f (error %f)\n", alpha, alpha * dmax, E_act);
 
-	double alpha = weight;
+	for (i = 0; i < ninner + 2; i++) phi_prev[i] = phi_grid[i];
+	for (i = 0; i < ninner; i++) F_prev[i] = F_vec[i];
+	E_prev = E_act; alpha_prev = alpha; n_prev = ninner; phiW_prev = phiW_impose; phi0_prev = phi0_before;
+#else
+	/* Backtracking: start at alpha=weight, halve until max relative Poisson error decreases,
+	 * with the densities frozen at the current phi. */
 	int bt;
 	for (bt = 0; bt < 30 && alpha > weight / 10.; bt++) {
 		double Enew = 0.0;
@@ -447,6 +493,7 @@ void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_g
 		alpha *= 0.5;
 	}
 	printf("NR backtracking: alpha = %f after %d halvings (E0=%f)\n", alpha, bt, E0);
+#endif
 
 	/* Apply step with backtracked alpha.
 	 * phi_grid[0] gets the same alpha weighting as interior points so that
