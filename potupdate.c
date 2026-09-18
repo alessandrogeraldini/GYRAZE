@@ -416,9 +416,10 @@ if (attempt_at_adapting_grid==1) {
 void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_grid,
                  int size_phigrid, int size_ngridin, double invgammasq, double v_cutDS,
                  double pfac, double weight,
-                 double *ne_corr_delta, double *ne_corr_chiM, double *ni_corr)
+                 double *ne_corr_delta, double *ne_corr_chiM, double *ni_corr,
+                 double *jac_y, double *jac_h, int jac_K)
 {
-	int i, j, s;
+	int i, j, k, s;
 	int size_ngrid = size_ngridin;
 	int ninner = size_ngrid - 1;  /* unknowns: phi_grid[1] .. phi_grid[size_ngrid-1] */
 	double gamma2   = 1.0 / invgammasq;
@@ -473,6 +474,25 @@ void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_g
 				gsl_matrix_set(J, i, j, 1.0 / deltaxsq);
 			else
 				gsl_matrix_set(J, i, j, 0.0);
+		}
+	}
+
+	/* Nonlocal electron response (NONLOCAL_JAC > 0): the loop above took dne/dphi to be the local
+	 * value ne_corr_total on the diagonal, but n_e at one point depends on phi along the whole orbit.
+	 * GYRAZE.c supplies, for each localized perturbation h_k of phi, the measured response
+	 * y_k = dn_e/deps.  Correct J so that it reproduces those measurements, i.e. so the electron
+	 * block A satisfies A h_k = y_k, while keeping the local model on everything orthogonal to the
+	 * h_k.  The h_k have disjoint support, so the rank-1 corrections simply add. */
+	if (jac_y != NULL && jac_K > 0) printf("NR: nonlocal Jacobian from %d measured directions\n", jac_K);
+	for (k = 0; k < jac_K && jac_y != NULL; k++) {
+		double hh = 0.0;
+		for (j = 0; j < ninner; j++) hh += jac_h[k*size_phigrid + j+1] * jac_h[k*size_phigrid + j+1];
+		if (hh < TINY) continue;
+		for (i = 0; i < ninner; i++) {
+			double c = gamma2 * (jac_y[k*size_phigrid + i+1] - ne_corr_total[i]*jac_h[k*size_phigrid + i+1]) / hh;
+			if (!isfinite(c)) continue;   /* no valid measurement in this row: keep the local model */
+			for (j = 0; j < ninner; j++)
+				gsl_matrix_set(J, i, j, gsl_matrix_get(J, i, j) - c * jac_h[k*size_phigrid + j+1]);
 		}
 	}
 

@@ -2659,8 +2659,75 @@ i=0;
 				if(ds_solver == 1){
 					printf("AT ITERATION = %d, SWITCHING TO NR\n", N);
 					fprintf(fout, "AT ITERATION = %d, SWITCHING TO NR\n", N);
+					static double *jac_y = NULL, *jac_h = NULL;
+#if NONLOCAL_JAC > 0
+					/* Measure how n_e responds to a localized change in phi, for the Newton Jacobian.
+					 * The perturbations are raised-cosine bumps on NONLOCAL_JAC disjoint blocks of the
+					 * n_e grid, so each costs one electron density evaluation and they stay orthogonal.
+					 * Every output of DENSFINORB goes to scratch here: the real arrays (and
+					 * size_neDSgrid) belong to the unperturbed phi and are still needed below. */
+					static double *phi_pert = NULL, *ne_scr = NULL, *ne_ref = NULL, *delta_scr = NULL, *chiM_scr = NULL;
+					static double *vy_scr = NULL, *muop_scr = NULL, *chiop_scr = NULL, *dmudvy_scr = NULL;
+					static int jac_ncall = 0, jac_nalloc = 0;
+					if (jac_nalloc != size_phiDSgrid) {
+						free(jac_y); free(jac_h); free(phi_pert); free(ne_scr); free(ne_ref); free(delta_scr);
+						free(chiM_scr); free(vy_scr); free(muop_scr); free(chiop_scr); free(dmudvy_scr);
+						jac_y = malloc(NONLOCAL_JAC*size_phiDSgrid*sizeof(double));
+						jac_h = malloc(NONLOCAL_JAC*size_phiDSgrid*sizeof(double));
+						phi_pert = malloc(size_phiDSgrid*sizeof(double));
+						ne_scr = malloc(size_phiDSgrid*sizeof(double));
+						ne_ref = malloc(size_phiDSgrid*sizeof(double));
+						delta_scr = malloc(size_phiDSgrid*sizeof(double));
+						chiM_scr = malloc(size_phiDSgrid*sizeof(double));
+						vy_scr = malloc((ZOOM_DS*size_phiDSgrid+1)*sizeof(double));
+						muop_scr = malloc((ZOOM_DS*size_phiDSgrid+1)*sizeof(double));
+						chiop_scr = malloc((ZOOM_DS*size_phiDSgrid+1)*sizeof(double));
+						dmudvy_scr = malloc((ZOOM_DS*size_phiDSgrid+1)*sizeof(double));
+						jac_nalloc = size_phiDSgrid; jac_ncall = 0;
+					}
+					if (jac_ncall % NONLOCAL_JAC_EVERY == 0) {
+						double _wj = omp_get_wtime();
+						int kk, jj, sz_scr, sz_ref, op_scr, nvalid, nmasked = 0; double flux_scr, Q_scr;
+						/* Reference density at the unperturbed phi.  ne_DSgrid cannot be used: on the restart
+						 * iteration phi is corrected after it is computed, so it belongs to a different phi,
+						 * and differencing against it would report that offset as a response. */
+						sz_ref = size_neDSgrid;
+						for (jj = 0; jj < size_phiDSgrid; jj++) ne_ref[jj] = ne_DSgrid[jj];
+						DENSFINORB(1.0, 1.0, alpha, size_phiDSgrid, &sz_ref, ne_ref, delta_scr, chiM_scr, x_DSgrid, phi_DSgrid, -1.0, dist_e_GK, mu_e, U_e_DS, size_mu_e, size_vpar_e, 0.0, &flux_scr, &Q_scr, ZOOM_DS, MARGIN_DS, -999.9, vy_scr, muop_scr, chiop_scr, dmudvy_scr, &op_scr, NULL, NULL);
+						for (kk = 0; kk < NONLOCAL_JAC; kk++) {
+							int j0 = 1 + (kk*(size_neDSgrid-1))/NONLOCAL_JAC;
+							int j1 = 1 + ((kk+1)*(size_neDSgrid-1))/NONLOCAL_JAC;
+							for (jj = 0; jj < size_phiDSgrid; jj++) {
+								jac_h[kk*size_phiDSgrid+jj] = (jj >= j0 && jj < j1 && j1 > j0)
+									? 0.5*(1.0 - cos(2.0*M_PI*(jj-j0+0.5)/(j1-j0))) : 0.0;
+								phi_pert[jj] = phi_DSgrid[jj] + NONLOCAL_JAC_EPS*jac_h[kk*size_phiDSgrid+jj];
+								ne_scr[jj] = ne_ref[jj];   /* so points the call leaves untouched give zero response */
+							}
+							sz_scr = size_neDSgrid;
+							DENSFINORB(1.0, 1.0, alpha, size_phiDSgrid, &sz_scr, ne_scr, delta_scr, chiM_scr, x_DSgrid, phi_pert, -1.0, dist_e_GK, mu_e, U_e_DS, size_mu_e, size_vpar_e, 0.0, &flux_scr, &Q_scr, ZOOM_DS, MARGIN_DS, -999.9, vy_scr, muop_scr, chiop_scr, dmudvy_scr, &op_scr, NULL, NULL);
+							/* Where the perturbation moved the end of the n_e grid (it is set by a density
+							 * threshold inside DENSFINORB, so it can jump), n_e before and after are not
+							 * comparable: mark those rows, and newguess_NR keeps the local model there. */
+							nvalid = (sz_scr < sz_ref) ? sz_scr : sz_ref;
+							nmasked += size_neDSgrid - nvalid;
+							for (jj = 0; jj < size_phiDSgrid; jj++)
+								jac_y[kk*size_phiDSgrid+jj] = (jj < nvalid && ne_scr[jj] > 0.0)
+									? (ne_scr[jj] - ne_ref[jj])/NONLOCAL_JAC_EPS : NAN;
+						}
+						printf("nonlocal Jacobian: %d columns measured in %.2f s (%d of %d rows masked)\n",
+						       NONLOCAL_JAC, omp_get_wtime() - _wj, nmasked, NONLOCAL_JAC*size_neDSgrid);
+						{ FILE *fj = fopen("nonlocal_jac.txt", "w");   /* x, then (h_k, y_k) per direction */
+						  for (jj = 0; jj < size_neDSgrid; jj++) {
+							  fprintf(fj, "%f", x_DSgrid[jj]);
+							  for (kk = 0; kk < NONLOCAL_JAC; kk++)
+								  fprintf(fj, " %f %f", jac_h[kk*size_phiDSgrid+jj], jac_y[kk*size_phiDSgrid+jj]);
+							  fprintf(fj, "\n"); }
+						  fclose(fj); }
+					}
+					jac_ncall++;
+#endif
 					{ double _wt0 = omp_get_wtime();
-					newguess_NR(x_DSgrid, ne_DSgrid, sumni_DSgrid, phi_DSgrid, size_phiDSgrid, size_neDSgrid, 1.0/(gamma_DS*gamma_DS), v_cutDS, 2.0, weight_DS, ne_DSgrid_corr_delta, ne_DSgrid_corr_chiM, sumni_DS_corr);
+					newguess_NR(x_DSgrid, ne_DSgrid, sumni_DSgrid, phi_DSgrid, size_phiDSgrid, size_neDSgrid, 1.0/(gamma_DS*gamma_DS), v_cutDS, 2.0, weight_DS, ne_DSgrid_corr_delta, ne_DSgrid_corr_chiM, sumni_DS_corr, jac_y, jac_h, NONLOCAL_JAC);
 					printf("newguess_NR (DS) took %.4f s\n", omp_get_wtime() - _wt0); }
 				}
 				else

@@ -12,6 +12,13 @@
 // DS Newton (ds solver 1): 1 = steps accepted/rejected on the true residual, with a trust region; 0 = original frozen-density backtracking
 #define DS_DPHIMAX 0.005
 // largest change in phi allowed in one DS update (Newton with NR_SAFESTEP 1, or Anderson)
+#define NONLOCAL_JAC 12
+// DS Newton (ds solver 1): number of localized phi perturbations used to measure the nonlocal
+// electron response dne/dphi; 0 = local (tridiagonal) Jacobian, as before
+#define NONLOCAL_JAC_EPS 0.001
+// amplitude of those perturbations
+#define NONLOCAL_JAC_EVERY 1
+// reuse a measured response for this many DS Newton steps before measuring it again
 #define MUGAUSSSPLINE 0
 // phi between grid points in mu_gaussquad: 1 = natural cubic spline, 0 = linear interpolation
 
@@ -25,7 +32,7 @@ struct distfuncDKGK { // contains the distribution function on a 2D grid and the
 
 double tophat(double x1, double x2, double x); 
 void newguess(double *x_grid, double* ne_grid, double *ni, double* phi_grid,int p_size, int size_ngrid, double lambdaDoverl, double v_cutDS, double pfac, double weight); // gsl_permutation *p, gsl_matrix *m);
-void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_grid, int size_phigrid, int size_ngridin, double invgammasq, double v_cutDS, double pfac, double weight, double *ne_corr_delta, double *ne_corr_chiM, double *ni_corr);
+void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_grid, int size_phigrid, int size_ngridin, double invgammasq, double v_cutDS, double pfac, double weight, double *ne_corr_delta, double *ne_corr_chiM, double *ni_corr, double *jac_y, double *jac_h, int jac_K);
 void correct_phi_DS_restart(double *x_DSgrid, double *phi_DSgrid, int size_phiDSgrid, double invgammasq, double v_cutDS, double *ne_DSgrid, double *ne_DSgrid_corr_delta, double *ne_DSgrid_corr_chiM, double *ni_corr, int N_bvp);
 void newvcut(double *v_cut, double v_cutDS, double u_i, double u_e, double current, double error_current, double weight);
 void error_Poisson(double *error, double *x_grid, double *ne_grid, double *ni_grid, double *nioverne, double *phi_grid, int size_phigrid, int size_ngrid, double invgammasq);
