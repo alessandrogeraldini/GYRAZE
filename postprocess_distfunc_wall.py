@@ -42,7 +42,8 @@ else:
 
 print(gamma)
 
-JW, phiW, Phie, Phii, qe, qi = np.loadtxt('misc_output.txt', unpack = True)
+# misc_output.txt holds, in order: net current, 0.5 v_cut^2, Q_e, sum Q_i, flux_e, sum flux_i
+JW, phiW, qe, qi, Phie, Phii = np.loadtxt('misc_output.txt', unpack = True)
 alpha = alphadeg*np.pi/180
 xMP, phiMP, niMP, neMP = np.loadtxt("phi_n_MP.txt", unpack = True)
 vyDSE, muDSE, chiM, DeltaM = np.loadtxt('Fi_W.txt', unpack = True)

@@ -2411,7 +2411,8 @@ i=0;
 		printf("error when opening file %s\n", fpstr);
 
 	if (N_DS != 0) {
-		for (i=0; i<size_phiDSgrid; i++) {
+		// ne_DSgrid is only filled up to size_neDSgrid, which is the size error_Poisson is given
+		for (i=0; i<size_neDSgrid; i++) {
 			fprintf(fp, "%f %f %f %f\n", x_DSgrid[i], phi_DSgrid[i], sumni_DSgrid[i], ne_DSgrid[i]);
 		}
 	}
@@ -2423,7 +2424,8 @@ i=0;
 	if (fp == NULL) {
 		printf("error when opening file\n");
 	}
-	for (i=0; i<size_phigrid; i++) {
+	// likewise sumni_grid is only filled up to size_sumnigrid
+	for (i=0; i<size_sumnigrid; i++) {
 		fprintf(fp, "%f %f %f %f\n", x_grid[i], phi_grid[i], sumni_grid[i], ne_grid[i]);
 	}
 	fclose(fp);
