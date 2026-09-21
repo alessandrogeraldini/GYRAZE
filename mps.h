@@ -27,6 +27,10 @@
 #define NONLOCAL_JAC_STEPDIR 0
 // with NONLOCAL_JAC > 0: also measure the response along the previous Newton direction and correct the
 // Jacobian along it (one more density evaluation per step); 0 = bump columns only
+#define LM_LAMBDA 0.3
+// DS Newton (ds solver 1): Levenberg-Marquardt damping of the linear solve; singular values of the Jacobian
+// well above LM_LAMBDA keep the full Newton step, the near-singular smooth mode (0.02-0.16 in the cases
+// looked at, next one ~1) is damped. 0 = plain Newton (LU solve)
 #define DS_RESTART_CORRECTION 0
 // on a restart whose wall potential differs from the new target: 1 = correct the restart phi with a
 // linearized BVP solve before the first DS iteration (correct_phi_DS_restart); 0 = start from the restart

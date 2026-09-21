@@ -10,6 +10,7 @@
 #include <gsl/gsl_spline.h>
 #include <gsl/gsl_errno.h>
 #include <gsl/gsl_linalg.h>
+#include <gsl/gsl_blas.h>
 
 /* 
 	CALCULATE THE NEW TOTAL POTENTIAL DROP ACROSS THE COMBINED MAGNETIC PRESHEATH AND DEBYE SHEATH
@@ -413,6 +414,22 @@ if (attempt_at_adapting_grid==1) {
 
 	Boundary condition and asymptotic extension are kept identical to newguess.
 */
+/* x = V diag(s/(s^2 + lam^2)) U^T b, for J = U diag(s) V^T: the Levenberg-Marquardt step, i.e. the solution
+ * of (J^T J + lam^2 I) x = J^T b */
+static void lm_solve(const gsl_matrix *U, const gsl_matrix *V, const gsl_vector *S, double lam,
+                     const gsl_vector *b, gsl_vector *x)
+{
+	size_t n = S->size, i;
+	gsl_vector *c = gsl_vector_alloc(n);
+	gsl_blas_dgemv(CblasTrans, 1.0, U, b, 0.0, c);
+	for (i = 0; i < n; i++) {
+		double si = gsl_vector_get(S, i);
+		gsl_vector_set(c, i, gsl_vector_get(c, i) * si / (si*si + lam*lam));
+	}
+	gsl_blas_dgemv(CblasNoTrans, 1.0, V, c, 0.0, x);
+	gsl_vector_free(c);
+}
+
 void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_grid,
                  int size_phigrid, int size_ngridin, double invgammasq, double v_cutDS,
                  double pfac, double weight,
@@ -603,11 +620,28 @@ void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_g
 
 	gsl_vector_view rhs = gsl_vector_view_array(F_vec, ninner);
 	gsl_permutation *p  = gsl_permutation_alloc(ninner);
-	clock_t t1 = clock();
-	gsl_linalg_LU_decomp(J, p, &s);
-	clock_t t2 = clock();
-	printf("NR LU decomposition time = %f\n", (double)(t2 - t1) / CLOCKS_PER_SEC);
-	gsl_linalg_LU_solve(J, p, &rhs.vector, dphi_gsl);
+	gsl_matrix *Vsv = NULL;
+	gsl_vector *Ssv = NULL;
+	/* Levenberg-Marquardt (LM_LAMBDA > 0): d = V diag(s/(s^2 + lambda^2)) U^T F rather than J^{-1} F.
+	 * Directions with singular value s >> lambda get the Newton step unchanged; the near-singular smooth
+	 * mode (s ~ 0.02-0.16 in the cases looked at, the next one ~ 1) is damped instead of dominating the
+	 * step, so the trust region no longer has to shrink the whole step to accommodate it. */
+	if (LM_LAMBDA > 0.0) {
+		int nd = 0;
+		Vsv = gsl_matrix_alloc(ninner, ninner);
+		Ssv = gsl_vector_alloc(ninner);
+		gsl_vector *work = gsl_vector_alloc(ninner);
+		gsl_linalg_SV_decomp(J, Vsv, Ssv, work);   /* J now holds U */
+		gsl_vector_free(work);
+		lm_solve(J, Vsv, Ssv, LM_LAMBDA, &rhs.vector, dphi_gsl);
+		for (i = 0; i < ninner; i++) if (gsl_vector_get(Ssv, i) < LM_LAMBDA) nd++;
+		printf("NR: Levenberg-Marquardt, lambda = %g, smallest singular values %.3g %.3g, %d damped below lambda\n",
+		       LM_LAMBDA, gsl_vector_get(Ssv, ninner-1), gsl_vector_get(Ssv, ninner-2), nd);
+	}
+	else {
+		gsl_linalg_LU_decomp(J, p, &s);
+		gsl_linalg_LU_solve(J, p, &rhs.vector, dphi_gsl);
+	}
 
 	/* The right-hand side is linear in the wall value, so split the step into the response to the wall
 	 * change (d_bc, from row 0 alone) and the rest (dphi_gsl becomes d_rest). The wall and its own
@@ -616,7 +650,13 @@ void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_g
 	 * act on d_rest only. */
 	gsl_vector *d_bc = gsl_vector_calloc(ninner);
 	gsl_vector_set(d_bc, 0, -(phiW_impose - phi0_before) / deltaxsq);
-	gsl_linalg_LU_svx(J, p, d_bc);
+	if (LM_LAMBDA > 0.0) {
+		gsl_vector *b = gsl_vector_alloc(ninner);
+		gsl_vector_memcpy(b, d_bc);
+		lm_solve(J, Vsv, Ssv, LM_LAMBDA, b, d_bc);
+		gsl_vector_free(b);
+	}
+	else gsl_linalg_LU_svx(J, p, d_bc);
 	gsl_vector_sub(dphi_gsl, d_bc);
 	double bmax = 0.0, dW = phiW_impose - phi0_before;
 	for (i = 0; i < ninner; i++) bmax = fmax(bmax, fabs(gsl_vector_get(d_bc, i)));
@@ -719,6 +759,7 @@ void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_g
 	gsl_matrix_free(J);
 	gsl_vector_free(dphi_gsl);
 	gsl_vector_free(d_bc);
+	if (Vsv != NULL) { gsl_matrix_free(Vsv); gsl_vector_free(Ssv); }
 	free(F_vec);
 	free(ne_corr_total);
 }
