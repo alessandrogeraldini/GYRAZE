@@ -24,6 +24,12 @@
 // the measured d(ne - ni)/dphi. The two responses nearly cancel, so modelling them separately leaves a
 // large relative error in their difference, which is the term the Newton system depends on.
 // 0 = measure n_e only and take dni/dphi from ni_corr (analytic)
+#define NONLOCAL_JAC_CHECK 0.2
+// with NONLOCAL_JAC > 0: also measure each column at -eps and average the two sides (central difference);
+// where the electron +eps and -eps responses differ by more than this, n_e is not smooth in phi there and
+// that entry falls back to the local model. 0 = one-sided measurement, no check. The electron response has a
+// noise floor ~0.03 at eps = 0.001 (median |y+ - y-|, 3.3 case); 0.2 catches only the real jumps (x = 0.37 near
+// the wall, and the n_e grid edge)
 #define NONLOCAL_JAC_STEPDIR 0
 // with NONLOCAL_JAC > 0: also measure the response along the previous Newton direction and correct the
 // Jacobian along it (one more density evaluation per step); 0 = bump columns only

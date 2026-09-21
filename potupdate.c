@@ -596,9 +596,12 @@ void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_g
 		bscale = 1.0;
 	}
 	/* A held step (alpha_prev = 0) left phi unchanged, so there is nothing to test: resume stepping.
+	 * A step that moved the wall changed the boundary condition, so the residuals before and after it
+	 * belong to different problems and are not compared either: while the wall approaches its target
+	 * each step is taken (it is still bounded by the trust region) and becomes the new baseline.
 	 * Otherwise allow for the run-to-run noise in the recomputed densities, which is enough to make
 	 * an unchanged error look like a rise and hold the step at zero forever. */
-	else if (alpha_prev > 0.0 && E_act > E_prev * (1.0 + 1e-6)) {
+	else if (alpha_prev > 0.0 && fabs(phi0_before - phi0_prev) < 1e-12 && E_act > E_prev * (1.0 + 1e-6)) {
 		double E_rose = E_act;
 		for (i = 0; i < ninner + 2; i++) phi_grid[i] = phi_prev[i];
 		for (i = 0; i < ninner; i++) F_vec[i] = F_prev[i];

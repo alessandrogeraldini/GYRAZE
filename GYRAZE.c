@@ -2701,6 +2701,7 @@ i=0;
 					 * size_neDSgrid) belong to the unperturbed phi and are still needed below. */
 					static double *phi_pert = NULL, *ne_scr = NULL, *ne_ref = NULL, *delta_scr = NULL, *chiM_scr = NULL;
 					static double *ni_ref = NULL, *ni_scr = NULL, *nisp_scr = NULL, *nicorr_scr = NULL, *nirefl_scr = NULL;
+					static double *ne_scr2 = NULL, *ni_scr2 = NULL;   /* the -eps side, for NONLOCAL_JAC_CHECK */
 					static double *vy_scr = NULL, *muop_scr = NULL, *chiop_scr = NULL, *dmudvy_scr = NULL;
 					static int jac_ncall = 0, jac_nalloc = 0;
 					if (jac_nalloc != size_phiDSgrid) {
@@ -2709,6 +2710,9 @@ i=0;
 						jac_y = malloc(NONLOCAL_JAC*size_phiDSgrid*sizeof(double));
 						jac_h = malloc(NONLOCAL_JAC*size_phiDSgrid*sizeof(double));
 						phi_pert = malloc(size_phiDSgrid*sizeof(double));
+						free(ne_scr2); free(ni_scr2);
+						ne_scr2 = malloc(size_phiDSgrid*sizeof(double));
+						ni_scr2 = calloc(size_phiDSgrid, sizeof(double));
 #if NONLOCAL_JAC_IONS
 						free(ni_ref); free(ni_scr); free(nisp_scr); free(nicorr_scr); free(nirefl_scr);
 						ni_ref = malloc(size_phiDSgrid*sizeof(double));
@@ -2744,7 +2748,7 @@ i=0;
 							densionDS(alpha, TioverTe[_n], &_B, nisp_scr, (phiarr), phi0_DSions, dist_i_GK[_n], mu_i[_n], U_i[_n], vy_i_wall[_n], mu_i_op[_n], chiM_i[_n], twopidmudvy_i[_n], size_phiDSgrid, size_mu_i[_n], size_U_i[_n], size_op_i[_n], nicorr_scr, nirefl_scr); \
 							for (_j = 0; _j < size_phiDSgrid; _j++) (out)[_j] += nioverne[_n]*nisp_scr[_j]; } } while (0)
 #endif
-					int kk, jj, sz_scr, sz_ref = size_neDSgrid, op_scr, nvalid, nmasked = 0; double flux_scr, Q_scr;
+					int kk, jj, sz_scr, sz_ref = size_neDSgrid, op_scr, nvalid, nmasked = 0, nflagged = 0; double flux_scr, Q_scr;
 					/* Reference density at the unperturbed phi.  ne_DSgrid cannot be used: on the restart
 					 * iteration phi is corrected after it is computed, so it belongs to a different phi,
 					 * and differencing against it would report that offset as a response. */
@@ -2783,9 +2787,36 @@ i=0;
 #else
 									? (ne_scr[jj] - ne_ref[jj])/NONLOCAL_JAC_EPS : NAN;
 #endif
+							/* NONLOCAL_JAC_CHECK > 0: measure the -eps side too and use the average of the two sides (a central
+							 * difference). The electron part is also checked: where its +eps and -eps responses differ by more
+							 * than NONLOCAL_JAC_CHECK, n_e jumps rather than varying smoothly with phi (x = 0.37 in the 3.3 case,
+							 * where the response flipped sign between eps = 0.001 and 0.003), so the entry is dropped and
+							 * newguess_NR keeps the local model for it. The ion part is not checked: near a potential maximum
+							 * its response is strongly nonlinear but smooth, and the central difference is what is wanted. */
+							if (NONLOCAL_JAC_CHECK > 0.0) {
+								int sz2 = size_neDSgrid;
+								for (jj = 0; jj < size_phiDSgrid; jj++) {
+									phi_pert[jj] = phi_DSgrid[jj] - NONLOCAL_JAC_EPS*jac_h[kk*size_phiDSgrid+jj];
+									ne_scr2[jj] = ne_ref[jj];
+								}
+								DENSFINORB(1.0, 1.0, alpha, size_phiDSgrid, &sz2, ne_scr2, delta_scr, chiM_scr, x_DSgrid, phi_pert, -1.0, dist_e_GK, mu_e, U_e_DS, size_mu_e, size_vpar_e, 0.0, &flux_scr, &Q_scr, ZOOM_DS, MARGIN_DS, -999.9, vy_scr, muop_scr, chiop_scr, dmudvy_scr, &op_scr, NULL, NULL);
+#if NONLOCAL_JAC_IONS
+								DS_ION_DENS(phi_pert, ni_scr2);
+#endif
+								for (jj = 0; jj < size_phiDSgrid; jj++) {
+									double yp = jac_y[kk*size_phiDSgrid+jj], ym;
+									if (!isfinite(yp)) continue;
+									if (jj >= sz2 || ne_scr2[jj] <= 0.0) { jac_y[kk*size_phiDSgrid+jj] = NAN; continue; }
+									ym = ((ne_ref[jj] - ne_scr2[jj]) - (NONLOCAL_JAC_IONS ? ni_ref[jj] - ni_scr2[jj] : 0.0))/NONLOCAL_JAC_EPS;
+									if (fabs((ne_scr[jj] - ne_ref[jj]) - (ne_ref[jj] - ne_scr2[jj]))/NONLOCAL_JAC_EPS > NONLOCAL_JAC_CHECK) {
+										jac_y[kk*size_phiDSgrid+jj] = NAN; nflagged++;
+									}
+									else jac_y[kk*size_phiDSgrid+jj] = 0.5*(yp + ym);
+								}
+							}
 						}
-						printf("nonlocal Jacobian: %d columns measured in %.2f s (%d of %d rows masked)\n",
-						       NONLOCAL_JAC, omp_get_wtime() - _wj, nmasked, NONLOCAL_JAC*size_neDSgrid);
+						printf("nonlocal Jacobian: %d columns measured in %.2f s (%d of %d rows masked, %d entries non-smooth)\n",
+						       NONLOCAL_JAC, omp_get_wtime() - _wj, nmasked, NONLOCAL_JAC*size_neDSgrid, nflagged);
 						{ FILE *fj = fopen("nonlocal_jac.txt", "w");   /* x, then (h_k, y_k) per direction */
 						  for (jj = 0; jj < size_neDSgrid; jj++) {
 							  fprintf(fj, "%f", x_DSgrid[jj]);
