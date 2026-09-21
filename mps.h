@@ -19,6 +19,20 @@
 // amplitude of those perturbations
 #define NONLOCAL_JAC_EVERY 1
 // reuse a measured response for this many DS Newton steps before measuring it again
+#define NONLOCAL_JAC_IONS 1
+// with NONLOCAL_JAC > 0: measure the ion response in the same perturbation and build the Jacobian from
+// the measured d(ne - ni)/dphi. The two responses nearly cancel, so modelling them separately leaves a
+// large relative error in their difference, which is the term the Newton system depends on.
+// 0 = measure n_e only and take dni/dphi from ni_corr (analytic)
+#define NONLOCAL_JAC_STEPDIR 0
+// with NONLOCAL_JAC > 0: also measure the response along the previous Newton direction and correct the
+// Jacobian along it (one more density evaluation per step); 0 = bump columns only
+#define DS_RESTART_CORRECTION 0
+// on a restart whose wall potential differs from the new target: 1 = correct the restart phi with a
+// linearized BVP solve before the first DS iteration (correct_phi_DS_restart); 0 = start from the restart
+// phi unchanged and let the DS solver move the wall gradually
+#define DS_WALL_TOL 1e-3
+// the DS only counts as converged once its wall potential is within this of -0.5 v_cutDS^2 (<= 0: no check)
 #define MUGAUSSSPLINE 0
 // phi between grid points in mu_gaussquad: 1 = natural cubic spline, 0 = linear interpolation
 
@@ -32,7 +46,7 @@ struct distfuncDKGK { // contains the distribution function on a 2D grid and the
 
 double tophat(double x1, double x2, double x); 
 void newguess(double *x_grid, double* ne_grid, double *ni, double* phi_grid,int p_size, int size_ngrid, double lambdaDoverl, double v_cutDS, double pfac, double weight); // gsl_permutation *p, gsl_matrix *m);
-void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_grid, int size_phigrid, int size_ngridin, double invgammasq, double v_cutDS, double pfac, double weight, double *ne_corr_delta, double *ne_corr_chiM, double *ni_corr, double *jac_y, double *jac_h, int jac_K);
+void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_grid, int size_phigrid, int size_ngridin, double invgammasq, double v_cutDS, double pfac, double weight, double *ne_corr_delta, double *ne_corr_chiM, double *ni_corr, double *jac_y, double *jac_h, int jac_K, double *dir_h, double *dir_y);
 void correct_phi_DS_restart(double *x_DSgrid, double *phi_DSgrid, int size_phiDSgrid, double invgammasq, double v_cutDS, double *ne_DSgrid, double *ne_DSgrid_corr_delta, double *ne_DSgrid_corr_chiM, double *ni_corr, int N_bvp);
 void newvcut(double *v_cut, double v_cutDS, double u_i, double u_e, double current, double error_current, double weight);
 void error_Poisson(double *error, double *x_grid, double *ne_grid, double *ni_grid, double *nioverne, double *phi_grid, int size_phigrid, int size_ngrid, double invgammasq);

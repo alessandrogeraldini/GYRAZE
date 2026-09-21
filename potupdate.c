@@ -417,7 +417,7 @@ void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_g
                  int size_phigrid, int size_ngridin, double invgammasq, double v_cutDS,
                  double pfac, double weight,
                  double *ne_corr_delta, double *ne_corr_chiM, double *ni_corr,
-                 double *jac_y, double *jac_h, int jac_K)
+                 double *jac_y, double *jac_h, int jac_K, double *dir_h, double *dir_y)
 {
 	int i, j, k, s;
 	int size_ngrid = size_ngridin;
@@ -426,7 +426,7 @@ void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_g
 	double deltaxsq = x_grid[1] * x_grid[1];
 	double pdec     = 2.0 / (1.0 - pfac);
 	double phiW_impose = -(0.5 * v_cutDS * v_cutDS);
-	double phi0, phip0, CC, temp;
+	double phi0, CC, temp;
 
 	double *F_vec      = malloc(ninner * sizeof(double));
 	double *ne_corr_total = malloc(ninner * sizeof(double));
@@ -464,6 +464,22 @@ void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_g
 	/* Enforce wall boundary condition for residual/Jacobian computation */
 	phi_grid[0] = phiW_impose;
 
+	/* Right end of the unknowns (the n_e grid end, e = size_ngrid-1): the next point belongs to the
+	 * asymptotic tail phi0 (x + CC)^pdec. Rather than holding it fixed, which puts a corner at the join as
+	 * soon as phi_e moves, tie it to phi_e through the tail: phi_{e+1} = rho phi_e,
+	 * rho = ((x_{e+1} + CC)/(x_e + CC))^pdec, with CC from the last valid tail or, before the first one,
+	 * from the tail points just beyond e. rho = 0 (no usable CC) keeps the fixed value. */
+	static double CC_prev = 0.0;
+	static int have_CC = 0;
+	int e = size_ngrid - 1;
+	double CCb = CC_prev, rho = 0.0;
+	if (!have_CC) {
+		CCb = -1e30;
+		if (e + 2 < size_phigrid && phi_grid[e+1] < 0.0 && phi_grid[e+2] > phi_grid[e+1])
+			CCb = pdec * phi_grid[e+1] * (x_grid[e+2] - x_grid[e+1]) / (phi_grid[e+2] - phi_grid[e+1]) - x_grid[e+1];
+	}
+	if (x_grid[e] + CCb > 0.0) rho = pow((x_grid[e+1] + CCb) / (x_grid[e] + CCb), pdec);
+
 	/* Build Jacobian J (tridiagonal) */
 	for (i = 0; i < ninner; i++) {
 		double jac_dens = gamma2 * (ne_corr_total[i] - ni_corr[i]);
@@ -476,6 +492,7 @@ void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_g
 				gsl_matrix_set(J, i, j, 0.0);
 		}
 	}
+	gsl_matrix_set(J, ninner-1, ninner-1, gsl_matrix_get(J, ninner-1, ninner-1) + rho / deltaxsq);
 
 	/* Nonlocal electron response (NONLOCAL_JAC > 0): the loop above took dne/dphi to be the local
 	 * value ne_corr_total on the diagonal, but n_e at one point depends on phi along the whole orbit.
@@ -489,18 +506,42 @@ void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_g
 		for (j = 0; j < ninner; j++) hh += jac_h[k*size_phigrid + j+1] * jac_h[k*size_phigrid + j+1];
 		if (hh < TINY) continue;
 		for (i = 0; i < ninner; i++) {
-			double c = gamma2 * (jac_y[k*size_phigrid + i+1] - ne_corr_total[i]*jac_h[k*size_phigrid + i+1]) / hh;
+			/* with NONLOCAL_JAC_IONS the measurement is d(ne - ni)/dphi, so the local model it replaces is
+			 * ne_corr_total - ni_corr; otherwise it is the electron response alone */
+			double dens_loc = ne_corr_total[i] - (NONLOCAL_JAC_IONS ? ni_corr[i] : 0.0);
+			double c = gamma2 * (jac_y[k*size_phigrid + i+1] - dens_loc*jac_h[k*size_phigrid + i+1]) / hh;
 			if (!isfinite(c)) continue;   /* no valid measurement in this row: keep the local model */
 			for (j = 0; j < ninner; j++)
 				gsl_matrix_set(J, i, j, gsl_matrix_get(J, i, j) - c * jac_h[k*size_phigrid + j+1]);
 		}
 	}
 
+	/* Measured response along the previous Newton direction (NONLOCAL_JAC_STEPDIR): dir_y is dn_e along
+	 * dir_h.  Near a stall the step follows one smooth mode that the bumps above resolve worst, and there
+	 * even a 10% error in the density response can exceed the Jacobian's (small) singular value and turn
+	 * the step uphill.  Correct J by a rank-1 update so that J dir_h reproduces the measured change. */
+	if (dir_h != NULL && dir_y != NULL) {
+		double hh = 0.0, err = 0.0, tt = 0.0;
+		for (j = 0; j < ninner; j++) hh += dir_h[j+1] * dir_h[j+1];
+		for (i = 0; i < ninner && hh > TINY; i++) {
+			double lap = (dir_h[i] - 2.0*dir_h[i+1] + (i < ninner-1 ? dir_h[i+2] : 0.0)) / deltaxsq;
+			double target = lap - gamma2 * (dir_y[i+1] - (NONLOCAL_JAC_IONS ? 0.0 : ni_corr[i]*dir_h[i+1]));
+			double Jh = 0.0;
+			if (!isfinite(target)) continue;   /* no valid measurement in this row: keep J */
+			for (j = 0; j < ninner; j++) Jh += gsl_matrix_get(J, i, j) * dir_h[j+1];
+			err += (target - Jh) * (target - Jh); tt += target * target;
+			for (j = 0; j < ninner; j++)
+				gsl_matrix_set(J, i, j, gsl_matrix_get(J, i, j) + (target - Jh) * dir_h[j+1] / hh);
+		}
+		printf("NR: step-direction correction, |J h - measured| / |measured| = %.3f\n", sqrt(err / fmax(tt, TINY)));
+	}
+
 	/* Build -F[i] = -(phi''[i+1]/dx^2 - gamma^2*(ne[i+1] - ni[i+1]))
 	 * phi_grid[0] = phiW_impose is already set; phi_grid[size_ngrid] is from
 	 * the previous iteration's asymptotic extension (right boundary of last row). */
 	for (i = 0; i < ninner; i++) {
-		double phipp = (phi_grid[i+2] - 2.0*phi_grid[i+1] + phi_grid[i]) / deltaxsq;
+		double right = (i == ninner-1 && rho > 0.0) ? rho * phi_grid[e] : phi_grid[i+2];
+		double phipp = (right - 2.0*phi_grid[i+1] + phi_grid[i]) / deltaxsq;
 		F_vec[i] = -(phipp - gamma2 * (ne_grid[i+1] - ni_grid[i+1]));  /* = -F */
 	}
 
@@ -519,31 +560,45 @@ void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_g
 	 * local Jacobian is near-singular for smooth modes where phi approaches 0. */
 	static double *phi_prev = NULL, *F_prev = NULL, E_prev, alpha_prev, phiW_prev, phi0_prev;
 	static int n_prev = -1;
-	/* Error used to accept/reject steps: as E0, but with the wall at its current value rather than
-	 * the imposed one, so a pending wall-potential change doesn't dominate it (matches error_Poisson). */
-	double E_act = fabs(((phi_grid[2] - 2.0*phi_grid[1] + phi0_before)/deltaxsq - gamma2*(ne_grid[1] - ni_grid[1]))
-	                    * invgammasq / ni_grid[1]);
-	for (i = 1; i < ninner; i++) E_act = fmax(E_act, fabs(F_vec[i]) * invgammasq / ni_grid[i+1]);
+	static double bscale = 1.0;   /* fraction of the wall step allowed; halved on rejection like alpha */
+	/* Error used to accept/reject steps: the RMS of the relative Poisson residual. A Newton step is a
+	 * descent direction for the 2-norm, not the max-norm, so judging steps by the max rejects good
+	 * steps that lower the residual overall but raise it at one point. (Convergence is still tested
+	 * on the max, error_DS[1], in GYRAZE.c.) Row 0 uses the wall at its current value rather than the
+	 * imposed one, so a pending wall-potential change doesn't dominate it. */
+	double r0 = ((phi_grid[2] - 2.0*phi_grid[1] + phi0_before)/deltaxsq - gamma2*(ne_grid[1] - ni_grid[1]))
+	            * invgammasq / ni_grid[1];
+	double E_act = r0*r0;
+	for (i = 1; i < ninner; i++) { double r = F_vec[i] * invgammasq / ni_grid[i+1]; E_act += r*r; }
+	E_act = sqrt(E_act / ninner);
 	if (phi_prev == NULL || n_prev != ninner || phiW_prev != phiW_impose) {
 		/* first call, or the n_e grid / wall potential changed: no comparable previous state */
 		free(phi_prev); free(F_prev);
 		phi_prev = malloc((ninner + 2) * sizeof(double));
 		F_prev   = malloc(ninner * sizeof(double));
+		bscale = 1.0;
 	}
-	else if (E_act > E_prev) {
+	/* A held step (alpha_prev = 0) left phi unchanged, so there is nothing to test: resume stepping.
+	 * Otherwise allow for the run-to-run noise in the recomputed densities, which is enough to make
+	 * an unchanged error look like a rise and hold the step at zero forever. */
+	else if (alpha_prev > 0.0 && E_act > E_prev * (1.0 + 1e-6)) {
 		double E_rose = E_act;
 		for (i = 0; i < ninner + 2; i++) phi_grid[i] = phi_prev[i];
 		for (i = 0; i < ninner; i++) F_vec[i] = F_prev[i];
 		E_act = E_prev;
 		phi0_before = phi0_prev;
 		alpha = 0.5 * alpha_prev;
+		bscale *= 0.5;
 		/* At the smallest step the Newton direction still does not reduce the error: keep the best
 		 * phi and stop stepping, rather than rejecting the same step forever. */
 		if (alpha < weight / 64.0) alpha = 0.0;
-		printf("NR: error rose (%f > %f), back to previous phi with alpha = %f\n", E_rose, E_prev, alpha);
+		printf("NR: rms error rose (%f > %f), back to previous phi with alpha = %f\n", E_rose, E_prev, alpha);
 	}
 	else
+	{
 		alpha = fmin(weight, fmax(2.0 * alpha_prev, weight / 64.0));   /* fmax: resume stepping after a stall */
+		bscale = fmin(1.0, 2.0 * bscale);
+	}
 #endif
 
 	gsl_vector_view rhs = gsl_vector_view_array(F_vec, ninner);
@@ -554,19 +609,52 @@ void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_g
 	printf("NR LU decomposition time = %f\n", (double)(t2 - t1) / CLOCKS_PER_SEC);
 	gsl_linalg_LU_solve(J, p, &rhs.vector, dphi_gsl);
 
+	/* The right-hand side is linear in the wall value, so split the step into the response to the wall
+	 * change (d_bc, from row 0 alone) and the rest (dphi_gsl becomes d_rest). The wall and its own
+	 * response are applied together (beta below), so the wall reaches its target without the phi''
+	 * spike that moving the wall ahead of the interior would cause; alpha and the trust region then
+	 * act on d_rest only. */
+	gsl_vector *d_bc = gsl_vector_calloc(ninner);
+	gsl_vector_set(d_bc, 0, -(phiW_impose - phi0_before) / deltaxsq);
+	gsl_linalg_LU_svx(J, p, d_bc);
+	gsl_vector_sub(dphi_gsl, d_bc);
+	double bmax = 0.0, dW = phiW_impose - phi0_before;
+	for (i = 0; i < ninner; i++) bmax = fmax(bmax, fabs(gsl_vector_get(d_bc, i)));
+	/* The same trust region as the rest of the step: the response to the wall change reaches into the
+	 * interior (through the near-singular mode), where even a change the size of the wall step is far too
+	 * large. A large gap (after a restart) closes over several steps, with the wall and its response still
+	 * moving together; the small per-iteration drift of the target closes in one (beta = 1). */
+	double beta = (bmax > DS_DPHIMAX) ? DS_DPHIMAX / bmax : 1.0;
+#if NR_SAFESTEP == 1
+	beta *= bscale;
+#endif
+
+	/* Hand back the Newton direction (scaled to max 1) for GYRAZE.c to measure along next call */
+	if (dir_h != NULL) {
+		double dm = 0.0;
+		for (i = 0; i < ninner; i++) dm = fmax(dm, fabs(gsl_vector_get(dphi_gsl, i)));
+		for (i = 0; i < size_phigrid; i++) dir_h[i] = 0.0;
+		for (i = 0; i < ninner && dm > 0.0; i++) dir_h[i+1] = gsl_vector_get(dphi_gsl, i) / dm;
+	}
+
 #if NR_SAFESTEP == 1
 	/* Trust region: limit the largest change in phi per step (smooth modes can be near-singular) */
 	double dmax = 0.0;
 	for (i = 0; i < ninner; i++) dmax = fmax(dmax, fabs(gsl_vector_get(dphi_gsl, i)));
 	if (alpha * dmax > DS_DPHIMAX) alpha = DS_DPHIMAX / dmax;
-	printf("NR: alpha = %f, max|dphi| = %f (error %f)\n", alpha, alpha * dmax, E_act);
+	/* ...and on the combined step, wall part included */
+	double jmax = 0.0;
+	for (i = 0; i < ninner; i++) jmax = fmax(jmax, fabs(beta * gsl_vector_get(d_bc, i) + alpha * gsl_vector_get(dphi_gsl, i)));
+	if (jmax > DS_DPHIMAX) { alpha *= DS_DPHIMAX / jmax; beta *= DS_DPHIMAX / jmax; }
+	printf("NR: alpha = %f, max|dphi| = %f (rms error %f); wall %f -> %f (beta = %f)\n", alpha, alpha * dmax, E_act, phi0_before, phi0_before + beta*dW, beta);
 
 	for (i = 0; i < ninner + 2; i++) phi_prev[i] = phi_grid[i];
 	for (i = 0; i < ninner; i++) F_prev[i] = F_vec[i];
 	E_prev = E_act; alpha_prev = alpha; n_prev = ninner; phiW_prev = phiW_impose; phi0_prev = phi0_before;
 #else
 	/* Backtracking: start at alpha=weight, halve until max relative Poisson error decreases,
-	 * with the densities frozen at the current phi. */
+	 * with the densities frozen at the current phi. Uses the whole step, as originally. */
+	gsl_vector_add(dphi_gsl, d_bc); gsl_vector_set_zero(d_bc);
 	int bt;
 	for (bt = 0; bt < 30 && alpha > weight / 10.; bt++) {
 		double Enew = 0.0;
@@ -583,15 +671,13 @@ void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_g
 		alpha *= 0.5;
 	}
 	printf("NR backtracking: alpha = %f after %d halvings (E0=%f)\n", alpha, bt, E0);
+	beta = alpha;   /* original behaviour: the wall and the whole step move by alpha */
 #endif
 
-	/* Apply step with backtracked alpha.
-	 * phi_grid[0] gets the same alpha weighting as interior points so that
-	 * the BC change propagates at the same rate as the NR correction to
-	 * phi_grid[1], avoiding a phi'' spike at x=0. */
-	phi_grid[0] = phi0_before + alpha * (phiW_impose - phi0_before);
+	/* Apply the step: the wall and its response by beta, the rest by alpha */
+	phi_grid[0] = phi0_before + beta * dW;
 	for (i = 0; i < ninner; i++) {
-		temp = phi_grid[i+1] + alpha * gsl_vector_get(dphi_gsl, i);
+		temp = phi_grid[i+1] + beta * gsl_vector_get(d_bc, i) + alpha * gsl_vector_get(dphi_gsl, i);
 		if (temp > 0.0)
 			printf("WARNING: phi > 0.0 at x = %f, non-monotonic in Debye sheath\n", x_grid[i+1]);
 		if (temp < phi_grid[i])
@@ -602,21 +688,37 @@ void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_g
 	/* Asymptotic extension from size_ngrid to size_phigrid.
 	 * phi_grid[size_ngrid-1] is now solved by NR; anchor the power law there. */
 	printf("In Debye sheath NR, asymptotic result starts at x = %f\n\n", x_grid[size_ngrid]);
-	phip0 = (phi_grid[size_ngrid-1] - phi_grid[size_ngrid-2]) / (x_grid[size_ngrid-1] - x_grid[size_ngrid-2]);
-	CC    = pdec * phi_grid[size_ngrid-1] / phip0 - x_grid[size_ngrid-1];
-	printf("In Debye sheath NR CC = %f\n\n", CC);
-	if (CC < -x_grid[size_ngrid-1]) {
-		printf("Warning: CC clamped to 0.0\n");
-		CC = 0.0;
+	/* phi = phi0 (x + CC)^pdec, matched in value and slope at the edge, so the join stays smooth when the
+	 * edge point later becomes interior (the n_e grid end moves by a point from one iteration to the next);
+	 * the slope is second-order one-sided. If that is not a valid decaying tail (slope <= 0, or x + CC <= 0),
+	 * use the CC of the boundary condition (value-matched), rather than clamping CC to 0, which put a
+	 * corner in phi at the join. */
+	int extend = 1;
+	double slope = (3.0*phi_grid[e] - 4.0*phi_grid[e-1] + phi_grid[e-2]) / (2.0*(x_grid[e] - x_grid[e-1]));
+	if (phi_grid[e] < 0.0 && slope > 0.0 && pdec*phi_grid[e]/slope > 0.0) {
+		CC = pdec*phi_grid[e]/slope - x_grid[e];
+		CC_prev = CC; have_CC = 1;
 	}
-	phi0 = phi_grid[size_ngrid-1] / pow(x_grid[size_ngrid-1] + CC, pdec);
-	printf("pdec = %f\nphi0 = %f\n", pdec, phi0);
-	for (i = size_ngrid; i < size_phigrid; i++)
-		phi_grid[i] = phi0 * pow(x_grid[i] + CC, pdec);
+	else if (rho > 0.0) {   /* the tail used as boundary condition above */
+		CC = CCb;
+		printf("Warning: no valid tail slope at the edge, keeping CC = %f\n", CC);
+	}
+	else {
+		extend = 0;
+		printf("Warning: no valid tail at the edge yet, leaving the tail unchanged\n");
+	}
+	if (extend) {
+		printf("In Debye sheath NR CC = %f\n\n", CC);
+		phi0 = phi_grid[e] / pow(x_grid[e] + CC, pdec);
+		printf("pdec = %f\nphi0 = %f\n", pdec, phi0);
+		for (i = size_ngrid; i < size_phigrid; i++)
+			phi_grid[i] = phi0 * pow(x_grid[i] + CC, pdec);
+	}
 
 	gsl_permutation_free(p);
 	gsl_matrix_free(J);
 	gsl_vector_free(dphi_gsl);
+	gsl_vector_free(d_bc);
 	free(F_vec);
 	free(ne_corr_total);
 }

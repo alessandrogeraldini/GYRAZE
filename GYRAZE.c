@@ -1216,7 +1216,7 @@ double vparcut_mu(double mu, double vcut) {
 	return vparcutn;
 }
 
-static void load_phi_restart(const char *filename, double *x_grid, double *phi_grid, int size_grid) {
+static void load_phi_restart(const char *filename, double *x_grid, double *phi_grid, int size_grid, int spline_if_regridded) {
     FILE *fp = fopen(filename, "r");
     if (fp == NULL) {
         printf("WARNING: could not open restart file %s, skipping\n", filename);
@@ -1240,9 +1240,38 @@ static void load_phi_restart(const char *filename, double *x_grid, double *phi_g
             k++;
         }
     fclose(fp);
-    for (int ii = 0; ii < size_grid; ii++)
-        if (x_grid[ii] >= rx[0] && x_grid[ii] <= rx[nlines-1])
-            phi_grid[ii] = lin_interp(rx, rphi, x_grid[ii], nlines, 9999);
+    /* On a finer or coarser (uniform) grid, linear interpolation makes phi piecewise linear: its second
+     * difference alternates between ~0 and ~twice the true phi'', a grid-scale zigzag in the Poisson
+     * residual that the DS solver removes only slowly. Use a cubic spline there instead. GSL's spline is
+     * natural (phi'' = 0 at the ends), which is wrong at the wall, so NG ghost points, extrapolated as a
+     * cubic (zero 4th difference), move that end condition outside the domain. */
+    /* spacing averaged over the file: the x values are printed to 6 decimals */
+    double dxr = (rx[nlines-1] - rx[0]) / (nlines - 1), dxg = x_grid[1] - x_grid[0];
+    if (spline_if_regridded && nlines >= 4 && fabs(dxr - dxg) > 1e-4 * dxg) {
+        int NG = 4, ng = nlines + 2*NG;
+        double *ex = malloc(ng * sizeof(double)), *ep = malloc(ng * sizeof(double));
+        for (k = 0; k < nlines; k++) { ex[k+NG] = rx[k]; ep[k+NG] = rphi[k]; }
+        for (k = NG-1; k >= 0; k--) {
+            ex[k] = ex[k+1] - dxr;
+            ep[k] = 4.0*ep[k+1] - 6.0*ep[k+2] + 4.0*ep[k+3] - ep[k+4];
+        }
+        for (k = NG+nlines; k < ng; k++) {
+            ex[k] = ex[k-1] + dxr;
+            ep[k] = 4.0*ep[k-1] - 6.0*ep[k-2] + 4.0*ep[k-3] - ep[k-4];
+        }
+        gsl_interp_accel *acc = gsl_interp_accel_alloc();
+        gsl_spline *spl = gsl_spline_alloc(gsl_interp_cspline, ng);
+        gsl_spline_init(spl, ex, ep, ng);
+        for (int ii = 0; ii < size_grid; ii++)
+            if (x_grid[ii] >= rx[0] && x_grid[ii] <= rx[nlines-1])
+                phi_grid[ii] = gsl_spline_eval(spl, x_grid[ii], acc);
+        gsl_spline_free(spl); gsl_interp_accel_free(acc); free(ex); free(ep);
+        printf("restart %s: grid spacing %f -> %f, cubic-spline interpolation\n", filename, dxr, dxg);
+    }
+    else
+        for (int ii = 0; ii < size_grid; ii++)
+            if (x_grid[ii] >= rx[0] && x_grid[ii] <= rx[nlines-1])
+                phi_grid[ii] = lin_interp(rx, rphi, x_grid[ii], nlines, 9999);
     free(rx); free(rphi);
 }
 
@@ -1303,6 +1332,7 @@ int main(void) {
 	double alpha_deg, factor_small_grid_parameter=1.0;
 // quantities related to overall current, potential drop or any bump in potential in Debye sheath (not implemented yet)
 	double v_cut, current, v_cutDS = 0.5;
+	double phi0_DSions = 0.0;   /* MP entrance potential the DS ion density was last evaluated with */
 // quantities related to electrostatic potential in the magnetic preasheath / Chodura sheath
 	double *x_grid, *phi_grid;
 // quantities related to electrostatic potential the Debye sheath
@@ -1995,7 +2025,7 @@ i=0;
 		//if (grid_parameter < 0.001)
 		//	grid_parameter = 0.001;
 		make_phigrid(x_grid, phi_grid, size_phigrid, grid_parameter, deltax, N, phi0_init_MP, 1.0, alpha);
-		if (restart_flag && N == 0) load_phi_restart("restart_phi_MP.txt", x_grid, phi_grid, size_phigrid);
+		if (restart_flag && N == 0) load_phi_restart("restart_phi_MP.txt", x_grid, phi_grid, size_phigrid, 0);   /* MP: quasineutral, non-uniform grid */
 		printf("grid_parameter = %f\n", grid_parameter);
 		fprintf(fout, "grid parameter = %f\n", grid_parameter);
 		printf("\t(phi_mp0, phi_ds0, phi_wall) = (%f, %f, %f)\n", phi_grid[0], -0.5*v_cut*v_cut - phi_grid[0], -0.5*v_cut*v_cut);
@@ -2298,7 +2328,7 @@ i=0;
 		else
 			make_phigrid(x_DSgrid, phi_DSgrid, size_phiDSgrid, 0.0, deltaxDS, 0, -phi_grid[0] - 0.5*v_cut*v_cut, 1.0, alpha);
 		if (restart_flag)
-			load_phi_restart("restart_phi_DS.txt", x_DSgrid, phi_DSgrid, size_phiDSgrid);
+			load_phi_restart("restart_phi_DS.txt", x_DSgrid, phi_DSgrid, size_phiDSgrid, 1);
 		printf("At beginning phi_DSgrid[1] = %f, phi_DSgrid[0] = %f\n", phi_DSgrid[1], phi_DSgrid[0]);
 
 		if (gamma_DS >= TINY) {
@@ -2373,6 +2403,7 @@ i=0;
 				sumni_DS_corr[i] = 0.0;
 				sumni_DS_reflected[i] = 0.0;
 			}
+			phi0_DSions = phi_grid[0];
 			for (n=0; n<num_spec; n++) {
 				//printf("n (species index) = %d\n", n);
 				densionDS(alpha, TioverTe[n], &Bohm, ni_DSgrid[n], phi_DSgrid, phi_grid[0], dist_i_GK[n], mu_i[n], U_i[n], vy_i_wall[n], mu_i_op[n], chiM_i[n], twopidmudvy_i[n], size_phiDSgrid, size_mu_i[n], size_U_i[n], size_op_i[n], ni_DS_corr[n], ni_DS_reflected[n]);
@@ -2485,7 +2516,7 @@ i=0;
 				size_neDSgrid = i;
 				printf("size_neDSgrid = %d\n", size_neDSgrid);
 			}
-			if (restart_flag && N_DS == 0 && gamma_DS > SMALLGAMMA) {
+			if (DS_RESTART_CORRECTION && restart_flag && N_DS == 0 && gamma_DS > SMALLGAMMA) {
 				int N_bvp = find_bvp_right_bc("restart_phi_DS.txt", x_DSgrid, size_phiDSgrid);
 				if (N_bvp <= 0 || N_bvp > size_neDSgrid) N_bvp = size_neDSgrid;
 				correct_phi_DS_restart(x_DSgrid, phi_DSgrid, size_phiDSgrid,
@@ -2649,17 +2680,19 @@ i=0;
 				fprintf(fp, "%f\n", sumflux_i);
 				fclose(fp);
 
-				if ( (error_DS[0] < tol_DS[0]) && (error_DS[1] < tol_DS[1]) ) convergence_DS += 1 ;
+				if ( (error_DS[0] < tol_DS[0]) && (error_DS[1] < tol_DS[1])
+				     && (DS_WALL_TOL <= 0.0 || fabs(phi_DSgrid[0] + 0.5*v_cutDS*v_cutDS) < DS_WALL_TOL) ) convergence_DS += 1 ;
 			else convergence_DS = 0;
 			if (convergence_DS == 0 || convergence_MP == 0 || convergence_j == 0) { 
-				printf("phi_DSgrid[0] = %f\n", phi_DSgrid[0]);
+				printf("phi_DSgrid[0] = %f, wall target %f (gap %.2e)\n", phi_DSgrid[0], -0.5*v_cutDS*v_cutDS, phi_DSgrid[0] + 0.5*v_cutDS*v_cutDS);
 				printf("MAX ERROR IS %f\n", error_DS[1]);
 				printf("AVG ERROR IS %f\n", error_DS[0]);
 				//if (ds_solver == 1 && error_DS[1] < 1.1*tol_DS[1]) {
 				if(ds_solver == 1){
 					printf("AT ITERATION = %d, SWITCHING TO NR\n", N);
 					fprintf(fout, "AT ITERATION = %d, SWITCHING TO NR\n", N);
-					static double *jac_y = NULL, *jac_h = NULL;
+					static double *jac_y = NULL, *jac_h = NULL, *dir_h = NULL, *dir_y = NULL;
+					static int have_dir = 0;
 #if NONLOCAL_JAC > 0
 					/* Measure how n_e responds to a localized change in phi, for the Newton Jacobian.
 					 * The perturbations are raised-cosine bumps on NONLOCAL_JAC disjoint blocks of the
@@ -2667,6 +2700,7 @@ i=0;
 					 * Every output of DENSFINORB goes to scratch here: the real arrays (and
 					 * size_neDSgrid) belong to the unperturbed phi and are still needed below. */
 					static double *phi_pert = NULL, *ne_scr = NULL, *ne_ref = NULL, *delta_scr = NULL, *chiM_scr = NULL;
+					static double *ni_ref = NULL, *ni_scr = NULL, *nisp_scr = NULL, *nicorr_scr = NULL, *nirefl_scr = NULL;
 					static double *vy_scr = NULL, *muop_scr = NULL, *chiop_scr = NULL, *dmudvy_scr = NULL;
 					static int jac_ncall = 0, jac_nalloc = 0;
 					if (jac_nalloc != size_phiDSgrid) {
@@ -2675,6 +2709,14 @@ i=0;
 						jac_y = malloc(NONLOCAL_JAC*size_phiDSgrid*sizeof(double));
 						jac_h = malloc(NONLOCAL_JAC*size_phiDSgrid*sizeof(double));
 						phi_pert = malloc(size_phiDSgrid*sizeof(double));
+#if NONLOCAL_JAC_IONS
+						free(ni_ref); free(ni_scr); free(nisp_scr); free(nicorr_scr); free(nirefl_scr);
+						ni_ref = malloc(size_phiDSgrid*sizeof(double));
+						ni_scr = malloc(size_phiDSgrid*sizeof(double));
+						nisp_scr = malloc(size_phiDSgrid*sizeof(double));
+						nicorr_scr = malloc(size_phiDSgrid*sizeof(double));
+						nirefl_scr = malloc(size_phiDSgrid*sizeof(double));
+#endif
 						ne_scr = malloc(size_phiDSgrid*sizeof(double));
 						ne_ref = malloc(size_phiDSgrid*sizeof(double));
 						delta_scr = malloc(size_phiDSgrid*sizeof(double));
@@ -2683,17 +2725,38 @@ i=0;
 						muop_scr = malloc((ZOOM_DS*size_phiDSgrid+1)*sizeof(double));
 						chiop_scr = malloc((ZOOM_DS*size_phiDSgrid+1)*sizeof(double));
 						dmudvy_scr = malloc((ZOOM_DS*size_phiDSgrid+1)*sizeof(double));
+#if NONLOCAL_JAC_STEPDIR
+						free(dir_h); free(dir_y);
+						dir_h = calloc(size_phiDSgrid, sizeof(double));
+						dir_y = malloc(size_phiDSgrid*sizeof(double));
+						have_dir = 0;
+#endif
 						jac_nalloc = size_phiDSgrid; jac_ncall = 0;
 					}
-					if (jac_ncall % NONLOCAL_JAC_EVERY == 0) {
-						double _wj = omp_get_wtime();
-						int kk, jj, sz_scr, sz_ref, op_scr, nvalid, nmasked = 0; double flux_scr, Q_scr;
-						/* Reference density at the unperturbed phi.  ne_DSgrid cannot be used: on the restart
-						 * iteration phi is corrected after it is computed, so it belongs to a different phi,
-						 * and differencing against it would report that offset as a response. */
-						sz_ref = size_neDSgrid;
+					int rebuild = (jac_ncall % NONLOCAL_JAC_EVERY == 0);
+#if NONLOCAL_JAC_IONS
+					/* DS ion density at a given phi, summed over species (local in phi, so cheap). It must use the MP
+					 * entrance potential the DS ion density itself was computed with: phi_grid has been updated by
+					 * the MP step since then, and the new value is inconsistent with phi_DSgrid (NaN on the first call). */
+					#define DS_ION_DENS(phiarr, out) do { int _n, _j; double _B; \
+						for (_j = 0; _j < size_phiDSgrid; _j++) (out)[_j] = 0.0; \
+						for (_n = 0; _n < num_spec; _n++) { \
+							densionDS(alpha, TioverTe[_n], &_B, nisp_scr, (phiarr), phi0_DSions, dist_i_GK[_n], mu_i[_n], U_i[_n], vy_i_wall[_n], mu_i_op[_n], chiM_i[_n], twopidmudvy_i[_n], size_phiDSgrid, size_mu_i[_n], size_U_i[_n], size_op_i[_n], nicorr_scr, nirefl_scr); \
+							for (_j = 0; _j < size_phiDSgrid; _j++) (out)[_j] += nioverne[_n]*nisp_scr[_j]; } } while (0)
+#endif
+					int kk, jj, sz_scr, sz_ref = size_neDSgrid, op_scr, nvalid, nmasked = 0; double flux_scr, Q_scr;
+					/* Reference density at the unperturbed phi.  ne_DSgrid cannot be used: on the restart
+					 * iteration phi is corrected after it is computed, so it belongs to a different phi,
+					 * and differencing against it would report that offset as a response. */
+					if (rebuild || (NONLOCAL_JAC_STEPDIR && have_dir)) {
 						for (jj = 0; jj < size_phiDSgrid; jj++) ne_ref[jj] = ne_DSgrid[jj];
 						DENSFINORB(1.0, 1.0, alpha, size_phiDSgrid, &sz_ref, ne_ref, delta_scr, chiM_scr, x_DSgrid, phi_DSgrid, -1.0, dist_e_GK, mu_e, U_e_DS, size_mu_e, size_vpar_e, 0.0, &flux_scr, &Q_scr, ZOOM_DS, MARGIN_DS, -999.9, vy_scr, muop_scr, chiop_scr, dmudvy_scr, &op_scr, NULL, NULL);
+#if NONLOCAL_JAC_IONS
+						DS_ION_DENS(phi_DSgrid, ni_ref);
+#endif
+					}
+					if (rebuild) {
+						double _wj = omp_get_wtime();
 						for (kk = 0; kk < NONLOCAL_JAC; kk++) {
 							int j0 = 1 + (kk*(size_neDSgrid-1))/NONLOCAL_JAC;
 							int j1 = 1 + ((kk+1)*(size_neDSgrid-1))/NONLOCAL_JAC;
@@ -2709,10 +2772,17 @@ i=0;
 							 * threshold inside DENSFINORB, so it can jump), n_e before and after are not
 							 * comparable: mark those rows, and newguess_NR keeps the local model there. */
 							nvalid = (sz_scr < sz_ref) ? sz_scr : sz_ref;
-							nmasked += size_neDSgrid - nvalid;
+							if (nvalid < size_neDSgrid) nmasked += size_neDSgrid - nvalid;
+#if NONLOCAL_JAC_IONS
+							DS_ION_DENS(phi_pert, ni_scr);
+#endif
 							for (jj = 0; jj < size_phiDSgrid; jj++)
 								jac_y[kk*size_phiDSgrid+jj] = (jj < nvalid && ne_scr[jj] > 0.0)
+#if NONLOCAL_JAC_IONS
+									? ((ne_scr[jj] - ne_ref[jj]) - (ni_scr[jj] - ni_ref[jj]))/NONLOCAL_JAC_EPS : NAN;
+#else
 									? (ne_scr[jj] - ne_ref[jj])/NONLOCAL_JAC_EPS : NAN;
+#endif
 						}
 						printf("nonlocal Jacobian: %d columns measured in %.2f s (%d of %d rows masked)\n",
 						       NONLOCAL_JAC, omp_get_wtime() - _wj, nmasked, NONLOCAL_JAC*size_neDSgrid);
@@ -2724,10 +2794,33 @@ i=0;
 							  fprintf(fj, "\n"); }
 						  fclose(fj); }
 					}
+#if NONLOCAL_JAC_STEPDIR
+					/* Response along the previous Newton direction (dir_h, handed back by newguess_NR).  Near a
+					 * stall the step follows one smooth, domain-wide mode that the local bumps resolve worst,
+					 * and newguess_NR corrects the Jacobian to reproduce this measurement exactly. */
+					if (have_dir) {
+						for (jj = 0; jj < size_phiDSgrid; jj++) {
+							phi_pert[jj] = phi_DSgrid[jj] + NONLOCAL_JAC_EPS*dir_h[jj];
+							ne_scr[jj] = ne_ref[jj];
+						}
+						sz_scr = size_neDSgrid;
+						DENSFINORB(1.0, 1.0, alpha, size_phiDSgrid, &sz_scr, ne_scr, delta_scr, chiM_scr, x_DSgrid, phi_pert, -1.0, dist_e_GK, mu_e, U_e_DS, size_mu_e, size_vpar_e, 0.0, &flux_scr, &Q_scr, ZOOM_DS, MARGIN_DS, -999.9, vy_scr, muop_scr, chiop_scr, dmudvy_scr, &op_scr, NULL, NULL);
+						nvalid = (sz_scr < sz_ref) ? sz_scr : sz_ref;
+#if NONLOCAL_JAC_IONS
+						DS_ION_DENS(phi_pert, ni_scr);
+						for (jj = 0; jj < size_phiDSgrid; jj++)
+							dir_y[jj] = (jj < nvalid && ne_scr[jj] > 0.0) ? ((ne_scr[jj] - ne_ref[jj]) - (ni_scr[jj] - ni_ref[jj]))/NONLOCAL_JAC_EPS : NAN;
+#else
+						for (jj = 0; jj < size_phiDSgrid; jj++)
+							dir_y[jj] = (jj < nvalid && ne_scr[jj] > 0.0) ? (ne_scr[jj] - ne_ref[jj])/NONLOCAL_JAC_EPS : NAN;
+#endif
+					}
+#endif
 					jac_ncall++;
 #endif
 					{ double _wt0 = omp_get_wtime();
-					newguess_NR(x_DSgrid, ne_DSgrid, sumni_DSgrid, phi_DSgrid, size_phiDSgrid, size_neDSgrid, 1.0/(gamma_DS*gamma_DS), v_cutDS, 2.0, weight_DS, ne_DSgrid_corr_delta, ne_DSgrid_corr_chiM, sumni_DS_corr, jac_y, jac_h, NONLOCAL_JAC);
+					newguess_NR(x_DSgrid, ne_DSgrid, sumni_DSgrid, phi_DSgrid, size_phiDSgrid, size_neDSgrid, 1.0/(gamma_DS*gamma_DS), v_cutDS, 2.0, weight_DS, ne_DSgrid_corr_delta, ne_DSgrid_corr_chiM, sumni_DS_corr, jac_y, jac_h, NONLOCAL_JAC, dir_h, have_dir ? dir_y : NULL);
+					have_dir = (dir_h != NULL);
 					printf("newguess_NR (DS) took %.4f s\n", omp_get_wtime() - _wt0); }
 				}
 				else
