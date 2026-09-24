@@ -1107,8 +1107,14 @@ void densfinorb_par(double Ti, double lenfactor, double alpha,
             printf("flow velocity at x=0 = %f\n", flux0 / n_grid[0]);
             printf("flux evaluated at x=0 is %f\theat flux = %f\n", flux0, Qflux0);
         }
-        if ((ic != size_xlim) && (1.0 - n_grid[ic]/n_inf <= margin) && (ic > 0 && phi_grid[ic] > phi_grid[ic-1]) && phi_grid[ic] < 0.0) {
-            printf("ic = %d/%d, size_xlim = %d, margin = %f, condition (< margin?) = %f\n", ic, size_phigrid, size_xlim, margin, 1.0 - n_grid[ic]/n_inf);
+        /* margin >= 1: a fixed end at x = margin (DS_XEND); otherwise stop where n comes within margin of n_inf
+         * on the rising branch below phi = 0 (negative margin: never, run to size_xlim) */
+        int stop_here = (margin >= 1.0)
+            ? ((ic != size_xlim) && (x_grid[ic] >= margin))
+            : ((ic != size_xlim) && (1.0 - n_grid[ic]/n_inf <= margin) && (ic > 0 && phi_grid[ic] > phi_grid[ic-1]) && phi_grid[ic] < 0.0);
+        if (stop_here) {
+            if (margin >= 1.0) printf("ic = %d/%d, size_xlim = %d, fixed end x >= %f (1 - n/n_inf = %f)\n", ic, size_phigrid, size_xlim, margin, 1.0 - n_grid[ic]/n_inf);
+            else printf("ic = %d/%d, size_xlim = %d, margin = %f, condition (< margin?) = %f\n", ic, size_phigrid, size_xlim, margin, 1.0 - n_grid[ic]/n_inf);
             stop = 1;
             *size_ngrid = ic;
             printf("stopping density evaluation at x = %f, density = %f*n_inf\n", x_grid[ic], n_grid[ic]/n_inf);

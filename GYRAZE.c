@@ -1304,7 +1304,7 @@ static int find_bvp_right_bc(const char *filename, double *x_DSgrid, int size_ph
 int main(void) {
 // computation time
 	int MAX_IT, ZOOM_DS, ZOOM_MP, gammaflag;
-	double INITIAL_GRID_PARAMETER, SYS_SIZ, MAXMU, DMU, MAXVPAR, MAXVPAR_I, DVPAR, DVPAR_I, SMALLGAMMA, tol_MP[2], tol_DS[2], tol_current, WEIGHT_MP, WEIGHT_DS, WEIGHT_j, MARGIN_MP, MARGIN_DS, GRIDSIZE_MP, GRIDSIZE_DS; // DXMIN
+	double INITIAL_GRID_PARAMETER, SYS_SIZ, MAXMU, DMU, MAXVPAR, MAXVPAR_I, DVPAR, DVPAR_I, SMALLGAMMA, tol_MP[2], tol_DS[2], tol_current, WEIGHT_MP, WEIGHT_DS, WEIGHT_j, MARGIN_MP, MARGIN_DS, ds_stop, GRIDSIZE_MP, GRIDSIZE_DS; // DXMIN
 
 	clock_t begin_it = clock(); // Finds the start time of the computation
 	double wt_begin_it = omp_get_wtime();
@@ -1423,6 +1423,7 @@ int main(void) {
 			}
 			if (i==6) {
 				MARGIN_MP =  storevals[0]; MARGIN_DS =  storevals[1]; 
+				ds_stop = (DS_XEND > 0.0) ? DS_XEND : MARGIN_DS;   /* what the DS electron density calls stop on (see DS_XEND) */
 			}
 			if (i==7) {
 				ZOOM_MP =  storevals[0]; ZOOM_DS =  storevals[1];
@@ -2467,7 +2468,7 @@ i=0;
 					FILE *fjmc_DS = fopen(jmc_e_DS_path, "w");
 					if (fjmc_DS == NULL)
 						printf("error when opening file %s\n", jmc_e_DS_path);
-					DENSFINORB(1.0, 1.0, alpha, size_phiDSgrid, &size_neDSgrid, ne_DSgrid, ne_DSgrid_corr_delta, ne_DSgrid_corr_chiM, x_DSgrid, phi_DSgrid, -1.0, dist_e_GK, mu_e, U_e_DS, size_mu_e, size_vpar_e, 0.0, &flux_eDS, &garbage, ZOOM_DS, MARGIN_DS, -999.9, vy_e_wall, mu_e_op, chiM_e, twopidmudvy_e, &size_op_e, fmu_DS, fjmc_DS);
+					DENSFINORB(1.0, 1.0, alpha, size_phiDSgrid, &size_neDSgrid, ne_DSgrid, ne_DSgrid_corr_delta, ne_DSgrid_corr_chiM, x_DSgrid, phi_DSgrid, -1.0, dist_e_GK, mu_e, U_e_DS, size_mu_e, size_vpar_e, 0.0, &flux_eDS, &garbage, ZOOM_DS, ds_stop, -999.9, vy_e_wall, mu_e_op, chiM_e, twopidmudvy_e, &size_op_e, fmu_DS, fjmc_DS);
 					if (fmu_DS != NULL) fclose(fmu_DS);
 					if (fjmc_DS != NULL) fclose(fjmc_DS);
 				}
@@ -2511,7 +2512,8 @@ i=0;
 				}
 				i=0;
 				//while (ne_DSgrid[i] < 1.0-MARGIN_DS || i < 5 || phi_DSgrid[i] <= phi_DSgrid[i-1] || phi_DSgrid[i-1] <= phi_DSgrid[i-2] || phi_DSgrid[i-2] <= phi_DSgrid[i-3] || phi_DSgrid[i-3] <= phi_DSgrid[i-4] || phi_DSgrid[i-4] <= phi_DSgrid[i-5] || x_DSgrid[i] <= 4.0 || phi_DSgrid[i] >= 0.0) i++;
-				while (ne_DSgrid[i] < 1.0-MARGIN_DS || phi_DSgrid[i] <= phi_DSgrid[i-1] || phi_DSgrid[i] >= 0.0) i++;
+				if (DS_XEND > 0.0) { while (i < size_phiDSgrid - 1 && x_DSgrid[i] < DS_XEND) i++; }   /* fixed end, as in densfinorb */
+				else while (ne_DSgrid[i] < 1.0-MARGIN_DS || phi_DSgrid[i] <= phi_DSgrid[i-1] || phi_DSgrid[i] >= 0.0) i++;
 				//while (ne_DSgrid[i] < 1.0-MARGIN_DS) i++;
 				size_neDSgrid = i;
 				printf("size_neDSgrid = %d\n", size_neDSgrid);
@@ -2691,8 +2693,12 @@ i=0;
 				if(ds_solver == 1){
 					printf("AT ITERATION = %d, SWITCHING TO NR\n", N);
 					fprintf(fout, "AT ITERATION = %d, SWITCHING TO NR\n", N);
-					static double *jac_y = NULL, *jac_h = NULL, *dir_h = NULL, *dir_y = NULL;
+					static double *jac_y = NULL, *jac_h = NULL, *dir_h = NULL, *dir_y = NULL, *ls_v = NULL;
 					static int have_dir = 0;
+					static double ls_tmodel = 0.0;
+#if DS_LINESEARCH
+					if (ls_v == NULL) ls_v = calloc(size_phiDSgrid, sizeof(double));
+#endif
 #if NONLOCAL_JAC > 0
 					/* Measure how n_e responds to a localized change in phi, for the Newton Jacobian.
 					 * The perturbations are raised-cosine bumps on NONLOCAL_JAC disjoint blocks of the
@@ -2754,7 +2760,7 @@ i=0;
 					 * and differencing against it would report that offset as a response. */
 					if (rebuild || (NONLOCAL_JAC_STEPDIR && have_dir)) {
 						for (jj = 0; jj < size_phiDSgrid; jj++) ne_ref[jj] = ne_DSgrid[jj];
-						DENSFINORB(1.0, 1.0, alpha, size_phiDSgrid, &sz_ref, ne_ref, delta_scr, chiM_scr, x_DSgrid, phi_DSgrid, -1.0, dist_e_GK, mu_e, U_e_DS, size_mu_e, size_vpar_e, 0.0, &flux_scr, &Q_scr, ZOOM_DS, MARGIN_DS, -999.9, vy_scr, muop_scr, chiop_scr, dmudvy_scr, &op_scr, NULL, NULL);
+						DENSFINORB(1.0, 1.0, alpha, size_phiDSgrid, &sz_ref, ne_ref, delta_scr, chiM_scr, x_DSgrid, phi_DSgrid, -1.0, dist_e_GK, mu_e, U_e_DS, size_mu_e, size_vpar_e, 0.0, &flux_scr, &Q_scr, ZOOM_DS, ds_stop, -999.9, vy_scr, muop_scr, chiop_scr, dmudvy_scr, &op_scr, NULL, NULL);
 #if NONLOCAL_JAC_IONS
 						DS_ION_DENS(phi_DSgrid, ni_ref);
 #endif
@@ -2762,6 +2768,18 @@ i=0;
 					if (rebuild) {
 						double _wj = omp_get_wtime();
 						for (kk = 0; kk < NONLOCAL_JAC; kk++) {
+#if NONLOCAL_JAC_BASIS == 1
+							/* Smooth sine modes over the whole n_e grid: zero at the wall (phi is imposed
+							 * there) and at the grid end (so the asymptotic tail is untouched), mutually
+							 * orthogonal, and full amplitude regardless of NONLOCAL_JAC. */
+							int Nb = size_neDSgrid - 1;
+							for (jj = 0; jj < size_phiDSgrid; jj++) {
+								jac_h[kk*size_phiDSgrid+jj] = (Nb > 0 && jj <= Nb)
+									? sin(M_PI*(double)(kk+1)*(double)jj/(double)Nb) : 0.0;
+								phi_pert[jj] = phi_DSgrid[jj] + NONLOCAL_JAC_EPS*jac_h[kk*size_phiDSgrid+jj];
+								ne_scr[jj] = ne_ref[jj];   /* so points the call leaves untouched give zero response */
+							}
+#else
 							int j0 = 1 + (kk*(size_neDSgrid-1))/NONLOCAL_JAC;
 							int j1 = 1 + ((kk+1)*(size_neDSgrid-1))/NONLOCAL_JAC;
 							for (jj = 0; jj < size_phiDSgrid; jj++) {
@@ -2770,8 +2788,9 @@ i=0;
 								phi_pert[jj] = phi_DSgrid[jj] + NONLOCAL_JAC_EPS*jac_h[kk*size_phiDSgrid+jj];
 								ne_scr[jj] = ne_ref[jj];   /* so points the call leaves untouched give zero response */
 							}
+#endif
 							sz_scr = size_neDSgrid;
-							DENSFINORB(1.0, 1.0, alpha, size_phiDSgrid, &sz_scr, ne_scr, delta_scr, chiM_scr, x_DSgrid, phi_pert, -1.0, dist_e_GK, mu_e, U_e_DS, size_mu_e, size_vpar_e, 0.0, &flux_scr, &Q_scr, ZOOM_DS, MARGIN_DS, -999.9, vy_scr, muop_scr, chiop_scr, dmudvy_scr, &op_scr, NULL, NULL);
+							DENSFINORB(1.0, 1.0, alpha, size_phiDSgrid, &sz_scr, ne_scr, delta_scr, chiM_scr, x_DSgrid, phi_pert, -1.0, dist_e_GK, mu_e, U_e_DS, size_mu_e, size_vpar_e, 0.0, &flux_scr, &Q_scr, ZOOM_DS, ds_stop, -999.9, vy_scr, muop_scr, chiop_scr, dmudvy_scr, &op_scr, NULL, NULL);
 							/* Where the perturbation moved the end of the n_e grid (it is set by a density
 							 * threshold inside DENSFINORB, so it can jump), n_e before and after are not
 							 * comparable: mark those rows, and newguess_NR keeps the local model there. */
@@ -2799,7 +2818,7 @@ i=0;
 									phi_pert[jj] = phi_DSgrid[jj] - NONLOCAL_JAC_EPS*jac_h[kk*size_phiDSgrid+jj];
 									ne_scr2[jj] = ne_ref[jj];
 								}
-								DENSFINORB(1.0, 1.0, alpha, size_phiDSgrid, &sz2, ne_scr2, delta_scr, chiM_scr, x_DSgrid, phi_pert, -1.0, dist_e_GK, mu_e, U_e_DS, size_mu_e, size_vpar_e, 0.0, &flux_scr, &Q_scr, ZOOM_DS, MARGIN_DS, -999.9, vy_scr, muop_scr, chiop_scr, dmudvy_scr, &op_scr, NULL, NULL);
+								DENSFINORB(1.0, 1.0, alpha, size_phiDSgrid, &sz2, ne_scr2, delta_scr, chiM_scr, x_DSgrid, phi_pert, -1.0, dist_e_GK, mu_e, U_e_DS, size_mu_e, size_vpar_e, 0.0, &flux_scr, &Q_scr, ZOOM_DS, ds_stop, -999.9, vy_scr, muop_scr, chiop_scr, dmudvy_scr, &op_scr, NULL, NULL);
 #if NONLOCAL_JAC_IONS
 								DS_ION_DENS(phi_pert, ni_scr2);
 #endif
@@ -2835,7 +2854,7 @@ i=0;
 							ne_scr[jj] = ne_ref[jj];
 						}
 						sz_scr = size_neDSgrid;
-						DENSFINORB(1.0, 1.0, alpha, size_phiDSgrid, &sz_scr, ne_scr, delta_scr, chiM_scr, x_DSgrid, phi_pert, -1.0, dist_e_GK, mu_e, U_e_DS, size_mu_e, size_vpar_e, 0.0, &flux_scr, &Q_scr, ZOOM_DS, MARGIN_DS, -999.9, vy_scr, muop_scr, chiop_scr, dmudvy_scr, &op_scr, NULL, NULL);
+						DENSFINORB(1.0, 1.0, alpha, size_phiDSgrid, &sz_scr, ne_scr, delta_scr, chiM_scr, x_DSgrid, phi_pert, -1.0, dist_e_GK, mu_e, U_e_DS, size_mu_e, size_vpar_e, 0.0, &flux_scr, &Q_scr, ZOOM_DS, ds_stop, -999.9, vy_scr, muop_scr, chiop_scr, dmudvy_scr, &op_scr, NULL, NULL);
 						nvalid = (sz_scr < sz_ref) ? sz_scr : sz_ref;
 #if NONLOCAL_JAC_IONS
 						DS_ION_DENS(phi_pert, ni_scr);
@@ -2850,9 +2869,122 @@ i=0;
 					jac_ncall++;
 #endif
 					{ double _wt0 = omp_get_wtime();
-					newguess_NR(x_DSgrid, ne_DSgrid, sumni_DSgrid, phi_DSgrid, size_phiDSgrid, size_neDSgrid, 1.0/(gamma_DS*gamma_DS), v_cutDS, 2.0, weight_DS, ne_DSgrid_corr_delta, ne_DSgrid_corr_chiM, sumni_DS_corr, jac_y, jac_h, NONLOCAL_JAC, dir_h, have_dir ? dir_y : NULL);
+					newguess_NR(x_DSgrid, ne_DSgrid, sumni_DSgrid, phi_DSgrid, size_phiDSgrid, size_neDSgrid, 1.0/(gamma_DS*gamma_DS), v_cutDS, 2.0, weight_DS, ne_DSgrid_corr_delta, ne_DSgrid_corr_chiM, sumni_DS_corr, jac_y, jac_h, NONLOCAL_JAC, dir_h, have_dir ? dir_y : NULL, ls_v, &ls_tmodel);
 					have_dir = (dir_h != NULL);
 					printf("newguess_NR (DS) took %.4f s\n", omp_get_wtime() - _wt0); }
+#if DS_LINESEARCH == 1 && NONLOCAL_JAC > 0
+					/* Line search along the weakest singular vector (ls_v, from newguess_NR). The LM solve
+					 * suppresses that mode by ~lambda^2/s relative to Newton and s falls to ~1e-3 at a stall,
+					 * so the Newton step cannot traverse it however long it is allowed to be. Its amplitude is
+					 * chosen here from true residual evaluations instead: the measured d(ne-ni)/dphi that the
+					 * Jacobian is built from is least reliable in exactly this mode, and the convergence test
+					 * is on the max residual, which is not what the linear solve minimizes.
+					 * The objective is therefore error_DS[1] (the max), evaluated, not modelled. */
+					{
+						double lsmax = 0.0;
+						for (jj = 0; jj < size_phiDSgrid; jj++) lsmax = fmax(lsmax, fabs(ls_v[jj]));
+						if (lsmax > 0.0) {
+							double _wls = omp_get_wtime();
+							double err_ls[2], bestE = 0.0, bestt = 0.0;
+							int nev = 0, sgn = 0, sg;
+							/* Evaluate the max Poisson residual at phi_DSgrid + t*ls_v. */
+							#define DS_LS_EVAL(t, eout) do { \
+								for (jj = 0; jj < size_phiDSgrid; jj++) phi_pert[jj] = phi_DSgrid[jj] + (t)*ls_v[jj]; \
+								sz_scr = size_neDSgrid; \
+								DENSFINORB(1.0, 1.0, alpha, size_phiDSgrid, &sz_scr, ne_scr, delta_scr, chiM_scr, x_DSgrid, phi_pert, -1.0, dist_e_GK, mu_e, U_e_DS, size_mu_e, size_vpar_e, 0.0, &flux_scr, &Q_scr, ZOOM_DS, ds_stop, -999.9, vy_scr, muop_scr, chiop_scr, dmudvy_scr, &op_scr, NULL, NULL); \
+								DS_ION_DENS(phi_pert, ni_scr); \
+								error_Poisson((eout), x_DSgrid, ne_scr, ni_scr, nioverne, phi_pert, size_phiDSgrid, sz_scr, 1.0/(gamma_DS*gamma_DS)); \
+								nev++; } while (0)
+							DS_LS_EVAL(0.0, err_ls);
+							bestE = err_ls[1];
+							double E0 = bestE, tprobe;
+							/* Bracket the scale: try both signs at DS_LS_T0 and, if neither helps, quarter the
+							 * amplitude and try again. The mode needs an amplitude set by the feature it has to
+							 * build, which may be either side of DS_DPHIMAX, so search down as well as up. */
+							for (tprobe = DS_LS_T0; tprobe >= DS_LS_TMIN && sgn == 0 && nev < DS_LS_MAXEVAL; tprobe /= 4.0) {
+								for (sg = -1; sg <= 1; sg += 2) {   /* which way the mode has to move is not known */
+									DS_LS_EVAL(sg*tprobe, err_ls);
+									if (err_ls[1] < bestE) { bestE = err_ls[1]; bestt = sg*tprobe; sgn = sg; }
+								}
+							}
+							/* Keep doubling while it still helps: the amplitude needed is set by the size of
+							 * the feature the mode has to build, not by DS_DPHIMAX. */
+							while (sgn != 0 && nev < DS_LS_MAXEVAL && fabs(2.0*bestt) <= DS_LS_TMAX) {
+								double tt = 2.0*bestt;
+								DS_LS_EVAL(tt, err_ls);
+								if (err_ls[1] < bestE) { bestE = err_ls[1]; bestt = tt; }
+								else break;
+							}
+							if (bestt != 0.0)
+								for (jj = 0; jj < size_phiDSgrid; jj++) phi_DSgrid[jj] += bestt*ls_v[jj];
+							printf("NR: line search along weakest mode: t = %g, max residual %f -> %f (%d evaluations, %.1f s)\n",
+							       bestt, E0, bestE, nev, omp_get_wtime() - _wls);
+							#undef DS_LS_EVAL
+						}
+					}
+#endif
+#if DS_LINESEARCH == 2 && NONLOCAL_JAC > 0
+					/* Diagnostic probe: walk the weak mode out to the amplitude the linear model asks for
+					 * (ls_tmodel = |u^T F|/s, converted to ls_v's max-1 units) and print the true max residual
+					 * at each. The model says most of the residual lives in this mode; a probe at 0.01 said
+					 * moving along it makes things worse. If the residual falls near the model amplitude the
+					 * model is right and the trust region is the whole problem; if it rises monotonically the
+					 * mode is an artifact of the 12-direction Jacobian and the solver is chasing a fiction. */
+					{
+						double lsmax = 0.0;
+						for (jj = 0; jj < size_phiDSgrid; jj++) lsmax = fmax(lsmax, fabs(ls_v[jj]));
+						static int ls_ncall = 0;
+						ls_ncall++;
+						if (lsmax > 0.0 && isfinite(ls_tmodel) && ls_tmodel != 0.0 && ls_ncall > DS_LS_SKIP) {
+							double _wls = omp_get_wtime();
+							double err_ls[2], E0, bestE, bestt = 0.0, tm = fabs(ls_tmodel);
+							double _lsin = 0.0; int _lsix = -1, _lsend = 0;
+							for (jj = 0; jj < size_phiDSgrid; jj++) if (ls_v[jj] != 0.0) _lsend = jj;
+							int nev = 0, q, sg;
+							/* Absolute amplitudes, geometric, plus the model's own amplitude capped at
+							 * DS_LS_PROBE_CAP. Reported, never applied: the point is to measure whether this
+							 * mode can reduce the residual, and applying a probe would move the state the
+							 * next probe is meant to measure. */
+							static const double amp[4] = {0.0005, 0.002, 0.008, 0.03};
+							#define DS_LS_EVAL(t, eout) do { \
+								for (jj = 0; jj < size_phiDSgrid; jj++) phi_pert[jj] = phi_DSgrid[jj] + (t)*ls_v[jj]; \
+								sz_scr = size_neDSgrid; \
+								DENSFINORB(1.0, 1.0, alpha, size_phiDSgrid, &sz_scr, ne_scr, delta_scr, chiM_scr, x_DSgrid, phi_pert, -1.0, dist_e_GK, mu_e, U_e_DS, size_mu_e, size_vpar_e, 0.0, &flux_scr, &Q_scr, ZOOM_DS, ds_stop, -999.9, vy_scr, muop_scr, chiop_scr, dmudvy_scr, &op_scr, NULL, NULL); \
+								DS_ION_DENS(phi_pert, ni_scr); \
+								error_Poisson((eout), x_DSgrid, ne_scr, ni_scr, nioverne, phi_pert, size_phiDSgrid, sz_scr, 1.0/(gamma_DS*gamma_DS)); \
+								{ double _dx = x_DSgrid[1]-x_DSgrid[0], _ivg = 1.0/(gamma_DS*gamma_DS); int _i, _hi = _lsend-DS_LS_EDGE_SKIP; \
+								  if (_hi > sz_scr-1) _hi = sz_scr-1; \
+								  _lsin = 0.0; _lsix = -1; \
+								  for (_i = 1; _i < _hi; _i++) { \
+								      double _pp = (phi_pert[_i+1] - 2.0*phi_pert[_i] + phi_pert[_i-1])/(_dx*_dx); \
+								      double _r = fabs((-ne_scr[_i] + _pp*_ivg)/ni_scr[_i] + 1.0); \
+								      if (_r > _lsin) { _lsin = _r; _lsix = _i; } } } \
+								nev++; } while (0)
+							double tcap = (tm > DS_LS_PROBE_CAP) ? DS_LS_PROBE_CAP : tm;
+							DS_LS_EVAL(0.0, err_ls); E0 = bestE = _lsin;
+							printf("NR: weak-mode probe, model amplitude t_m = %.4g, probing to %.4g; mode ends at i = %d (x = %.3f), max taken below x = %.3f\n",
+							       ls_tmodel, tcap, _lsend, x_DSgrid[_lsend], x_DSgrid[_lsend-DS_LS_EDGE_SKIP]);
+							printf("NR:    t = %11.4g   interior max %.6f at x = %.3f | global %.6f at x = %.3f | avg %.6f\n",
+							       0.0, _lsin, (_lsix >= 0) ? x_DSgrid[_lsix] : -1.0,
+							       err_ls[1], (error_Poisson_imax >= 0) ? x_DSgrid[error_Poisson_imax] : -1.0, err_ls[0]);
+							for (q = 0; q < 5; q++) {
+								double a = (q < 4) ? amp[q] : tcap;
+								if (q == 4 && tcap <= amp[3]) continue;   /* already covered */
+								for (sg = -1; sg <= 1; sg += 2) {
+									double tt = sg*a;
+									DS_LS_EVAL(tt, err_ls);
+									printf("NR:    t = %11.4g   interior max %.6f at x = %.3f | global %.6f at x = %.3f | avg %.6f\n",
+									       tt, _lsin, (_lsix >= 0) ? x_DSgrid[_lsix] : -1.0,
+									       err_ls[1], (error_Poisson_imax >= 0) ? x_DSgrid[error_Poisson_imax] : -1.0, err_ls[0]);
+									if (_lsin < bestE) { bestE = _lsin; bestt = tt; }
+								}
+							}
+							printf("NR: weak-mode probe: best t = %.4g would give %.6f (from %.6f), NOT applied (%d evaluations, %.1f s)\n",
+							       bestt, bestE, E0, nev, omp_get_wtime() - _wls);
+							#undef DS_LS_EVAL
+						}
+					}
+#endif
 				}
 				else
 					{ double _wt0 = omp_get_wtime();
@@ -2941,7 +3073,8 @@ i=0;
 			
 			i=0;
 			//while (ne_DSgrid[i] < 1.0 - MARGIN_DS || i < 5 || phi_DSgrid[i] <= phi_DSgrid[i-1] || phi_DSgrid[i-1] <= phi_DSgrid[i-2] || phi_DSgrid[i-2] <= phi_DSgrid[i-3] || phi_DSgrid[i-3] <= phi_DSgrid[i-4] || phi_DSgrid[i-4] <= phi_DSgrid[i-5] || x_DSgrid[i] <= 4.0 || phi_DSgrid[i] >= 0.0) i++;
-			while (ne_DSgrid[i] < 1.0 - MARGIN_DS || phi_DSgrid[i] <= phi_DSgrid[i-1] || phi_DSgrid[i] >= 0.0) i++;
+			if (DS_XEND > 0.0) { while (i < size_phiDSgrid - 1 && x_DSgrid[i] < DS_XEND) i++; }   /* fixed end, as in densfinorb */
+				else while (ne_DSgrid[i] < 1.0 - MARGIN_DS || phi_DSgrid[i] <= phi_DSgrid[i-1] || phi_DSgrid[i] >= 0.0) i++;
 			//while (ne_DSgrid[i] < 1.0 - MARGIN_DS) i++;
 			size_neDSgrid = i;
 			printf("size_neDSgrid = %d\n", size_neDSgrid);

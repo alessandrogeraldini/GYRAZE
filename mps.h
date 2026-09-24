@@ -15,7 +15,15 @@
 #define NONLOCAL_JAC 12
 // DS Newton (ds solver 1): number of localized phi perturbations used to measure the nonlocal
 // electron response dne/dphi; 0 = local (tridiagonal) Jacobian, as before
-#define NONLOCAL_JAC_EPS 0.001
+#define NONLOCAL_JAC_BASIS 0
+// shape of the NONLOCAL_JAC perturbations. 0 = raised-cosine bumps on disjoint blocks (localized).
+// 1 = smooth sine modes sin(pi*(k+1)*j/N) spanning the whole n_e grid, vanishing at the wall and at the
+// grid end. Both bases are orthogonal, which is what the rank-1 corrections below need. The disjoint
+// bumps narrow as NONLOCAL_JAC grows, so the response per column shrinks while the density noise does
+// not, and the Jacobian's smallest singular value sits at that noise floor (~0.06 measured) -- a mode
+// indistinguishable from measurement error, which a probe showed the solver cannot actually move along.
+// The sine modes measure that smooth subspace directly, at full amplitude, for the same cost per column.
+#define NONLOCAL_JAC_EPS 0.002
 // amplitude of those perturbations
 #define NONLOCAL_JAC_EVERY 1
 // reuse a measured response for this many DS Newton steps before measuring it again
@@ -37,10 +45,101 @@
 // DS Newton (ds solver 1): Levenberg-Marquardt damping of the linear solve; singular values of the Jacobian
 // well above LM_LAMBDA keep the full Newton step, the near-singular smooth mode (0.02-0.16 in the cases
 // looked at, next one ~1) is damped. 0 = plain Newton (LU solve)
+#define LM_LAMBDA_END 0.0
+// LM damping used once the wall is within DS_WALL_TOL of its target (the continuation is then over and what
+// is left lives in the near-singular mode): smaller than LM_LAMBDA lets that mode move. 0 = keep LM_LAMBDA
+#define DS_LINESEARCH 0
+// 1 = after each DS Newton step, search along the Jacobian's weakest singular vector using true residual
+// 2 = diagnostic: probe that mode out to the amplitude the linear model asks for and print the whole
+// curve. The model claims a step of |u^T F|/s there removes most of the residual while a probe at 0.01
+// made it worse; only an evaluation at the model's own amplitude can say which is right. Original note:
+// after each DS Newton step, search along the Jacobian's weakest singular vector using true residual
+// evaluations. LM damps that mode by ~s/lambda^2 relative to Newton, and at a stall s falls to ~1e-3, so
+// the step cannot traverse it; the amplitude is set by evaluating the residual rather than by the
+// linearization, whose measured d(ne-ni)/dphi is least reliable in exactly that mode. 0 = off
+#define DS_LS_T0 0.01
+// first amplitude probed, as max |dphi| along the mode (deliberately above DS_DPHIMAX: the point is to
+// move further along this one direction than the trust region allows, with an evaluation to justify it)
+#define DS_LS_TMAX 0.08
+// largest amplitude the search may reach by doubling
+#define DS_LS_TAPER 0
+// number of grid points over which the weak-mode vector is tapered to zero before the n_e grid end, so a
+// step along it leaves the asymptotic tail alone. 0 = no taper. The taper injects curvature of order
+// amplitude/(DS_LS_TAPER*dx)^2 right at the edge, which is a residual the probe would then measure
+// instead of the mode's real effect -- so the diagnostic probe runs untapered.
+#define DS_LS_EDGE_SKIP 3
+// grid points excluded on the inner side of the join, where the weak-mode vector falls to zero and the
+// perturbed phi meets the unchanged asymptotic tail. That kink dominates the max however small the step
+// (|t| = 5e-4 put it at x = 5.93, 0.0228, against 0.0141 at x = 4.17), so the probe measures the mode's
+// effect below it. Counted from the last nonzero entry of the mode, NOT from the end of the n_e grid:
+// the grid is resized by DENSFINORB under perturbation and the join does not sit at a fixed offset.
+#define DS_LS_PROBE_CAP 0.05
+// largest |t| the diagnostic probe (DS_LINESEARCH 2) will try. The orbit integration aborts with
+// "more than one maximum" somewhere between 0.098 and 0.196, so the model amplitude itself (~0.1) is
+// not always reachable; the probe is capped and reports how far it got.
+#define DS_LS_SKIP 3
+// diagnostic probe: skip this many DS Newton calls first, so it measures the plateau rather than the
+// restart transient. The earlier probe measured the transient by accident and its weak mode is a
+// different, noise-dominated one (s ~ 0.06) from the plateau's (s ~ 0.17, unchanged by NONLOCAL_JAC_EPS)
+#define DS_LS_TMIN 1e-4
+// smallest amplitude probed: if neither sign helps at DS_LS_T0 the scale is quartered down to this before
+// giving up, since the useful amplitude may be well below DS_DPHIMAX rather than above it
+#define DS_LS_MAXEVAL 9
+// most density evaluations spent on the search per Newton step (1 baseline + probes)
 #define DS_RESTART_CORRECTION 0
 // on a restart whose wall potential differs from the new target: 1 = correct the restart phi with a
 // linearized BVP solve before the first DS iteration (correct_phi_DS_restart); 0 = start from the restart
 // phi unchanged and let the DS solver move the wall gradually
+#define DS_MINIMAX 0
+// DS Newton: target the max residual, which is what convergence is tested on, instead of the rms.
+// (a) Before the damped solve, weight row i by sqrt(w_i), w_i = max(DS_MINIMAX_WFLOOR, (|r_i|/max|r|)^(P-2)),
+//     so the LM damping suppresses directions that only serve rows far from the max rather than the ones
+//     fixing it. The system is square, so this changes the step only through the damping (an undamped
+//     Newton step is weighting-invariant).
+// (b) Accept/reject on max|r| instead of the rms, with DS_MINIMAX_MERIT_TOL.
+// Solver-free runs at 3.25 (MP fixed) found the plateau is a least-squares optimum (a Gauss-Newton step
+// moved the rms 0.2%) while a max-targeted fit lowered max|r| 0.0139 -> 0.0132 at the cost of +5% rms,
+// which the rms merit test (DS_MERIT_TOL 3%) would reject. 0 = rms objective as before.
+#define DS_SLP 1
+// DS Newton endgame (wall within DS_WALL_TOL of its target): take the step from a linear program that
+// minimises the max of the linearised relative Poisson residual, r_i(d) = (-F_i + (J d)_i) / (gamma^2 ni),
+// over a box trust region, with the mean over error_Poisson's rows capped and a cap on second differences
+// of the step. This targets the convergence test (the max) directly; LM minimises a 2-norm, and in this
+// square system row weights change the step only through the damping (DS_MINIMAX, which did not work).
+// Solver-free, the same LP took max|r| 0.0139 -> 0.0115 in one step at 3.25. Needs GLPK (-lglpk).
+// The wall approach still uses LM. Merit test on the max (DS_MINIMAX_MERIT_TOL). 0 = off.
+#define DS_SLP_DELTA 0.002
+// trust region, max |dphi| per step (~0.0023 is where the linearisation was seen to fail); scaled by the
+// accept/reject logic's alpha/weight, so a rejected step halves it
+#define DS_SLP_TAPER 1.0
+// the bound tapers linearly to 0 over this distance before the last unknown, so the tail join stays put
+#define DS_SLP_SMOOTH 2e-4
+// cap on |d_{j-1} - 2 d_j + d_{j+1}|: forbids grid-scale zigzag (the needed change is ~2e-5)
+#define DS_SLP_AVGCAP 0.009
+// linearised mean |r| over error_Poisson's rows must stay below this (tol_DS[0] = 0.01). When the current
+// mean is above it, the LP instead minimises the mean with the max held (phase A), so a zero step is always
+// feasible; once the mean is under the cap it minimises the max (phase B).
+#if DS_SLP && !NR_SAFESTEP
+#error "DS_SLP needs NR_SAFESTEP 1 (it uses the accept/reject logic for its trust region)"
+#endif
+#define DS_MINIMAX_P 10.0
+#define DS_MINIMAX_WFLOOR 1e-3
+#define DS_MINIMAX_MERIT_TOL 0.005
+// fractional rise in max|r| rejected. The max sits in the interior (x ~ 4), so the n_e-grid resize jitter
+// that DS_MERIT_TOL allows for in the rms does not reach it; run-to-run scatter is ~1e-5.
+#define DS_MERIT_TOL 0.03
+// fractional rise in the rms residual that counts as a step worth rejecting. Not zero: the rms is taken
+// over the n_e grid, whose size moves by a point or so each iteration, and changing the sample shifts it
+// by a few tenths of a percent on its own. Measured scale: run-to-run scatter ~1e-5, resize jitter ~0.7%,
+// a genuinely bad step (lambda = 0.1 at the 3.25 plateau) +176%. 3% sits well clear of both ends.
+#define DS_XEND 6.3
+// End the DS n_e grid at the first point with x >= DS_XEND, instead of where n_e first comes within MARGIN_DS
+// of n_inf on the rising branch. 0 = the density threshold, as before. That threshold sits on a knife edge:
+// near its natural end the deficit 1 - n_e/n_inf is ~0.0019 (tail phi ~ -1.3e-3 plus loss-cone depletion), and
+// n_inf can itself sit ~0.2% above the far-field density, so a 1e-4 shift at a restart moved the end from
+// x ~ 6.5 to x ~ 16.6, and in steady state the grid length locked into the bump/dip limit cycle (67 <-> 71
+// points at 3.25). x = 9 is about where MARGIN_DS = 0.0005 stops on the 3.25 plateau. Handed to densfinorb(_par)
+// through its margin argument: a margin >= 1 means "stop at this x" (a negative one still means "don't stop").
 #define DS_WALL_TOL 1e-3
 // the DS only counts as converged once its wall potential is within this of -0.5 v_cutDS^2 (<= 0: no check)
 #define MUGAUSSSPLINE 0
@@ -56,9 +155,10 @@ struct distfuncDKGK { // contains the distribution function on a 2D grid and the
 
 double tophat(double x1, double x2, double x); 
 void newguess(double *x_grid, double* ne_grid, double *ni, double* phi_grid,int p_size, int size_ngrid, double lambdaDoverl, double v_cutDS, double pfac, double weight); // gsl_permutation *p, gsl_matrix *m);
-void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_grid, int size_phigrid, int size_ngridin, double invgammasq, double v_cutDS, double pfac, double weight, double *ne_corr_delta, double *ne_corr_chiM, double *ni_corr, double *jac_y, double *jac_h, int jac_K, double *dir_h, double *dir_y);
+void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_grid, int size_phigrid, int size_ngridin, double invgammasq, double v_cutDS, double pfac, double weight, double *ne_corr_delta, double *ne_corr_chiM, double *ni_corr, double *jac_y, double *jac_h, int jac_K, double *dir_h, double *dir_y, double *ls_v, double *ls_tmodel);
 void correct_phi_DS_restart(double *x_DSgrid, double *phi_DSgrid, int size_phiDSgrid, double invgammasq, double v_cutDS, double *ne_DSgrid, double *ne_DSgrid_corr_delta, double *ne_DSgrid_corr_chiM, double *ni_corr, int N_bvp);
 void newvcut(double *v_cut, double v_cutDS, double u_i, double u_e, double current, double error_current, double weight);
+extern int error_Poisson_imax;   /* grid index of the largest residual from the last error_Poisson call */
 void error_Poisson(double *error, double *x_grid, double *ne_grid, double *ni_grid, double *nioverne, double *phi_grid, int size_phigrid, int size_ngrid, double invgammasq);
 void denszeroorb(double charge, double TeovTs, double *phi,double *n_grid, int p_size, double *Phi_e_point, double *Qe_point, double **distfunc, double *vpar, double *mu, int size_vpar, int size_mu, double *vpar_cut_lookup, double gamma, double *x_grid, double *n_inf); 
 double *linetodata(char line[], int lenline, int *size);

@@ -48,7 +48,11 @@ test_DS: test_DS.o denscalc.o densfinorb_par.o otherfuncs.o
 
 test_ion_DS: test_ion_DS.o denscalc.o densfinorb_par.o otherfuncs.o
 
-densfinorb_par.o: densfinorb_par.c
+# mps.h holds the compile-time switches; without this every object silently keeps the
+# values it was built with when only the header changes.
+GYRAZE.o denscalc.o densfinorb_par.o potupdate.o otherfuncs.o test_DS.o test_ion_DS.o: mps.h
+
+densfinorb_par.o: densfinorb_par.c mps.h
 	$(CC) $(CFLAGS) $(OMPFLAG) -c -o $@ $<
 
 .PHONY: clean

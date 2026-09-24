@@ -11,6 +11,9 @@
 #include <gsl/gsl_errno.h>
 #include <gsl/gsl_linalg.h>
 #include <gsl/gsl_blas.h>
+#if DS_SLP
+#include <glpk.h>
+#endif
 
 /* 
 	CALCULATE THE NEW TOTAL POTENTIAL DROP ACROSS THE COMBINED MAGNETIC PRESHEATH AND DEBYE SHEATH
@@ -41,6 +44,8 @@ void newvcut(double *v_cut, double v_cutDS, double u_i, double u_e, double curre
 /* 
 	CALCULATE THE ERROR IN POISSON'S EQUATION OR QUASINEUTRALITY (if invgammasq = 0)
 */
+int error_Poisson_imax = -1;
+
 void error_Poisson(double *error, double *x_grid, double *ne_grid, double *ni_grid, double *nioverne, double *phi_grid, int size_phigrid, int size_ngrid, double invgammasq) {
 	int i;
 	double *phip, *phipp;
@@ -65,6 +70,7 @@ void error_Poisson(double *error, double *x_grid, double *ne_grid, double *ni_gr
 	// Calculate the residual of Poisson's/quasineutrality equation
 	res = 0.0;
 	devbig = dev = 0.0;
+	error_Poisson_imax = -1;
 	for (i=size_ngrid-1; i>=0; i--)  {
 		//if (i==size_ngrid-1)	printf("gamma^-2 x phi phipp ne ni err \n");
 		//printf("%f %f %f %f %f %f %f\n", invgammasq, x_grid[i], phi_grid[i], phipp[i], ne_grid[i], ni_grid[i], (-ne_grid[i] + phipp[i]*invgammasq)/ni_grid[i] + 1.0);
@@ -74,7 +80,7 @@ void error_Poisson(double *error, double *x_grid, double *ne_grid, double *ni_gr
 			//dev = fabs((-ne_grid[i] + phipp[i]*invgammasq) + ni_grid[i]);
 			//res += fabs((-ne_grid[i] + phipp[i]*invgammasq) + ni_grid[i]);
 			if (dev > devbig)  {
-				devbig = dev; 
+				devbig = dev; error_Poisson_imax = i; 
 				//printf("index corresponding to largest error = %d\tposition =%f\n", i, x_grid[i]);
 			}
 		}
@@ -430,11 +436,111 @@ static void lm_solve(const gsl_matrix *U, const gsl_matrix *V, const gsl_vector 
 	gsl_vector_free(c);
 }
 
+#if DS_SLP
+/* Endgame DS step by linear programming (DS_SLP). With r_i(d) = s_i (-F_i + (J d)_i) the linearised relative
+ * Poisson residual after a step d (s_i = 1/(gamma^2 ni); F_vec holds -F, as newguess_NR builds it), solve
+ *
+ *     minimise t   s.t.  -t <= r_i(d) <= t            every row
+ *                        a_i >= |r_i(d)|,  sum_{i<navg} a_i <= avgcap * navg     (error_Poisson's mean)
+ *                        |d_j| <= bound_j                                         (trust region)
+ *                        |d_{j-1} - 2 d_j + d_{j+1}| <= smooth
+ *
+ * That LP is infeasible when the current mean is above avgcap and the trust region is too small to bring
+ * it under the cap in one step (then nothing was solved and the LM step was kept). So in that case the LP
+ * is phase A instead: minimise the mean, with the max held at or below its current value (t <= max_i |r_i(0)|).
+ * d = 0 satisfies every constraint of either phase, so the LP is always feasible. *phase is 1 (A) or 2.
+ *
+ * Returns 1 and fills d (and the predicted max t and mean) on an optimal solution, 0 otherwise. */
+static int slp_solve(const gsl_matrix *Jc, const double *Fneg, const double *sc, int n, int navg,
+                     const double *bound, double smooth, double avgcap, double *d, double *tpred, double *apred,
+                     int *phase)
+{
+	int i, j, k, r = 0, ok;
+	double m0 = 0.0, a0 = 0.0;                         /* max and mean of |r_i| at d = 0 */
+	for (i = 0; i < n; i++) m0 = fmax(m0, fabs(sc[i] * Fneg[i]));
+	for (k = 0; k < navg; k++) a0 += fabs(sc[k] * Fneg[k]);
+	a0 /= navg;
+	*phase = (a0 > avgcap) ? 1 : 2;
+	const int ct = n + 1, ca = n + 2;                  /* 1-based columns: d_1..d_n, t, a_1..a_n */
+	size_t cap = (size_t)4 * n * (n + 1) + (size_t)navg + (size_t)6 * n + 16, ne = 0;
+	int *ia = malloc((cap + 1) * sizeof(int)), *ja = malloc((cap + 1) * sizeof(int));
+	double *ar = malloc((cap + 1) * sizeof(double));
+	glp_prob *lp = glp_create_prob();
+	glp_set_obj_dir(lp, GLP_MIN);
+	glp_add_cols(lp, 2 * n + 1);
+	for (j = 0; j < n; j++) {
+		if (bound[j] > 0.0) glp_set_col_bnds(lp, j + 1, GLP_DB, -bound[j], bound[j]);
+		else                glp_set_col_bnds(lp, j + 1, GLP_FX, 0.0, 0.0);
+	}
+	if (*phase == 1) {                                 /* minimise the mean, max held */
+		glp_set_col_bnds(lp, ct, GLP_DB, 0.0, m0);
+		for (k = 0; k < navg; k++) glp_set_obj_coef(lp, ca + k, 1.0 / navg);
+	}
+	else {                                             /* minimise the max, mean capped */
+		glp_set_col_bnds(lp, ct, GLP_LO, 0.0, 0.0);
+		glp_set_obj_coef(lp, ct, 1.0);
+	}
+	for (k = 0; k < n; k++) glp_set_col_bnds(lp, ca + k, GLP_LO, 0.0, 0.0);
+	glp_add_rows(lp, 4 * n + 1 + 2 * (n - 2));
+	for (i = 0; i < n; i++) {
+		double c = sc[i] * Fneg[i];                    /* r_i = s_i (J d)_i - c */
+		int sgn, col;
+		for (col = 0; col < 2; col++) {                /* against t, then against a_i */
+			for (sgn = 1; sgn >= -1; sgn -= 2) {       /* +r_i <= .. and -r_i <= .. */
+				r++;
+				glp_set_row_bnds(lp, r, GLP_UP, 0.0, sgn * c);
+				for (j = 0; j < n; j++) {
+					double v = gsl_matrix_get(Jc, i, j);
+					if (v != 0.0) { ne++; ia[ne] = r; ja[ne] = j + 1; ar[ne] = sgn * sc[i] * v; }
+				}
+				ne++; ia[ne] = r; ja[ne] = (col == 0) ? ct : ca + i; ar[ne] = -1.0;
+			}
+		}
+	}
+	r++;
+	if (*phase == 1) glp_set_row_bnds(lp, r, GLP_FR, 0.0, 0.0);
+	else             glp_set_row_bnds(lp, r, GLP_UP, 0.0, avgcap * navg);
+	for (k = 0; k < navg; k++) { ne++; ia[ne] = r; ja[ne] = ca + k; ar[ne] = 1.0; }
+	for (j = 1; j < n - 1; j++) {
+		int sgn;
+		for (sgn = 1; sgn >= -1; sgn -= 2) {
+			r++;
+			glp_set_row_bnds(lp, r, GLP_UP, 0.0, smooth);
+			ne++; ia[ne] = r; ja[ne] = j;     ar[ne] =  1.0 * sgn;
+			ne++; ia[ne] = r; ja[ne] = j + 1; ar[ne] = -2.0 * sgn;
+			ne++; ia[ne] = r; ja[ne] = j + 2; ar[ne] =  1.0 * sgn;
+		}
+	}
+	glp_load_matrix(lp, (int)ne, ia, ja, ar);
+	glp_scale_prob(lp, GLP_SF_AUTO);
+	glp_smcp parm;
+	glp_init_smcp(&parm);
+	parm.msg_lev = GLP_MSG_OFF;
+	parm.presolve = GLP_ON;
+	ok = (glp_simplex(lp, &parm) == 0 && glp_get_status(lp) == GLP_OPT);
+	if (ok) {                                          /* predicted residuals from J d itself (in phase A */
+		double sa = 0.0;                               /* t is only a bound, and a_i >= |r_i| is not tight) */
+		for (j = 0; j < n; j++) d[j] = glp_get_col_prim(lp, j + 1);
+		*tpred = 0.0;
+		for (i = 0; i < n; i++) {
+			double ri = -sc[i] * Fneg[i];
+			for (j = 0; j < n; j++) ri += sc[i] * gsl_matrix_get(Jc, i, j) * d[j];
+			*tpred = fmax(*tpred, fabs(ri));
+			if (i < navg) sa += fabs(ri);
+		}
+		*apred = sa / navg;
+	}
+	glp_delete_prob(lp);
+	free(ia); free(ja); free(ar);
+	return ok;
+}
+#endif
+
 void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_grid,
                  int size_phigrid, int size_ngridin, double invgammasq, double v_cutDS,
                  double pfac, double weight,
                  double *ne_corr_delta, double *ne_corr_chiM, double *ni_corr,
-                 double *jac_y, double *jac_h, int jac_K, double *dir_h, double *dir_y)
+                 double *jac_y, double *jac_h, int jac_K, double *dir_h, double *dir_y, double *ls_v, double *ls_tmodel)
 {
 	int i, j, k, s;
 	int size_ngrid = size_ngridin;
@@ -576,8 +682,15 @@ void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_g
 	 * that phi and halve the step. The step is also trust-region limited (see below), since the
 	 * local Jacobian is near-singular for smooth modes where phi approaches 0. */
 	static double *phi_prev = NULL, *F_prev = NULL, E_prev, alpha_prev, phiW_prev, phi0_prev;
-	static int n_prev = -1;
+	static int n_prev = -1, np_alloc = -1, nF_alloc = -1;
 	static double bscale = 1.0;   /* fraction of the wall step allowed; halved on rejection like alpha */
+	int hold_step = 0;            /* set when a rejected step cannot be retried at this grid size */
+	/* phi_prev holds the whole profile, not just the inner points, so it stays valid when the n_e grid
+	 * resizes (the step also rewrites the asymptotic tail) and the comparison below survives a resize. */
+	if (phi_prev == NULL || np_alloc != size_phigrid) {
+		free(phi_prev); phi_prev = malloc(size_phigrid * sizeof(double));
+		np_alloc = size_phigrid; n_prev = -1;
+	}
 	/* Error used to accept/reject steps: the RMS of the relative Poisson residual. A Newton step is a
 	 * descent direction for the 2-norm, not the max-norm, so judging steps by the max rejects good
 	 * steps that lower the residual overall but raise it at one point. (Convergence is still tested
@@ -588,31 +701,55 @@ void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_g
 	double E_act = r0*r0;
 	for (i = 1; i < ninner; i++) { double r = F_vec[i] * invgammasq / ni_grid[i+1]; E_act += r*r; }
 	E_act = sqrt(E_act / ninner);
-	if (phi_prev == NULL || n_prev != ninner || phiW_prev != phiW_impose) {
-		/* first call, or the n_e grid / wall potential changed: no comparable previous state */
-		free(phi_prev); free(F_prev);
-		phi_prev = malloc((ninner + 2) * sizeof(double));
-		F_prev   = malloc(ninner * sizeof(double));
+#if DS_MINIMAX || DS_SLP
+	/* merit on the max, as the convergence test is (see DS_MINIMAX, DS_SLP in mps.h) */
+	E_act = fabs(r0);
+	for (i = 1; i < ninner; i++) E_act = fmax(E_act, fabs(F_vec[i] * invgammasq / ni_grid[i+1]));
+	const double merit_tol = DS_MINIMAX_MERIT_TOL;
+#else
+	const double merit_tol = DS_MERIT_TOL;
+#endif
+	if (n_prev < 0 || fabs(phiW_prev - phiW_impose) > DS_WALL_TOL) {
+		/* First call, or the wall target moved enough that the residuals before and after belong to
+		 * different problems. The target is compared with DS_WALL_TOL rather than exactly: it drifts by
+		 * ~1e-4 every iteration as the MP updates, and an exact test threw the comparison away every
+		 * call, leaving the step unguarded. A change in the n_e grid size is NOT a reason to drop the
+		 * comparison: E is an rms, normalized by ninner, so it stays comparable, and phi_prev covers the
+		 * whole profile. Only the stored residual cannot be reused across a resize, handled below. */
 		bscale = 1.0;
 	}
 	/* A held step (alpha_prev = 0) left phi unchanged, so there is nothing to test: resume stepping.
-	 * A step that moved the wall changed the boundary condition, so the residuals before and after it
-	 * belong to different problems and are not compared either: while the wall approaches its target
-	 * each step is taken (it is still bounded by the trust region) and becomes the new baseline.
-	 * Otherwise allow for the run-to-run noise in the recomputed densities, which is enough to make
-	 * an unchanged error look like a rise and hold the step at zero forever. */
-	else if (alpha_prev > 0.0 && fabs(phi0_before - phi0_prev) < 1e-12 && E_act > E_prev * (1.0 + 1e-6)) {
+	 * A step that moved the wall by more than DS_WALL_TOL changed the boundary condition, so the residuals
+	 * before and after it belong to different problems and are not compared either: while the wall
+	 * approaches its target each step is taken (it is still bounded by the trust region) and becomes the
+	 * new baseline. Smaller moves (the target drifts a little as the MP updates) still get the test.
+	 * Otherwise allow for the run-to-run noise in the recomputed densities and for the n_e grid
+	 * resizing under the rms (DS_MERIT_TOL), either of which is enough to make an unchanged error look
+	 * like a rise and hold the step at zero forever. */
+	else if (alpha_prev > 0.0 && fabs(phi0_before - phi0_prev) < DS_WALL_TOL && E_act > E_prev * (1.0 + merit_tol)) {
 		double E_rose = E_act;
-		for (i = 0; i < ninner + 2; i++) phi_grid[i] = phi_prev[i];
-		for (i = 0; i < ninner; i++) F_vec[i] = F_prev[i];
+		for (i = 0; i < size_phigrid; i++) phi_grid[i] = phi_prev[i];
 		E_act = E_prev;
 		phi0_before = phi0_prev;
-		alpha = 0.5 * alpha_prev;
 		bscale *= 0.5;
-		/* At the smallest step the Newton direction still does not reduce the error: keep the best
-		 * phi and stop stepping, rather than rejecting the same step forever. */
-		if (alpha < weight / 64.0) alpha = 0.0;
-		printf("NR: rms error rose (%f > %f), back to previous phi with alpha = %f\n", E_rose, E_prev, alpha);
+		if (n_prev == ninner && F_prev != NULL) {
+			for (i = 0; i < ninner; i++) F_vec[i] = F_prev[i];
+			alpha = 0.5 * alpha_prev;
+			/* At the smallest step the Newton direction still does not reduce the error: keep the best
+			 * phi and stop stepping, rather than rejecting the same step forever. */
+			if (alpha < weight / 64.0) alpha = 0.0;
+			printf("NR: merit rose (%f > %f), back to previous phi with alpha = %f\n", E_rose, E_prev, alpha);
+		}
+		else {
+			/* The n_e grid resized, so the stored residual does not fit F_vec and the densities in hand
+			 * belong to the phi we just threw away. Take no step at all this call: the next one evaluates
+			 * the restored phi on its own grid and everything is consistent again. Retrying with a stale
+			 * F_vec is what let a bad step double the error and blow the domain out from 70 to 180. */
+			alpha = 0.0;
+			hold_step = 1;
+			printf("NR: merit rose (%f > %f) and the n_e grid resized %d -> %d; restoring phi, no step\n",
+			       E_rose, E_prev, n_prev, ninner);
+		}
 	}
 	else
 	{
@@ -621,6 +758,15 @@ void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_g
 	}
 #endif
 
+	/* DS_SLP: in the endgame the step comes from an LP on this J (slp_solve). Keep a copy, since the SVD
+	 * below overwrites J with U. alpha as the accept/reject logic left it scales the LP's trust region. */
+	double alpha_sg = alpha;
+	int slp_step = 0;
+#if DS_SLP
+	int use_slp = (fabs(phiW_impose - phi0_before) < DS_WALL_TOL);
+	gsl_matrix *Jslp = NULL;
+	if (use_slp) { Jslp = gsl_matrix_alloc(ninner, ninner); gsl_matrix_memcpy(Jslp, J); }
+#endif
 	gsl_vector_view rhs = gsl_vector_view_array(F_vec, ninner);
 	gsl_permutation *p  = gsl_permutation_alloc(ninner);
 	gsl_matrix *Vsv = NULL;
@@ -629,21 +775,131 @@ void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_g
 	 * Directions with singular value s >> lambda get the Newton step unchanged; the near-singular smooth
 	 * mode (s ~ 0.02-0.16 in the cases looked at, the next one ~ 1) is damped instead of dominating the
 	 * step, so the trust region no longer has to shrink the whole step to accommodate it. */
-	if (LM_LAMBDA > 0.0) {
+	/* Once the wall sits on its target the continuation is over and the remaining residual is the part that
+	 * lives in the near-singular mode, so damp it less (LM_LAMBDA_END): the trust region and the accept/
+	 * reject on the rms still guard the step. */
+	double lm_lam = LM_LAMBDA;
+	if (LM_LAMBDA_END > 0.0 && fabs(phiW_impose - phi0_before) < DS_WALL_TOL) lm_lam = LM_LAMBDA_END;
+	/* Row weights for the max-targeted solve (DS_MINIMAX). Fsolve is the right-hand side the damped solve
+	 * actually uses, so the diagnostics below project the same vector the step was computed from. */
+	double *sw = malloc(ninner * sizeof(double));
+	gsl_vector *Fw = gsl_vector_alloc(ninner);
+	for (i = 0; i < ninner; i++) { sw[i] = 1.0; gsl_vector_set(Fw, i, F_vec[i]); }
+#if DS_MINIMAX
+	if (lm_lam > 0.0) {
+		double mxr = 0.0;
+		for (i = 0; i < ninner; i++) mxr = fmax(mxr, fabs(F_vec[i] * invgammasq / ni_grid[i+1]));
+		int nlow = 0;
+		for (i = 0; i < ninner && mxr > 0.0; i++) {
+			double w = pow(fabs(F_vec[i] * invgammasq / ni_grid[i+1]) / mxr, DS_MINIMAX_P - 2.0);
+			if (w < DS_MINIMAX_WFLOOR) { w = DS_MINIMAX_WFLOOR; nlow++; }
+			sw[i] = sqrt(w);
+			for (j = 0; j < ninner; j++) gsl_matrix_set(J, i, j, sw[i] * gsl_matrix_get(J, i, j));
+			gsl_vector_set(Fw, i, sw[i] * F_vec[i]);
+		}
+		/* Normalise to unit rms. Unnormalised, most rows sit at sqrt(floor) ~ 0.03, the weighted matrix's
+		 * singular values drop ~30x, and LM_LAMBDA (calibrated on the unweighted matrix) then damps nearly
+		 * everything: steps of 1e-4 that could not outrun the MP drift. Normalised, the worst rows get
+		 * weight > 1 and the rest < 1, and lambda keeps its meaning. */
+		double ss = 0.0;
+		for (i = 0; i < ninner; i++) ss += sw[i]*sw[i];
+		ss = sqrt(ss / ninner);
+		for (i = 0; i < ninner && ss > 0.0; i++) {
+			for (j = 0; j < ninner; j++) gsl_matrix_set(J, i, j, gsl_matrix_get(J, i, j) / ss);
+			gsl_vector_set(Fw, i, gsl_vector_get(Fw, i) / ss);
+			sw[i] /= ss;
+		}
+		printf("NR: minimax row weights, %d of %d rows at the floor %g, rms-normalised (max weight %.2f)\n",
+		       nlow, ninner, DS_MINIMAX_WFLOOR, 1.0/ss);
+	}
+#endif
+	const double *Fsolve = Fw->data;
+	if (lm_lam > 0.0) {
 		int nd = 0;
 		Vsv = gsl_matrix_alloc(ninner, ninner);
 		Ssv = gsl_vector_alloc(ninner);
 		gsl_vector *work = gsl_vector_alloc(ninner);
 		gsl_linalg_SV_decomp(J, Vsv, Ssv, work);   /* J now holds U */
 		gsl_vector_free(work);
-		lm_solve(J, Vsv, Ssv, LM_LAMBDA, &rhs.vector, dphi_gsl);
-		for (i = 0; i < ninner; i++) if (gsl_vector_get(Ssv, i) < LM_LAMBDA) nd++;
+		lm_solve(J, Vsv, Ssv, lm_lam, Fw, dphi_gsl);
+		for (i = 0; i < ninner; i++) if (gsl_vector_get(Ssv, i) < lm_lam) nd++;
 		printf("NR: Levenberg-Marquardt, lambda = %g, smallest singular values %.3g %.3g, %d damped below lambda\n",
-		       LM_LAMBDA, gsl_vector_get(Ssv, ninner-1), gsl_vector_get(Ssv, ninner-2), nd);
+		       lm_lam, gsl_vector_get(Ssv, ninner-1), gsl_vector_get(Ssv, ninner-2), nd);
+		/* Where the residual lives. A small singular value only stalls the solve if the residual has a
+		 * component along the matching LEFT singular vector: removing u_k's component needs a step of
+		 * |u_k^T F| / s_k along v_k, so a large projection on a near-null mode is a residual the linear
+		 * model cannot remove at all, while a small one means the residual sits in the well-conditioned
+		 * subspace and the stall is not a conditioning problem. */
+		{
+			double Fn = 0.0;
+			for (i = 0; i < ninner; i++) Fn += Fsolve[i]*Fsolve[i];
+			Fn = sqrt(Fn);
+			if (Fn > 0.0) {
+				int k, kk;
+				double tail = 0.0;
+				for (k = 0; k < 3 && k < ninner; k++) {
+					int col = ninner-1-k;
+					double pk = 0.0;
+					for (kk = 0; kk < ninner; kk++) pk += gsl_matrix_get(J, kk, col)*Fsolve[kk];
+					printf("NR:   mode %d: s = %.3g, |u^T F|/|F| = %.3g, step needed = %.3g\n",
+					       col, gsl_vector_get(Ssv, col), fabs(pk)/Fn, fabs(pk)/fmax(gsl_vector_get(Ssv, col), 1e-300));
+				}
+				for (k = 0; k < 5 && k < ninner; k++) {
+					int col = ninner-1-k;
+					double pk = 0.0;
+					for (kk = 0; kk < ninner; kk++) pk += gsl_matrix_get(J, kk, col)*Fsolve[kk];
+					tail += pk*pk;
+				}
+				printf("NR:   bottom 5 modes hold %.1f%% of |F|^2\n", 100.0*tail/(Fn*Fn));
+			}
+			/* and where the max relative residual (the convergence test) actually sits */
+			double rmx = 0.0; int imx = 0;
+			for (i = 1; i < ninner; i++) {
+				double r = fabs(F_vec[i]*invgammasq/ni_grid[i+1]);
+				if (r > rmx) { rmx = r; imx = i; }
+			}
+			printf("NR:   max relative residual %.5f at x = %.3f (i = %d of %d)\n", rmx, x_grid[imx+1], imx, ninner);
+		}
+
+		/* Hand back the weakest right singular vector for the line search in GYRAZE.c (DS_LINESEARCH).
+		 * SV_decomp orders the singular values descending, so this is the last column of V. It is the
+		 * direction the LM solve suppresses most, and the one the residual at a stall lives in. Scaled to
+		 * max 1 so the amplitude the caller probes is directly a change in phi, and tapered to zero over
+		 * the last points so the asymptotic tail attached below is left alone. */
+		if (ls_v != NULL) {
+			double vm = 0.0; int imax = 0;
+			for (i = 0; i < size_phigrid; i++) ls_v[i] = 0.0;
+			for (i = 0; i < ninner; i++) {
+				double a = fabs(gsl_matrix_get(Vsv, i, ninner-1));
+				if (a > vm) { vm = a; imax = i; }
+			}
+			if (ls_tmodel != NULL) *ls_tmodel = 0.0;
+			if (vm > 0.0) {
+				double sg = (gsl_matrix_get(Vsv, imax, ninner-1) < 0.0) ? -1.0 : 1.0;   /* fix the sign */
+				/* Amplitude the linear model wants along this mode, in the same units as ls_v (max 1).
+				 * The Newton step is sum_i (u_i^T F / s_i) v_i, and ls_v = sg*v/vm, so the component
+				 * along it is (u^T F / s)*sg*vm. */
+				if (ls_tmodel != NULL) {
+					double pk = 0.0;
+					for (i = 0; i < ninner; i++) pk += gsl_matrix_get(J, i, ninner-1)*Fsolve[i];
+					*ls_tmodel = sg * vm * pk / fmax(gsl_vector_get(Ssv, ninner-1), 1e-300);
+				}
+				int ntap = DS_LS_TAPER;
+				if (ntap > ninner/2) ntap = ninner/2;
+				for (i = 0; i < ninner; i++) {
+					double w = 1.0;
+					if (ntap > 0 && i > ninner-1-ntap)
+						w = 0.5*(1.0 - cos(M_PI*(double)(ninner-1-i)/(double)ntap));
+					ls_v[i+1] = w * sg * gsl_matrix_get(Vsv, i, ninner-1) / vm;
+				}
+			}
+		}
 	}
 	else {
 		gsl_linalg_LU_decomp(J, p, &s);
 		gsl_linalg_LU_solve(J, p, &rhs.vector, dphi_gsl);
+		if (ls_v != NULL) for (i = 0; i < size_phigrid; i++) ls_v[i] = 0.0;   /* no SVD, no direction */
+		if (ls_tmodel != NULL) *ls_tmodel = 0.0;
 	}
 
 	/* The right-hand side is linear in the wall value, so split the step into the response to the wall
@@ -653,14 +909,16 @@ void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_g
 	 * act on d_rest only. */
 	gsl_vector *d_bc = gsl_vector_calloc(ninner);
 	gsl_vector_set(d_bc, 0, -(phiW_impose - phi0_before) / deltaxsq);
-	if (LM_LAMBDA > 0.0) {
+	if (lm_lam > 0.0) {
 		gsl_vector *b = gsl_vector_alloc(ninner);
 		gsl_vector_memcpy(b, d_bc);
-		lm_solve(J, Vsv, Ssv, LM_LAMBDA, b, d_bc);
+		for (i = 0; i < ninner; i++) gsl_vector_set(b, i, sw[i] * gsl_vector_get(b, i));   /* same row weights */
+		lm_solve(J, Vsv, Ssv, lm_lam, b, d_bc);
 		gsl_vector_free(b);
 	}
 	else gsl_linalg_LU_svx(J, p, d_bc);
 	gsl_vector_sub(dphi_gsl, d_bc);
+	free(sw); gsl_vector_free(Fw);
 	double bmax = 0.0, dW = phiW_impose - phi0_before;
 	for (i = 0; i < ninner; i++) bmax = fmax(bmax, fabs(gsl_vector_get(d_bc, i)));
 	/* The same trust region as the rest of the step: the response to the wall change reaches into the
@@ -670,6 +928,7 @@ void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_g
 	double beta = (bmax > DS_DPHIMAX) ? DS_DPHIMAX / bmax : 1.0;
 #if NR_SAFESTEP == 1
 	beta *= bscale;
+	if (hold_step) beta = 0.0;   /* restored phi: leave the wall alone too, so nothing moves this call */
 #endif
 
 	/* Hand back the Newton direction (scaled to max 1) for GYRAZE.c to measure along next call */
@@ -689,9 +948,38 @@ void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_g
 	double jmax = 0.0;
 	for (i = 0; i < ninner; i++) jmax = fmax(jmax, fabs(beta * gsl_vector_get(d_bc, i) + alpha * gsl_vector_get(dphi_gsl, i)));
 	if (jmax > DS_DPHIMAX) { alpha *= DS_DPHIMAX / jmax; beta *= DS_DPHIMAX / jmax; }
-	printf("NR: alpha = %f, max|dphi| = %f (rms error %f); wall %f -> %f (beta = %f)\n", alpha, alpha * dmax, E_act, phi0_before, phi0_before + beta*dW, beta);
+	printf("NR: alpha = %f, max|dphi| = %f (merit %f); wall %f -> %f (beta = %f)\n", alpha, alpha * dmax, E_act, phi0_before, phi0_before + beta*dW, beta);
 
-	for (i = 0; i < ninner + 2; i++) phi_prev[i] = phi_grid[i];
+#if DS_SLP
+	if (use_slp && !hold_step && alpha_sg > 0.0) {
+		double Delta = DS_SLP_DELTA * fmin(1.0, alpha_sg / weight), tpred = 0.0, apred = 0.0, dm = 0.0;
+		int phase = 0;
+		double *sv = malloc(ninner * sizeof(double)), *bd = malloc(ninner * sizeof(double));
+		double *dl = malloc(ninner * sizeof(double));
+		for (i = 0; i < ninner; i++) {
+			sv[i] = invgammasq / ni_grid[i+1];
+			bd[i] = Delta * fmin(1.0, (x_grid[e] - x_grid[i+1]) / DS_SLP_TAPER);   /* 0 at the last unknown */
+		}
+		/* mean over rows 0..ninner-2 = nodes 1..size_ngrid-2, the ones error_Poisson averages */
+		if (slp_solve(Jslp, F_vec, sv, ninner, ninner - 1, bd, DS_SLP_SMOOTH, DS_SLP_AVGCAP, dl, &tpred, &apred, &phase)) {
+			for (i = 0; i < ninner; i++) { gsl_vector_set(dphi_gsl, i, dl[i]); dm = fmax(dm, fabs(dl[i])); }
+			gsl_vector_set_zero(d_bc);   /* F_vec was built with the wall at its target: the LP already
+			                              * accounts for moving it there, so the wall goes all the way */
+			beta = 1.0;
+			slp_step = 1;
+			alpha = alpha_sg;            /* the accept/reject bookkeeping tracks the trust-region scale */
+			printf("NR: SLP step (%s), Delta = %.2e, max|dphi| = %.2e, predicted max|r| %.6f mean %.6f (now %.6f)\n",
+			       phase == 1 ? "A: mean, max held" : "B: max, mean capped", Delta, dm, tpred, apred, E_act);
+		}
+		else printf("NR: SLP LP not solved, keeping the LM step\n");
+		free(sv); free(bd); free(dl);
+	}
+	if (Jslp) gsl_matrix_free(Jslp);
+#endif
+	if (F_prev == NULL || nF_alloc != ninner) {
+		free(F_prev); F_prev = malloc(ninner * sizeof(double)); nF_alloc = ninner;
+	}
+	for (i = 0; i < size_phigrid; i++) phi_prev[i] = phi_grid[i];
 	for (i = 0; i < ninner; i++) F_prev[i] = F_vec[i];
 	E_prev = E_act; alpha_prev = alpha; n_prev = ninner; phiW_prev = phiW_impose; phi0_prev = phi0_before;
 #else
@@ -720,7 +1008,7 @@ void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_g
 	/* Apply the step: the wall and its response by beta, the rest by alpha */
 	phi_grid[0] = phi0_before + beta * dW;
 	for (i = 0; i < ninner; i++) {
-		temp = phi_grid[i+1] + beta * gsl_vector_get(d_bc, i) + alpha * gsl_vector_get(dphi_gsl, i);
+		temp = phi_grid[i+1] + beta * gsl_vector_get(d_bc, i) + (slp_step ? 1.0 : alpha) * gsl_vector_get(dphi_gsl, i);
 		if (temp > 0.0)
 			printf("WARNING: phi > 0.0 at x = %f, non-monotonic in Debye sheath\n", x_grid[i+1]);
 		if (temp < phi_grid[i])

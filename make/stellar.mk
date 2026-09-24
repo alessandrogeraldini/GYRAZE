@@ -11,6 +11,6 @@
 CC := gcc
 LD ?= $(CC)
 
-LIBFLAGS = -lgsl -lgslcblas -lm
+LIBFLAGS = -lgsl -lgslcblas -lm -lglpk   # glpk: DS_SLP (system install on stellar)
 
 OMPFLAG ?= -fopenmp

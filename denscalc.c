@@ -2432,7 +2432,9 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 			printf("flux evaluated at x=0 is %f\theat flux = %f\n", flux0, Qflux0);
 		}
 		//if ( (ic != size_xlim) && ( 1.0 - n_grid[ic]/n_inf <= margin ) && (ic >= 5 && phi_grid[ic] > phi_grid[ic-1] && phi_grid[ic-1] > phi_grid[ic-2] && phi_grid[ic-2] > phi_grid[ic-3] && phi_grid[ic-3] > phi_grid[ic-4] && phi_grid[ic-4] > phi_grid[ic-5]) && (charge >= 0 || x_grid[ic] > 4.0) && phi_grid[ic] < 0.0 ) {
-		if ( (ic != size_xlim) && ( 1.0 - n_grid[ic]/n_inf <= margin ) && (ic > 0 && phi_grid[ic] > phi_grid[ic-1]) && phi_grid[ic] < 0.0) {
+		/* margin >= 1: a fixed end at x = margin (DS_XEND); otherwise the density threshold, as before */
+		if ( (margin >= 1.0) ? ((ic != size_xlim) && (x_grid[ic] >= margin))
+		                     : ((ic != size_xlim) && ( 1.0 - n_grid[ic]/n_inf <= margin ) && (ic > 0 && phi_grid[ic] > phi_grid[ic-1]) && phi_grid[ic] < 0.0) ) {
 		//if ( (ic != size_xlim) && ( 1.0 - n_grid[ic]/n_inf <= margin )){
 			printf("ic = %d/%d, size_xlim = %d, margin = %f, condition (< margin?) = %f\n", ic, size_phigrid, size_xlim, margin, 1.0 - n_grid[ic]/n_inf);
 			stop = 1;
