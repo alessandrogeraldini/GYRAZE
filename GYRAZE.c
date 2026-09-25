@@ -28,6 +28,12 @@
 const char *strqty[9] = {"alpha=","fixMP=", "gamma=", "nspec=", "ni:ne=", "Ti:Te=","mi:me=","jwall=","pwall="};
 const int lenstrqty = 6;
 
+/* NONLOCAL_JAC_ANALYTIC: the DS n_e Jacobian from densfinorb_par (dfo_jac) and the n_i one by finite
+ * differences of densionDS, both jac_DS_n x jac_DS_n with row/column = DS grid node. dsion_quiet silences
+ * densionDS during those finite differences. */
+static double *jac_e_DS = NULL, *jac_i_DS = NULL;
+static int jac_DS_n = 0, dsion_quiet = 0;
+
 void densionDS(double alpha, double TiovTe, double *Bohm, double *ni_DS, double *phi_DS, double phi0, double **FF, double *mu, double *Uminmu, double *vy, double *mu_op, double *chiM, double *twopidmudvy, int size_phi, int size_mu, int size_U, int size_op_i, double* ni_DScorr, double *ni_DS_reflected) {
 /* 
 This function calculates the ion density in the Debye sheath, which exploits a 1D acceleration of ions in the direction normal to the wall.
@@ -80,11 +86,11 @@ OUTPUT: density profile ni_DS
 			intgrdBohm = 0.0;
 		}
 	}
-	printf("n_inf = %f\n", n_inf);
+	if (!dsion_quiet) printf("n_inf = %f\n", n_inf);
 	momfluxinf /= n_inf;
-	printf("momfluxinf = %f\n", momfluxinf);
+	if (!dsion_quiet) printf("momfluxinf = %f\n", momfluxinf);
 	*Bohm = Bohm1/n_inf;
-	printf("Bohm = %f\n", *Bohm);
+	if (!dsion_quiet) printf("Bohm = %f\n", *Bohm);
 
 	int i_peak = -1;
 	double phi_peak = 0.0;
@@ -94,7 +100,7 @@ OUTPUT: density profile ni_DS
 			i_peak = i;
 		}
 	}
-	if (i_peak >= 0)
+	if (i_peak >= 0 && !dsion_quiet)
 		printf("phi local max: phi_peak = %f at i_peak = %d\n", phi_peak, i_peak);
 
 	int *i_turn = malloc(size_op_i * sizeof(int));
@@ -198,8 +204,11 @@ OUTPUT: density profile ni_DS
 					}
 					else{
 						if (blocked_by_peak) {
-							double phi_lo_i = phi_peak - phi_DS[i];
-							intgrd += ( (sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - sqrt(2.0*phi_lo_i)) * Fk + (sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - sqrt(2.0*phi_lo_i)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
+							/* ions of this band with energy below the peak are reflected before reaching x_i: v_x there starts at
+							 * sqrt(2 (phi_peak - phi_i)/T), and a band entirely below that contributes nothing (not a negative
+							 * amount). The potential difference is in T_i units like halfVx0sq. */
+							double phi_lo_i = (phi_peak - phi_DS[i])/TiovTe;
+							intgrd += ( fmax(sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - sqrt(2.0*phi_lo_i), 0.0) * Fk + fmax(sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - sqrt(2.0*phi_lo_i), 0.0) * Fkm1 ) * 0.5 * ( vzk - vzkm );
 							//intgrd_corr -= ( (1.0/sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - 1.0/sqrt(2.0*phi_lo_i)) * Fk + (1.0/sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - 1.0/sqrt(2.0*phi_lo_i)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
 						} else {
 							intgrd += ( (sqrt(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j])) - sqrt(2.0*halfVx0sq)) * Fk + (sqrt(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j])) - sqrt(2.0*halfVx0sq)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
@@ -230,9 +239,9 @@ OUTPUT: density profile ni_DS
 					double phi_lo    = phi_DS[i_turn[j]];
 					double phi_up_k  = (i_turn_dM[j][k]   >= 0) ? phi_DS[i_turn_dM[j][k]]   : phi_peak;
 					double phi_up_km = (i_turn_dM[j][k-1] >= 0) ? phi_DS[i_turn_dM[j][k-1]] : phi_peak;
-					double arg_lo    = phi_lo    - phi_DS[i];
-					double arg_up_k  = phi_up_k  - phi_DS[i];
-					double arg_up_km = phi_up_km - phi_DS[i];
+					double arg_lo    = (phi_lo    - phi_DS[i])/TiovTe;   /* T_i units, like halfVx0sq */
+					double arg_up_k  = (phi_up_k  - phi_DS[i])/TiovTe;
+					double arg_up_km = (phi_up_km - phi_DS[i])/TiovTe;
 					if (arg_lo >= 0.0 && arg_up_k >= 0.0 && arg_up_km >= 0.0)
 						intgrd_refl += ( (sqrt(2.0*arg_up_k)  - sqrt(2.0*arg_lo)) * Fk
 						              + (sqrt(2.0*arg_up_km) - sqrt(2.0*arg_lo)) * Fkm1 ) * 0.5*(vzk - vzkm);
@@ -269,7 +278,7 @@ OUTPUT: density profile ni_DS
 		ni_DS_reflected[i] /= n_inf;
 		//printf("ni_DS[i] = %f, phi_DS[i] = %f\n", ni_DS[i], phi_DS[i]);
 		//printf("ni_DS = %f\tphi_DS = %f\n", ni_DS[i], phi_DS[i]);
-		if (i == size_phi-1) 
+		if (i == size_phi-1 && !dsion_quiet)
 			printf("in densionDS: derivative wrt phi is dndphi = %f\n", (ni_DS[i] - ni_DS[i-1])/(phi_DS[i] - phi_DS[i-1]));
 	}
 	free(i_turn);
@@ -2468,7 +2477,20 @@ i=0;
 					FILE *fjmc_DS = fopen(jmc_e_DS_path, "w");
 					if (fjmc_DS == NULL)
 						printf("error when opening file %s\n", jmc_e_DS_path);
+#if NONLOCAL_JAC_ANALYTIC
+					if (ds_solver == 1) {
+						if (!use_parallel) { printf("ERROR: NONLOCAL_JAC_ANALYTIC needs use_parallel = 1 (densfinorb_par)\n"); exit(-1); }
+						if (jac_DS_n != size_phiDSgrid) {
+							free(jac_e_DS); free(jac_i_DS);
+							jac_e_DS = calloc((size_t)size_phiDSgrid * size_phiDSgrid, sizeof(double));
+							jac_i_DS = calloc((size_t)size_phiDSgrid * size_phiDSgrid, sizeof(double));
+							jac_DS_n = size_phiDSgrid;
+						}
+						dfo_jac = jac_e_DS; dfo_jac_n = jac_DS_n; dfo_jac_terms = DFO_JAC_ALL;
+					}
+#endif
 					DENSFINORB(1.0, 1.0, alpha, size_phiDSgrid, &size_neDSgrid, ne_DSgrid, ne_DSgrid_corr_delta, ne_DSgrid_corr_chiM, x_DSgrid, phi_DSgrid, -1.0, dist_e_GK, mu_e, U_e_DS, size_mu_e, size_vpar_e, 0.0, &flux_eDS, &garbage, ZOOM_DS, ds_stop, -999.9, vy_e_wall, mu_e_op, chiM_e, twopidmudvy_e, &size_op_e, fmu_DS, fjmc_DS);
+					dfo_jac = NULL;
 					if (fmu_DS != NULL) fclose(fmu_DS);
 					if (fjmc_DS != NULL) fclose(fjmc_DS);
 				}
@@ -2699,7 +2721,7 @@ i=0;
 #if DS_LINESEARCH
 					if (ls_v == NULL) ls_v = calloc(size_phiDSgrid, sizeof(double));
 #endif
-#if NONLOCAL_JAC > 0
+#if NONLOCAL_JAC > 0 && !NONLOCAL_JAC_ANALYTIC
 					/* Measure how n_e responds to a localized change in phi, for the Newton Jacobian.
 					 * The perturbations are raised-cosine bumps on NONLOCAL_JAC disjoint blocks of the
 					 * n_e grid, so each costs one electron density evaluation and they stay orthogonal.
@@ -2868,8 +2890,77 @@ i=0;
 #endif
 					jac_ncall++;
 #endif
+#if NONLOCAL_JAC_ANALYTIC
+					/* n_i Jacobian by central differences of densionDS (NONLOCAL_JAC_EPS). n_i at a node depends on phi
+					 * there and, through ion reflection, only on phi at the potential peak and at the turning points,
+					 * which lie on its flank (phi > 0 before the peak). So: one +-eps pair moving every other node at
+					 * once gives their diagonal, and each of those special nodes gets a pair of its own (columns in
+					 * parallel). densionDS is evaluated on the n_e grid plus two points only: rows beyond are unused
+					 * and it scales with the number of points. The densities are those of the MP entrance potential
+					 * the DS ion density was computed with (phi0_DSions). GYRAZE_IONJAC_CHECK=1 in the environment
+					 * also does every column separately and prints the largest difference. */
+					{
+						double _wi = omp_get_wtime();
+						int Nn = size_phiDSgrid, ncol = size_neDSgrid, Nt = (ncol + 2 < Nn) ? ncol + 2 : Nn;
+						int ipk = -1, nsp = 0, ii, mm;
+						double ppk = 0.0;
+						for (ii = 1; ii < Nt - 1; ii++)
+							if (phi_DSgrid[ii] > phi_DSgrid[ii-1] && phi_DSgrid[ii] > phi_DSgrid[ii+1] && phi_DSgrid[ii] > ppk) { ppk = phi_DSgrid[ii]; ipk = ii; }
+						int *spec = malloc(Nt * sizeof(int)), *isspec = calloc(Nt, sizeof(int));
+						for (ii = 1; ipk >= 0 && ii <= ipk; ii++)
+							if (phi_DSgrid[ii] > 0.0 && ii < ncol) { spec[nsp++] = ii; isspec[ii] = 1; }
+						int check = (getenv("GYRAZE_IONJAC_CHECK") != NULL && atoi(getenv("GYRAZE_IONJAC_CHECK")) > 0);
+						int ncall = 1 + nsp + (check ? ncol - 1 : 0);   /* task 0: all non-special nodes together */
+						double *colbuf = check ? calloc((size_t)ncol * Nn, sizeof(double)) : NULL;
+						memset(jac_i_DS, 0, (size_t)Nn * Nn * sizeof(double));
+						dsion_quiet = 1;
+#pragma omp parallel
+						{
+							double *pp = malloc(Nn*sizeof(double)), *np_ = malloc(Nn*sizeof(double)), *nm_ = malloc(Nn*sizeof(double));
+							double *sp = malloc(Nn*sizeof(double)), *sc = malloc(Nn*sizeof(double)), *sr = malloc(Nn*sizeof(double));
+							int tk, sgn, nn, i2;
+#pragma omp for schedule(dynamic)
+							for (tk = 0; tk < ncall; tk++) {
+								int col = (tk == 0) ? -1 : (tk <= nsp ? spec[tk-1] : tk - nsp);
+								for (sgn = 0; sgn < 2; sgn++) {
+									double *out = sgn ? nm_ : np_, _B, de = sgn ? -NONLOCAL_JAC_EPS : NONLOCAL_JAC_EPS;
+									memcpy(pp, phi_DSgrid, Nn*sizeof(double));
+									if (col < 0) { for (i2 = 1; i2 < ncol; i2++) if (!isspec[i2]) pp[i2] += de; }
+									else pp[col] += de;
+									for (i2 = 0; i2 < Nt; i2++) out[i2] = 0.0;
+									for (nn = 0; nn < num_spec; nn++) {
+										densionDS(alpha, TioverTe[nn], &_B, sp, pp, phi0_DSions, dist_i_GK[nn], mu_i[nn], U_i[nn], vy_i_wall[nn], mu_i_op[nn], chiM_i[nn], twopidmudvy_i[nn], Nt, size_mu_i[nn], size_U_i[nn], size_op_i[nn], sc, sr);
+										for (i2 = 0; i2 < Nt; i2++) out[i2] += nioverne[nn]*sp[i2];
+									}
+								}
+								if (col < 0) {
+									for (i2 = 1; i2 < ncol; i2++) if (!isspec[i2]) jac_i_DS[(size_t)i2*Nn + i2] = (np_[i2] - nm_[i2]) / (2.0*NONLOCAL_JAC_EPS);
+								} else if (tk <= nsp) {
+									for (i2 = 0; i2 < ncol; i2++) jac_i_DS[(size_t)i2*Nn + col] = (np_[i2] - nm_[i2]) / (2.0*NONLOCAL_JAC_EPS);
+								} else {
+									for (i2 = 0; i2 < ncol; i2++) colbuf[(size_t)i2*Nn + col] = (np_[i2] - nm_[i2]) / (2.0*NONLOCAL_JAC_EPS);
+								}
+							}
+							free(pp); free(np_); free(nm_); free(sp); free(sc); free(sr);
+						}
+						dsion_quiet = 0;
+						printf("analytic Jacobian: n_i Jacobian by finite differences (%d calls, peak node %d, %d special nodes) in %.2f s\n",
+						       2*(1 + nsp), ipk, nsp, omp_get_wtime() - _wi);
+						if (check) {
+							double dmax = 0.0, jmax = 0.0; int di = -1, dm = -1;
+							for (ii = 1; ii < ncol; ii++) for (mm = 1; mm < ncol; mm++) {
+								double dd = fabs(colbuf[(size_t)ii*Nn + mm] - jac_i_DS[(size_t)ii*Nn + mm]);
+								jmax = fmax(jmax, fabs(colbuf[(size_t)ii*Nn + mm]));
+								if (dd > dmax) { dmax = dd; di = ii; dm = mm; }
+							}
+							printf("analytic Jacobian: n_i check against every column separately: max |difference| %.3e at (%d, %d), max |entry| %.3e\n", dmax, di, dm, jmax);
+						}
+						free(colbuf); free(spec); free(isspec);
+					}
+#endif
 					{ double _wt0 = omp_get_wtime();
-					newguess_NR(x_DSgrid, ne_DSgrid, sumni_DSgrid, phi_DSgrid, size_phiDSgrid, size_neDSgrid, 1.0/(gamma_DS*gamma_DS), v_cutDS, 2.0, weight_DS, ne_DSgrid_corr_delta, ne_DSgrid_corr_chiM, sumni_DS_corr, jac_y, jac_h, NONLOCAL_JAC, dir_h, have_dir ? dir_y : NULL, ls_v, &ls_tmodel);
+					newguess_NR(x_DSgrid, ne_DSgrid, sumni_DSgrid, phi_DSgrid, size_phiDSgrid, size_neDSgrid, 1.0/(gamma_DS*gamma_DS), v_cutDS, 2.0, weight_DS, ne_DSgrid_corr_delta, ne_DSgrid_corr_chiM, sumni_DS_corr, jac_y, jac_h, NONLOCAL_JAC_ANALYTIC ? 0 : NONLOCAL_JAC, dir_h, have_dir ? dir_y : NULL, ls_v, &ls_tmodel,
+					            NONLOCAL_JAC_ANALYTIC ? jac_e_DS : NULL, NONLOCAL_JAC_ANALYTIC ? jac_i_DS : NULL, jac_DS_n);
 					have_dir = (dir_h != NULL);
 					printf("newguess_NR (DS) took %.4f s\n", omp_get_wtime() - _wt0); }
 #if DS_LINESEARCH == 1 && NONLOCAL_JAC > 0

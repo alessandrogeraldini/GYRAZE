@@ -437,99 +437,145 @@ static void lm_solve(const gsl_matrix *U, const gsl_matrix *V, const gsl_vector 
 }
 
 #if DS_SLP
-/* Endgame DS step by linear programming (DS_SLP). With r_i(d) = s_i (-F_i + (J d)_i) the linearised relative
- * Poisson residual after a step d (s_i = 1/(gamma^2 ni); F_vec holds -F, as newguess_NR builds it), solve
- *
- *     minimise t   s.t.  -t <= r_i(d) <= t            every row
- *                        a_i >= |r_i(d)|,  sum_{i<navg} a_i <= avgcap * navg     (error_Poisson's mean)
- *                        |d_j| <= bound_j                                         (trust region)
- *                        |d_{j-1} - 2 d_j + d_{j+1}| <= smooth
- *
- * That LP is infeasible when the current mean is above avgcap and the trust region is too small to bring
- * it under the cap in one step (then nothing was solved and the LM step was kept). So in that case the LP
- * is phase A instead: minimise the mean, with the max held at or below its current value (t <= max_i |r_i(0)|).
- * d = 0 satisfies every constraint of either phase, so the LP is always feasible. *phase is 1 (A) or 2.
- *
- * Returns 1 and fills d (and the predicted max t and mean) on an optimal solution, 0 otherwise. */
-static int slp_solve(const gsl_matrix *Jc, const double *Fneg, const double *sc, int n, int navg,
-                     const double *bound, double smooth, double avgcap, double *d, double *tpred, double *apred,
-                     int *phase)
+/* Endgame DS step by linear programming (DS_SLP). Unknowns: the step d and the fraction w of the pending wall move
+ * dW = phiW_impose - phi0 that is taken. With s_i = 1/(gamma^2 ni) and F_vec = -F built with the wall at its
+ * target, the linearised relative Poisson residual after the step is
+ *     r_i(d, w) = s_i ((J d)_i - Fneg_i) - (1 - w) cw_i,     cw_i = s_i dW dF_i/dphi_0,
+ * (cw_0 holds the Laplacian's 1/dx^2 and, with the analytic Jacobian, the densities' dependence on the wall).
+ * Two LPs, both over  |d_j| <= bound_j,  |d_{j-1} - 2 d_j + d_{j+1}| <= smooth,  wmin <= w <= 1:
+ *   1. minimise t   s.t. |r_i| <= t (every row)                                  -> t* (the best max)
+ *   2. minimise the mean of a_i >= |r_i| over error_Poisson's rows  s.t. |r_i| <= T = max(t*, tgoal)
+ * so the max is never traded for the mean, and within the tolerance (tgoal just below it) the mean comes down
+ * as far as it can. Both are feasible whenever the bounds contain d = 0 (stage 2 contains stage 1's optimum).
+ * wmin keeps the remaining wall gap below half of DS_WALL_TOL: the wall need not move all the way in one step,
+ * which matters while the MP is still moving its target by a few 1e-4 per iteration.
+ * Returns 1 and fills d, w, t*, and the predicted max and mean of |r| on success, 0 otherwise. */
+static int slp_solve(const gsl_matrix *Jc, const double *Fneg, const double *sc, const double *cw, double wmin,
+                     int n, int navg, const double *bound, double smooth, double tgoal,
+                     const double *phic, double zfloor,
+                     double *d, double *w_out, double *tstar, double *tpred, double *apred)
 {
-	int i, j, k, r = 0, ok;
-	double m0 = 0.0, a0 = 0.0;                         /* max and mean of |r_i| at d = 0 */
-	for (i = 0; i < n; i++) m0 = fmax(m0, fabs(sc[i] * Fneg[i]));
-	for (k = 0; k < navg; k++) a0 += fabs(sc[k] * Fneg[k]);
-	a0 /= navg;
-	*phase = (a0 > avgcap) ? 1 : 2;
-	const int ct = n + 1, ca = n + 2;                  /* 1-based columns: d_1..d_n, t, a_1..a_n */
-	size_t cap = (size_t)4 * n * (n + 1) + (size_t)navg + (size_t)6 * n + 16, ne = 0;
+	/* GLPK's floating-point simplex returned "optimal" points that broke the max constraint by up to 2e-2 on
+	 * these LPs (coefficients spanning 1e9-1e10; its automatic scaling and presolve made it worse), so:
+	 * the step is written as d_j = bound_j u_j, |u_j| <= 1, which puts the coefficients near 0.1-1;
+	 * entries below 1e-9 of their row's largest are dropped; no automatic scaling or presolve; and every
+	 * solution is checked against J d, with one retry by the dual simplex before giving up. */
+	int i, j, k, r = 0, ok = 0;
+	const int ct = n + 1, ca = n + 2, cwv = 2 * n + 2;   /* 1-based columns: u_1..u_n, t, a_1..a_n, w */
+	if (getenv("GYRAZE_SLP_DUMP") != NULL) {          /* debugging: the LP's inputs, one file per call */
+		static int ndump = 0;
+		char fn[512]; snprintf(fn, sizeof(fn), "%s/slp_%03d.txt", getenv("GYRAZE_SLP_DUMP"), ndump++);
+		FILE *fd = fopen(fn, "w");
+		if (fd) {
+			fprintf(fd, "%d %d %.17g %.17g %.17g\n", n, navg, wmin, smooth, tgoal);
+			for (i = 0; i < n; i++) fprintf(fd, "%.17g %.17g %.17g %.17g %.17g\n", Fneg[i], sc[i], cw[i], bound[i], phic[i]);
+			for (i = 0; i < n; i++) { for (j = 0; j < n; j++) fprintf(fd, "%.17g ", gsl_matrix_get(Jc, i, j)); fprintf(fd, "\n"); }
+			fclose(fd);
+		}
+	}
+	int nz = (n > 4) ? n - 4 : 0;                       /* zigzag rows: unknowns k = 2 .. n-3 */
+	size_t cap = (size_t)4 * n * (n + 2) + (size_t)navg + (size_t)6 * n + (size_t)10 * nz + 16, ne = 0;
 	int *ia = malloc((cap + 1) * sizeof(int)), *ja = malloc((cap + 1) * sizeof(int));
-	double *ar = malloc((cap + 1) * sizeof(double));
+	double *ar = malloc((cap + 1) * sizeof(double)), *crow = malloc(n * sizeof(double));
 	glp_prob *lp = glp_create_prob();
 	glp_set_obj_dir(lp, GLP_MIN);
-	glp_add_cols(lp, 2 * n + 1);
+	glp_add_cols(lp, 2 * n + 2);
 	for (j = 0; j < n; j++) {
-		if (bound[j] > 0.0) glp_set_col_bnds(lp, j + 1, GLP_DB, -bound[j], bound[j]);
+		if (bound[j] > 0.0) glp_set_col_bnds(lp, j + 1, GLP_DB, -1.0, 1.0);
 		else                glp_set_col_bnds(lp, j + 1, GLP_FX, 0.0, 0.0);
 	}
-	if (*phase == 1) {                                 /* minimise the mean, max held */
-		glp_set_col_bnds(lp, ct, GLP_DB, 0.0, m0);
-		for (k = 0; k < navg; k++) glp_set_obj_coef(lp, ca + k, 1.0 / navg);
-	}
-	else {                                             /* minimise the max, mean capped */
-		glp_set_col_bnds(lp, ct, GLP_LO, 0.0, 0.0);
-		glp_set_obj_coef(lp, ct, 1.0);
-	}
+	glp_set_col_bnds(lp, ct, GLP_LO, 0.0, 0.0);
 	for (k = 0; k < n; k++) glp_set_col_bnds(lp, ca + k, GLP_LO, 0.0, 0.0);
-	glp_add_rows(lp, 4 * n + 1 + 2 * (n - 2));
+	if (wmin < 1.0) glp_set_col_bnds(lp, cwv, GLP_DB, wmin, 1.0);
+	else            glp_set_col_bnds(lp, cwv, GLP_FX, 1.0, 1.0);
+	glp_add_rows(lp, 4 * n + 1 + 2 * (n - 2) + 2 * nz);
 	for (i = 0; i < n; i++) {
-		double c = sc[i] * Fneg[i];                    /* r_i = s_i (J d)_i - c */
+		double c = sc[i] * Fneg[i] + cw[i], cmax = fabs(cw[i]);   /* r_i = sum_j s_i J_ij b_j u_j + cw_i w - c */
 		int sgn, col;
+		for (j = 0; j < n; j++) { crow[j] = sc[i] * gsl_matrix_get(Jc, i, j) * bound[j]; cmax = fmax(cmax, fabs(crow[j])); }
 		for (col = 0; col < 2; col++) {                /* against t, then against a_i */
 			for (sgn = 1; sgn >= -1; sgn -= 2) {       /* +r_i <= .. and -r_i <= .. */
 				r++;
 				glp_set_row_bnds(lp, r, GLP_UP, 0.0, sgn * c);
-				for (j = 0; j < n; j++) {
-					double v = gsl_matrix_get(Jc, i, j);
-					if (v != 0.0) { ne++; ia[ne] = r; ja[ne] = j + 1; ar[ne] = sgn * sc[i] * v; }
-				}
+				for (j = 0; j < n; j++)
+					if (fabs(crow[j]) > 1e-9 * cmax) { ne++; ia[ne] = r; ja[ne] = j + 1; ar[ne] = sgn * crow[j]; }
+				if (cw[i] != 0.0) { ne++; ia[ne] = r; ja[ne] = cwv; ar[ne] = sgn * cw[i]; }
 				ne++; ia[ne] = r; ja[ne] = (col == 0) ? ct : ca + i; ar[ne] = -1.0;
 			}
 		}
 	}
 	r++;
-	if (*phase == 1) glp_set_row_bnds(lp, r, GLP_FR, 0.0, 0.0);
-	else             glp_set_row_bnds(lp, r, GLP_UP, 0.0, avgcap * navg);
+	glp_set_row_bnds(lp, r, GLP_FR, 0.0, 0.0);         /* sum of a_i: only an objective, no cap */
 	for (k = 0; k < navg; k++) { ne++; ia[ne] = r; ja[ne] = ca + k; ar[ne] = 1.0; }
-	for (j = 1; j < n - 1; j++) {
+	for (j = 1; j < n - 1; j++) {                      /* |d_{j-1} - 2 d_j + d_{j+1}| <= smooth, in units of smooth */
 		int sgn;
 		for (sgn = 1; sgn >= -1; sgn -= 2) {
 			r++;
-			glp_set_row_bnds(lp, r, GLP_UP, 0.0, smooth);
-			ne++; ia[ne] = r; ja[ne] = j;     ar[ne] =  1.0 * sgn;
-			ne++; ia[ne] = r; ja[ne] = j + 1; ar[ne] = -2.0 * sgn;
-			ne++; ia[ne] = r; ja[ne] = j + 2; ar[ne] =  1.0 * sgn;
+			glp_set_row_bnds(lp, r, GLP_UP, 0.0, 1.0);
+			ne++; ia[ne] = r; ja[ne] = j;     ar[ne] =  sgn * bound[j-1] / smooth;
+			ne++; ia[ne] = r; ja[ne] = j + 1; ar[ne] = -2.0 * sgn * bound[j] / smooth;
+			ne++; ia[ne] = r; ja[ne] = j + 2; ar[ne] =  sgn * bound[j+1] / smooth;
+		}
+	}
+	/* The zigzag of phi'' (the fourth difference of phi, Z_k = phi_{k-2} - 4 phi_{k-1} + 6 phi_k - 4 phi_{k+1}
+	 * + phi_{k+2}) may not grow: |Z_k(phi + d)| <= max(|Z_k(phi)|, zfloor), in units of zfloor. The cap above
+	 * on each step's second differences does not bound the sum over steps, and LP steps (vertex solutions)
+	 * accumulated a node-to-node zigzag this way. d = 0 satisfies it. */
+	for (k = 2; k < n - 2; k++) {
+		static const double st[5] = {1.0, -4.0, 6.0, -4.0, 1.0};
+		double Z = 0.0, cap_k;
+		int q, sgn;
+		for (q = 0; q < 5; q++) Z += st[q] * phic[k - 2 + q];
+		cap_k = fmax(fabs(Z), zfloor);
+		for (sgn = 1; sgn >= -1; sgn -= 2) {
+			r++;
+			glp_set_row_bnds(lp, r, GLP_UP, 0.0, (cap_k - sgn * Z) / zfloor);
+			for (q = 0; q < 5; q++)
+				if (bound[k - 2 + q] > 0.0) { ne++; ia[ne] = r; ja[ne] = k - 1 + q; ar[ne] = sgn * st[q] * bound[k - 2 + q] / zfloor; }
 		}
 	}
 	glp_load_matrix(lp, (int)ne, ia, ja, ar);
-	glp_scale_prob(lp, GLP_SF_AUTO);
 	glp_smcp parm;
 	glp_init_smcp(&parm);
 	parm.msg_lev = GLP_MSG_OFF;
-	parm.presolve = GLP_ON;
-	ok = (glp_simplex(lp, &parm) == 0 && glp_get_status(lp) == GLP_OPT);
-	if (ok) {                                          /* predicted residuals from J d itself (in phase A */
-		double sa = 0.0;                               /* t is only a bound, and a_i >= |r_i| is not tight) */
-		for (j = 0; j < n; j++) d[j] = glp_get_col_prim(lp, j + 1);
-		*tpred = 0.0;
-		for (i = 0; i < n; i++) {
-			double ri = -sc[i] * Fneg[i];
-			for (j = 0; j < n; j++) ri += sc[i] * gsl_matrix_get(Jc, i, j) * d[j];
-			*tpred = fmax(*tpred, fabs(ri));
-			if (i < navg) sa += fabs(ri);
+
+	/* the current LP solution's step, wall fraction, and predicted max and mean of |r| from J d itself */
+	double *d1 = malloc(n * sizeof(double)), w1 = 1.0, t1 = 0.0, a1 = 0.0;
+#define SLP_TAKE(dd, ww, tp, ap) do { double _sa = 0.0; (ww) = glp_get_col_prim(lp, cwv); (tp) = 0.0; \
+		for (j = 0; j < n; j++) (dd)[j] = bound[j] * glp_get_col_prim(lp, j + 1); \
+		for (i = 0; i < n; i++) { double _r = -sc[i] * Fneg[i] - (1.0 - (ww)) * cw[i]; \
+			for (j = 0; j < n; j++) _r += sc[i] * gsl_matrix_get(Jc, i, j) * (dd)[j]; \
+			(tp) = fmax((tp), fabs(_r)); if (i < navg) _sa += fabs(_r); } \
+		(ap) = _sa / navg; } while (0)
+	/* solve, and accept only if the true max |r| is within tlim (+ a hair): primal simplex, then dual */
+#define SLP_SOLVE(okv, dd, ww, tp, ap, tlim_expr) do { int _m; (okv) = 0; \
+		for (_m = 0; _m < 2 && !(okv); _m++) { parm.meth = _m ? GLP_DUALP : GLP_PRIMAL; \
+			if (glp_simplex(lp, &parm) == 0 && glp_get_status(lp) == GLP_OPT) { \
+				SLP_TAKE(dd, ww, tp, ap); double _tl = (tlim_expr); \
+				if ((tp) <= _tl * (1.0 + 1e-6) + 1e-9) (okv) = 1; \
+				else printf("NR: SLP LP (%s simplex) returned max %.6f > %.6f, %s\n", _m ? "dual" : "primal", (tp), _tl, _m ? "giving up" : "retrying"); \
+				if (!(okv) && !_m) glp_std_basis(lp); } } } while (0)
+
+	/* stage 1: the smallest max */
+	glp_set_obj_coef(lp, ct, 1.0);
+	SLP_SOLVE(ok, d1, w1, t1, a1, glp_get_col_prim(lp, ct));
+	if (ok) {
+		*tstar = t1;
+		/* stage 2: the smallest mean with the max held at max(t*, tgoal); stage 1's step if it fails */
+		double T = fmax(t1 * (1.0 + 1e-9) + 1e-12, tgoal);
+		int ok2;
+		glp_set_col_bnds(lp, ct, GLP_DB, 0.0, T);
+		glp_set_obj_coef(lp, ct, 0.0);
+		for (k = 0; k < navg; k++) glp_set_obj_coef(lp, ca + k, 1.0 / navg);
+		SLP_SOLVE(ok2, d, *w_out, *tpred, *apred, T);
+		if (!ok2) {
+			for (j = 0; j < n; j++) d[j] = d1[j];
+			*w_out = w1; *tpred = t1; *apred = a1;
 		}
-		*apred = sa / navg;
 	}
+#undef SLP_SOLVE
+#undef SLP_TAKE
+	free(d1); free(crow);
 	glp_delete_prob(lp);
 	free(ia); free(ja); free(ar);
 	return ok;
@@ -540,7 +586,8 @@ void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_g
                  int size_phigrid, int size_ngridin, double invgammasq, double v_cutDS,
                  double pfac, double weight,
                  double *ne_corr_delta, double *ne_corr_chiM, double *ni_corr,
-                 double *jac_y, double *jac_h, int jac_K, double *dir_h, double *dir_y, double *ls_v, double *ls_tmodel)
+                 double *jac_y, double *jac_h, int jac_K, double *dir_h, double *dir_y, double *ls_v, double *ls_tmodel,
+                 double *jac_e, double *jac_i, int jac_n)
 {
 	int i, j, k, s;
 	int size_ngrid = size_ngridin;
@@ -616,6 +663,27 @@ void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_g
 		}
 	}
 	gsl_matrix_set(J, ninner-1, ninner-1, gsl_matrix_get(J, ninner-1, ninner-1) + rho / deltaxsq);
+
+	/* NONLOCAL_JAC_ANALYTIC: replace the density part of J by the full d(ne - ni)/dphi, n_e analytic
+	 * (densfinorb_par) and n_i by finite differences (GYRAZE.c); jac_*[node*jac_n + node], row i <-> node i+1.
+	 * n_e near the grid end also depends on the tail beyond it, which moves with phi_e (phi_m = phi_e *
+	 * ((x_m + CC)/(x_e + CC))^pdec for the CC the tie above uses), so those columns fold into the last one. */
+	if (jac_e != NULL && jac_i != NULL) {
+		printf("NR: analytic Jacobian (n_e analytic, n_i finite differences)\n");
+		for (i = 0; i < ninner; i++) {
+			const double *re = jac_e + (size_t)(i+1)*jac_n, *ri = jac_i + (size_t)(i+1)*jac_n;
+			for (j = 0; j < ninner; j++) {
+				double lap = (i == j) ? -2.0/deltaxsq : ((i == j+1 || i == j-1) ? 1.0/deltaxsq : 0.0);
+				gsl_matrix_set(J, i, j, lap - gamma2 * (re[j+1] - ri[j+1]));
+			}
+			if (rho > 0.0) {
+				double tail = 0.0;
+				for (s = e + 1; s < jac_n; s++) tail += (re[s] - ri[s]) * pow((x_grid[s] + CCb) / (x_grid[e] + CCb), pdec);
+				gsl_matrix_set(J, i, ninner-1, gsl_matrix_get(J, i, ninner-1) - gamma2 * tail);
+			}
+		}
+		gsl_matrix_set(J, ninner-1, ninner-1, gsl_matrix_get(J, ninner-1, ninner-1) + rho / deltaxsq);
+	}
 
 	/* Nonlocal electron response (NONLOCAL_JAC > 0): the loop above took dne/dphi to be the local
 	 * value ne_corr_total on the diagonal, but n_e at one point depends on phi along the whole orbit.
@@ -763,7 +831,9 @@ void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_g
 	double alpha_sg = alpha;
 	int slp_step = 0;
 #if DS_SLP
-	int use_slp = (fabs(phiW_impose - phi0_before) < DS_WALL_TOL);
+	/* the LP only in the endgame: wall near its target AND the residual already small. Far from a solution
+	 * (a cold start) its minimax/L1 steps put rows on their bounds and built up grid-scale zigzag in phi''. */
+	int use_slp = (fabs(phiW_impose - phi0_before) < DS_WALL_TOL && E_act < DS_SLP_ENGAGE);
 	gsl_matrix *Jslp = NULL;
 	if (use_slp) { Jslp = gsl_matrix_alloc(ninner, ninner); gsl_matrix_memcpy(Jslp, J); }
 #endif
@@ -952,27 +1022,32 @@ void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_g
 
 #if DS_SLP
 	if (use_slp && !hold_step && alpha_sg > 0.0) {
-		double Delta = DS_SLP_DELTA * fmin(1.0, alpha_sg / weight), tpred = 0.0, apred = 0.0, dm = 0.0;
-		int phase = 0;
+		double Delta = DS_SLP_DELTA * fmin(1.0, alpha_sg / weight), tpred = 0.0, apred = 0.0, tst = 0.0, wv = 1.0, dm = 0.0;
+		double dWall = phiW_impose - phi0_before;
 		double *sv = malloc(ninner * sizeof(double)), *bd = malloc(ninner * sizeof(double));
-		double *dl = malloc(ninner * sizeof(double));
+		double *dl = malloc(ninner * sizeof(double)), *cw = calloc(ninner, sizeof(double));
 		for (i = 0; i < ninner; i++) {
 			sv[i] = invgammasq / ni_grid[i+1];
 			bd[i] = Delta * fmin(1.0, (x_grid[e] - x_grid[i+1]) / DS_SLP_TAPER);   /* 0 at the last unknown */
+			/* effect of the whole pending wall move on row i: dF_i/dphi_0 = [i == 0]/dx^2 - gamma^2 d(ne - ni)_{i+1}/dphi_0 */
+			double dF = (i == 0) ? 1.0 / deltaxsq : 0.0;
+			if (jac_e != NULL && jac_i != NULL) dF -= gamma2 * (jac_e[(size_t)(i+1)*jac_n] - jac_i[(size_t)(i+1)*jac_n]);
+			cw[i] = sv[i] * dWall * dF;
 		}
+		double wmin = (fabs(dWall) > 0.0) ? fmax(0.0, 1.0 - 0.5 * DS_WALL_TOL / fabs(dWall)) : 1.0;
 		/* mean over rows 0..ninner-2 = nodes 1..size_ngrid-2, the ones error_Poisson averages */
-		if (slp_solve(Jslp, F_vec, sv, ninner, ninner - 1, bd, DS_SLP_SMOOTH, DS_SLP_AVGCAP, dl, &tpred, &apred, &phase)) {
+		if (slp_solve(Jslp, F_vec, sv, cw, wmin, ninner, ninner - 1, bd, DS_SLP_SMOOTH, DS_SLP_TMAX, phi_grid + 1, DS_SLP_ZIGZAG,
+		              dl, &wv, &tst, &tpred, &apred)) {
 			for (i = 0; i < ninner; i++) { gsl_vector_set(dphi_gsl, i, dl[i]); dm = fmax(dm, fabs(dl[i])); }
-			gsl_vector_set_zero(d_bc);   /* F_vec was built with the wall at its target: the LP already
-			                              * accounts for moving it there, so the wall goes all the way */
-			beta = 1.0;
+			gsl_vector_set_zero(d_bc);
+			beta = wv;                   /* the wall moves by w dW, as the LP planned */
 			slp_step = 1;
 			alpha = alpha_sg;            /* the accept/reject bookkeeping tracks the trust-region scale */
-			printf("NR: SLP step (%s), Delta = %.2e, max|dphi| = %.2e, predicted max|r| %.6f mean %.6f (now %.6f)\n",
-			       phase == 1 ? "A: mean, max held" : "B: max, mean capped", Delta, dm, tpred, apred, E_act);
+			printf("NR: SLP step, Delta = %.2e, max|dphi| = %.2e, wall fraction %.3f of %.2e; best max %.6f, predicted max|r| %.6f mean %.6f (now %.6f)\n",
+			       Delta, dm, wv, dWall, tst, tpred, apred, E_act);
 		}
 		else printf("NR: SLP LP not solved, keeping the LM step\n");
-		free(sv); free(bd); free(dl);
+		free(sv); free(bd); free(dl); free(cw);
 	}
 	if (Jslp) gsl_matrix_free(Jslp);
 #endif

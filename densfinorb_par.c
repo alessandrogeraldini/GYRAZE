@@ -76,6 +76,181 @@ static double uperp_from_mu3(int j, double mu_target, double *xbarr, double *xx,
 }
 
 /* -----------------------------------------------------------------------
+ * Analytic electron Jacobian (dfo_jac, see mps.h)
+ *
+ * With psi = charge*phi/Ti the closed-orbit density at x is
+ *   n(x) = int dxbar int_0^{vx0} dvx 2 G(mu(xbar,Uperp), Uperp; B),   Uperp = chi(x,xbar) + vx^2/2,
+ *   chi = psi(x) + (x - xbar)^2/2,   vx0 = sqrt(2 (chiM(xbar) - chi(x,xbar))),
+ * G the vz integral of F (incoming + reflected, reflected while U < B(mu) = Ucrit(mu) + mu, the chi_M of
+ * the open orbit with that mu). A change delta psi acts through
+ *   LOCAL    chi(x) at the point:  delta psi(x) [ int dvx 2 dG/dUperp - 2 G(chiM)/vx0 ]
+ *   CHIM     the upper limit:      2 G(chiM)/vx0 * delta psi(x_M(xbar))       (envelope theorem)
+ *   MU       the orbit's mu:       int dvx 2 dG/dmu * delta mu(xbar,Uperp),
+ *                                  delta mu = -(1/pi) int_orbit delta psi / v_x dx   at fixed Uperp
+ *   BARRIER  B(mu) itself:         int dvx 2 dG/dB * delta B(mu), from the open orbits' chiM and mu_sep
+ * A uniform shift of psi changes none of mu_sep, vx0, or B - chiM: the LOCAL and CHIM pieces cancel, and
+ * delta mu = -delta psi * dmu/dUperp. That is used to keep delta mu finite near the separatrix, where
+ * int dx/v_x diverges: delta mu = bsub - delta psi(x_M) dmu/dUperp with
+ *   bsub(m) = -(1/pi) int (hat_m(x) - [m == M]) / v_x dx,
+ * bounded, and dmu/dUperp from the mu table (which is what the density quadrature integrates over).
+ * ----------------------------------------------------------------------- */
+double *dfo_jac = NULL;
+int dfo_jac_n = 0, dfo_jac_terms = DFO_JAC_ALL;
+
+/* Closed-orbit v_z integral of one level when the accessibility lift is active (U_lb > Uperp): an electron at
+ * this point has U = Uperp + v_z^2/2 with v_z its parallel velocity HERE, and only U >= U_lb (and U >= mu, below
+ * which F = 0) is populated, so the integral runs over v_z from v_lo = sqrt(2 (max(U_lb, mu) - Uperp)). The loop
+ * that handles the unlifted case instead writes U = U_lb + v^2/2 and integrates over v from 0, which drops the
+ * Jacobian dv_z/dv = v/v_z < 1 and overcounted n_e on every lifted level (1-4.5% around a potential bump/dip).
+ * Reflected copy for U < Ucrit + mu, in the same variable. Trapezoid on v = n dvz, part cells at the ends.
+ * Returns the total; *in and *ref (either may be NULL) get the incoming and reflected parts. */
+static double lift_trap_vz(double a, double b, double munew, double Uperp, double dvz,
+                           double **FF, double *mumu, double *UU, int sizemumu, int sizeUU)
+{
+    double I = 0.0;
+    if (b <= a) return 0.0;
+    int n0 = (int)floor(a / dvz), n1 = (int)ceil(b / dvz);
+    for (int n = n0; n < n1; n++) {
+        double lo = fmax(n * dvz, a), hi = fmin((n + 1) * dvz, b);
+        if (hi <= lo) continue;
+        double Flo = bilin_interp(munew, Uperp + 0.5*lo*lo - munew, FF, mumu, UU, sizemumu, sizeUU, -1, -1);
+        double Fhi = bilin_interp(munew, Uperp + 0.5*hi*hi - munew, FF, mumu, UU, sizemumu, sizeUU, -1, -1);
+        I += 0.5 * (hi - lo) * (Flo + Fhi);
+    }
+    return I;
+}
+static double lifted_intdU(double munew, double Uperp, double U_lb, double Ucrit, double Ucap, double dvz,
+                           double **FF, double *mumu, double *UU, int sizemumu, int sizeUU, double *in, double *ref)
+{
+    double Ulo = fmax(fmax(U_lb, munew), Uperp);
+    double a = sqrt(2.0 * (Ulo - Uperp)), b = sqrt(2.0 * fmax(Ucap - Uperp, 0.0));
+    double c = (Ucrit + munew > Ulo) ? sqrt(2.0 * (Ucrit + munew - Uperp)) : a;
+    double Iin  = lift_trap_vz(a, b, munew, Uperp, dvz, FF, mumu, UU, sizemumu, sizeUU);
+    double Iref = lift_trap_vz(a, fmin(c, b), munew, Uperp, dvz, FF, mumu, UU, sizemumu, sizeUU);
+    if (in) *in = Iin;
+    if (ref) *ref = Iref;
+    return Iin + Iref;
+}
+
+/* closed-orbit vz integral of phase 3 (lintdU) for one level, as a function of mu, the lower energy
+ * bound U_lb and the reflection threshold Ucrit; a copy of that loop so it can be differentiated */
+static double closed_intdU(double munew, double Uperp, double U_lb, double Ucrit, double Ucap, double dvz,
+                           double **FF, double *mumu, double *UU, int sizemumu, int sizeUU)
+{
+    if (U_lb > Uperp + 1e-14) return lifted_intdU(munew, Uperp, U_lb, Ucrit, Ucap, dvz, FF, mumu, UU, sizemumu, sizeUU, NULL, NULL);
+    int ll, refl = 1, sizeUU2 = (int)sqrt(2.0 * (Ucap - U_lb)) / dvz;
+    double I = 0.0, F = 0.0, Fold = 0.0, Fold_ref = 0.0, frac = 1.0, frac_ref = 0.0, U, vz;
+    for (ll = 0; ll < sizeUU2; ll++) {
+        if (ll == 0) { F = bilin_interp(munew, U_lb - munew, FF, mumu, UU, sizemumu, sizeUU, -1, -1); continue; }
+        Fold = F; Fold_ref = F;
+        vz = dvz * ll;
+        U  = U_lb + 0.5 * vz * vz;
+        if ((U > munew) && (U - 0.5*vz*vz + 0.5*(vz-dvz)*(vz-dvz) < munew)) {
+            frac = (vz - sqrt(2.0 * (munew - U_lb + TINY))) / dvz;
+            Fold = bilin_interp(munew, 0.0, FF, mumu, UU, sizemumu, sizeUU, -1, -1);
+            Fold_ref = Fold;   /* the reflected part starts from F(mu, 0) too, not from the F = 0 below the cutoff */
+            F    = bilin_interp(munew, U - munew, FF, mumu, UU, sizemumu, sizeUU, -1, -1);
+        } else if (U > munew) {
+            frac = 1.0;
+            F    = bilin_interp(munew, U - munew, FF, mumu, UU, sizemumu, sizeUU, -1, -1);
+        } else {
+            frac = 1.0;
+            F    = 0.0;
+        }
+        if ((U - munew < Ucrit - numb) && (refl == 1))
+            frac_ref = 1.0;
+        else if ((U - munew > Ucrit - numb) && (refl == 1)) {
+            refl = 0;
+            if (Ucrit < U_lb - munew + numb) frac_ref = 0.0;
+            else {
+                double vzcrit = sqrt(2.0 * (Ucrit + munew - U_lb));
+                Fold_ref = bilin_interp(munew, Ucrit, FF, mumu, UU, sizemumu, sizeUU, -1, -1);
+                frac_ref = (vzcrit - (vz - dvz)) / dvz;
+            }
+        } else frac_ref = 0.0;
+        I += 0.5 * frac * dvz * ((F + Fold) + frac_ref * (F + Fold_ref));
+    }
+    return I;
+}
+
+/* interval of lin_interp's search (same bisection, so the same bracket when xx is not monotone) */
+static int lin_interp_idx(const double *xx, double x, int n)
+{
+    int i = n/2, ileft = 0, iright = n-1;
+    if (x < xx[0]) return 0;
+    if (x > xx[n-1]) return n-2;
+    while ((xx[i] - x > TINY) || (xx[i+1] - x < -TINY)) {
+        if (xx[i] - x > TINY) { if (i - ileft > 1) { iright = i; i -= (i - ileft)/2; } else { iright = i; i--; } }
+        else                  { if (iright - i > 1) { ileft = i; i += (iright - i)/2; } else { ileft = i; i++; } }
+        if (i < 0) return 0;
+        if (i >= n-1) return n-2;
+    }
+    return i;
+}
+
+/* bsub(m) for closed orbit (xbar, level U) whose left turning point is node ib (chi = U there) and whose
+ * effective-potential maximum is node M; psi linear between nodes (mu_gaussquad, MUGAUSSSPLINE 0). The right
+ * turning point is found as in mu_gaussquad, starting at node imin+1. Filled into v[lo..hi] (v indexed by
+ * node, zeroed by the caller over that range). Returns 0 if the orbit leaves the grid. */
+/* lower bound of the energy integral for level mu of orbit j at x_i: phase 3's lift for a non-monotone psi.
+ * If the bound is lifted, *js_out and *k_out give the orbit and the mu-table bracket (k, k+1) that set it
+ * (else *js_out = -1); either may be NULL. */
+static double lift_Ulb(int j, double munew, double Uperpnew, int i, int phi_monotone, int js_phi_imin,
+                       int sizexbar, double **mu, double **Uperp, int *lowerlimit, int **upper,
+                       int *upperlimit, double phimin, int *js_out, int *k_out)
+{
+    if (js_out) *js_out = -1;
+    if (phi_monotone) return Uperpnew;
+    double L = Uperpnew;
+    for (int js = j + 1; js <= (js_phi_imin + sizexbar) / 2; js++) {
+        int kf = -1;
+        double Us = uperp_from_mu2(js, munew, mu, Uperp, lowerlimit[js], upper[js][i], upperlimit[js], j, 0, &kf, phimin);
+        if (Us > L) { L = Us; if (js_out) *js_out = js; if (k_out) *k_out = kf; }
+    }
+    return L;
+}
+
+/* Ucrit(mu) = lin_interp(muopen, Ucritf, mu) without its exit on the ends */
+static double ucrit_at(const double *muopen, const double *Ucritf, int n, double m)
+{
+    int a = lin_interp_idx(muopen, m, n);
+    double t = (m - muopen[a]) / (muopen[a+1] - muopen[a]);
+    return Ucritf[a] + t * (Ucritf[a+1] - Ucritf[a]);
+}
+
+static int dmu_kernel(double U, double xbarj, int ib, int imn, int M, const double *xx, const double *psi,
+                      int n, int *lo, int *hi, double *v)
+{
+    const int NQ = 8;
+    int m = imn + 1, a;
+    while (m < n && 0.5*(xx[m]-xbarj)*(xx[m]-xbarj) + psi[m] < U) m++;
+    if (m >= n) return 0;
+    double plo = xx[m-1], phi_ = xx[m];
+    for (a = 0; a < 60; a++) {
+        double mid = 0.5*(plo + phi_);
+        double s = (mid - xx[m-1]) / (xx[m] - xx[m-1]);
+        if (0.5*(mid-xbarj)*(mid-xbarj) + psi[m-1] + s*(psi[m] - psi[m-1]) < U) plo = mid; else phi_ = mid;
+    }
+    double xt = 0.5*(plo + phi_);
+    *lo = (M < ib) ? M : ib;
+    *hi = m;
+    for (a = ib; a < m; a++) {
+        double p = xx[a], q = (xx[a+1] < xt) ? xx[a+1] : xt, c = 0.5*(p + q), r = 0.5*(q - p), h = xx[a+1] - xx[a];
+        if (r <= 0.0) continue;
+        for (int iq = 1; iq <= NQ; iq++) {
+            double th = iq*M_PI/(NQ + 1), x = c + r*cos(th), s = (x - xx[a]) / h;
+            double g = U - 0.5*(x-xbarj)*(x-xbarj) - (psi[a]*(1.0 - s) + psi[a+1]*s);
+            if (g <= 0.0) continue;
+            double w = -(1.0/M_PI) * r * (M_PI/(NQ + 1)) * sin(th) / sqrt(2.0*g);
+            v[a]   += w * ((1.0 - s) - (a   == M ? 1.0 : 0.0));
+            v[a+1] += w * (s         - (a+1 == M ? 1.0 : 0.0));
+            if (M != a && M != a+1) v[M] -= w;
+        }
+    }
+    return 1;
+}
+
+/* -----------------------------------------------------------------------
  * densfinorb_par
  * ----------------------------------------------------------------------- */
 void densfinorb_par(double Ti, double lenfactor, double alpha,
@@ -113,7 +288,7 @@ void densfinorb_par(double Ti, double lenfactor, double alpha,
     int *crossed_max, *crossed_min, *kdrop;
     int *lowerlimit, *upperlimit, **upper, *imax, *imin;
     double **Uperp, ***vx, *chiMax, *chimpp, *chimin, oorbintgrd, oorbintgrdantycal;
-    double vz, U, dvz = 0.1, dvzopen = 0.1, dvx, dxbar, intdU = 0.0, intdUopen = 0.0, intdU_corr_delta = 0.0, intdU_corr_chiM = 0.0;
+    double vz, U, dvz = DVZ_QUAD, dvzopen = DVZ_QUAD, dvx, dxbar, intdU = 0.0, intdUopen = 0.0, intdU_corr_delta = 0.0, intdU_corr_chiM = 0.0;
     double intdUold = 0.0, intdU_corr_delta_old = 0.0, intdU_corr_chiM_old = 0.0, intdvx = 0.0, intdvxold = 0.0, intdvx_corr_delta = 0.0, intdvx_corr_delta_old = 0.0, intdvx_corr_chiM = 0.0, intdvx_corr_chiM_old = 0.0, intdxbar = 0.0, intdxbar_corr_delta = 0.0, intdxbar_corr_chiM = 0.0, intdxbaropen = 0.0, F, Fold = 0.0, Fold_ref = 0.0, Ucap;
     double intdUopenflow = 0.0, intdUopenflowold = 0.0, intdxbaropenflow = 0.0, oorbintgrdflow = 0.0, oorbintgrdflowold = 0.0, oorbintgrdener = 0.0, oorbintgrdenerold = 0.0;
     double intdU_in = 0.0, intdU_in_old = 0.0, intdU_ref = 0.0, intdU_ref_old = 0.0;
@@ -555,6 +730,51 @@ void densfinorb_par(double Ti, double lenfactor, double alpha,
     openorbitopen[maxj-1] = 100.0;
     Ucritf[maxj-1]       = 0.0;
 
+    /* Analytic Jacobian, orbit part: for every closed level (j,k) the mu kernel bsub (bk_v over nodes
+     * bk_lo..bk_hi, NULL where the orbit leaves the grid or mu = 0) and dmu/dUperp from the mu table (mup);
+     * for the reflection threshold, the barrier table B_a = Ucritf[a] + muopen[a] with the node its chi_M
+     * sits on (bnode) -- entry a >= 1 is orbit a-1's separatrix, whose mu varies by bsub[a-1][0]. */
+    int want_jac = (dfo_jac != NULL && charge < 0 && zoomfactor == 1);
+    int **bk_lo = NULL, **bk_hi = NULL, *bnode = NULL;
+    double ***bk_v = NULL, **mup = NULL, *Btab = NULL;
+    if (dfo_jac != NULL && charge < 0 && zoomfactor != 1)
+        printf("WARNING in densfinorb_par: analytic Jacobian needs zoomfactor 1, not computed\n");
+    if (want_jac) {
+        double wt_k = omp_get_wtime();
+        bk_lo = calloc(sizexbar, sizeof(int*)); bk_hi = calloc(sizexbar, sizeof(int*));
+        bk_v = calloc(sizexbar, sizeof(double**)); mup = calloc(sizexbar, sizeof(double*));
+#pragma omp parallel for schedule(dynamic)
+        for (int jj = 0; jj < sizexbar; jj++) {
+            int kbot = imin[jj] - imax[jj] + kdrop[jj], kq;
+            if (imin[jj] < 0 || imax[jj] < 0 || kbot != upperlimit[jj]) continue;
+            double *vtmp = calloc(size_finegrid, sizeof(double));
+            bk_lo[jj] = calloc(kbot + 1, sizeof(int)); bk_hi[jj] = calloc(kbot + 1, sizeof(int));
+            bk_v[jj] = calloc(kbot + 1, sizeof(double*)); mup[jj] = calloc(kbot + 1, sizeof(double));
+            for (kq = kdrop[jj]; kq < kbot; kq++) {
+                int lo, hi;
+                memset(vtmp, 0, size_finegrid * sizeof(double));
+                if (!dmu_kernel(Uperp[jj][kq], xbar[jj], imax[jj] + kq - kdrop[jj], imin[jj], imax[jj],
+                                xx, phi, size_finegrid, &lo, &hi, vtmp)) continue;
+                bk_lo[jj][kq] = lo; bk_hi[jj][kq] = hi;
+                bk_v[jj][kq] = malloc((hi - lo + 1) * sizeof(double));
+                memcpy(bk_v[jj][kq], vtmp + lo, (hi - lo + 1) * sizeof(double));
+            }
+            for (kq = 0; kq <= kbot && kbot > 0; kq++) {
+                int ka = (kq > 0) ? kq - 1 : 0, kb = (kq < kbot) ? kq + 1 : kbot;
+                double dU = Uperp[jj][ka] - Uperp[jj][kb];
+                mup[jj][kq] = (fabs(dU) > 1e-14) ? (mu[jj][ka] - mu[jj][kb]) / dU : 0.0;
+            }
+            free(vtmp);
+        }
+        Btab = malloc(maxj * sizeof(double)); bnode = malloc(maxj * sizeof(int));
+        for (j = 0; j < maxj; j++) {
+            Btab[j]  = Ucritf[j] + muopen[j];
+            bnode[j] = (j == 0) ? icrit : (j <= sizexbar ? imax[j-1] : -1);
+        }
+        bnode[maxj-1] = -1;
+        printf("analytic Jacobian: orbit kernels in %.2f s\n", omp_get_wtime() - wt_k);
+    }
+
     if (DEBUG == 1) {
         printf("~~~~~The second element of FF is %f~~~~~\n", FF[0][1]);
         printf("~~~~~The second element of UU is %f~~~~~\n", UU[1]);
@@ -712,10 +932,17 @@ void densfinorb_par(double Ti, double lenfactor, double alpha,
         exit(EXIT_FAILURE);
     }
 
+    /* analytic Jacobian: one row buffer per thread, reduced into dfo_jac row ic after each position */
+    int ncol_jac = dfo_jac_n, nthr_jac = omp_get_max_threads();
+    double *jac_rb = want_jac ? calloc((size_t)nthr_jac * ncol_jac, sizeof(double)) : NULL;
+    double wt_jac = 0.0;
+    if (want_jac) memset(dfo_jac, 0, (size_t)dfo_jac_n * dfo_jac_n * sizeof(double));
+
     stop = 0;
     ic   = 0;
     while (stop == 0) {
         i = ic * zoomfactor;
+        if (want_jac) memset(jac_rb, 0, (size_t)nthr_jac * ncol_jac * sizeof(double));
 
         memset(intdvx_j,     0, sizexbar * sizeof(double));
         memset(intdvx_cd_j,  0, sizexbar * sizeof(double));
@@ -885,6 +1112,19 @@ void densfinorb_par(double Ti, double lenfactor, double alpha,
             double lmin_Uperp_j = Ucap, lmin_Uperp_bfx_j = Ucap, lUperp_lb_at_min_j = Ucap;
             double lintdUantycal = 0.0, lintdU_corr_delta2 = 0.0;
 
+            /* analytic Jacobian: per level (in k order) G, Uperp, mu, dG/dmu (with Ucrit(mu) and the lift
+             * following mu), dG/dUcrit, its v_x quadrature weight, table level, and for the turning level the
+             * weight of level kk-1 in its interpolated mu */
+            int nlev = 0, nlmax = want_jac ? upper[j][i] - lowerlimit[j] + 2 : 0;
+            double *jG = NULL, *jU = NULL, *jmu = NULL, *jGmu = NULL, *jGB = NULL, *jw = NULL, *jwA = NULL;
+            double *jLc = NULL, *jLt = NULL;   /* lift: coefficient of delta mu_js*(U_lb), bracket weight */
+            int *jk = NULL, *jLs = NULL, *jLk = NULL;
+            if (want_jac) {
+                jG = malloc(9 * nlmax * sizeof(double)); jU = jG + nlmax; jmu = jU + nlmax; jGmu = jmu + nlmax;
+                jGB = jGmu + nlmax; jw = jGB + nlmax; jwA = jw + nlmax; jLc = jwA + nlmax; jLt = jLc + nlmax;
+                jk = malloc(3 * nlmax * sizeof(int)); jLs = jk + nlmax; jLk = jLs + nlmax;
+            }
+
             for (kk = lowerlimit[j]; kk < upper[j][i] + 1; kk++) {
                 lvxold        = lvxnew;
                 lintdUold     = lintdU;
@@ -950,6 +1190,7 @@ void densfinorb_par(double Ti, double lenfactor, double alpha,
                         if ((lU > lmunew) && (lU - 0.5*lvz*lvz + 0.5*(lvz-dvz)*(lvz-dvz) < lmunew)) {
                             lfrac  = (lvz - sqrt(2.0 * (lmunew - lU_lb + TINY))) / dvz;
                             lFold  = bilin_interp(lmunew, 0.0, FF, mumu, UU, sizemumu, sizeUU, -1, -1);
+                            lFold_ref = lFold;   /* the reflected part starts from F(mu, 0) too, not from the F = 0 below the cutoff */
                             lF     = bilin_interp(lmunew, lU - lmunew, FF, mumu, UU, sizemumu, sizeUU, -1, -1);
                         } else if (lU > lmunew) {
                             lfrac = 1.0;
@@ -990,12 +1231,57 @@ void densfinorb_par(double Ti, double lenfactor, double alpha,
                             lintdU_corr_chiM = lintdU;
                     }
                 }
+                if (lU_lb > lUperpnew + 1e-14) {   /* lifted level: integrate in the true v_z (see lifted_intdU) */
+                    double lin_, lref_;
+                    lintdU = lifted_intdU(lmunew, lUperpnew, lU_lb, lUcrit, Ucap, dvz, FF, mumu, UU, sizemumu, sizeUU, &lin_, &lref_);
+                    if (charge < 0) { lintdU_in = lin_; lintdU_ref = lref_; }
+                    if (kk == lowerlimit[j] && charge < 0) lintdU_corr_chiM = lintdU;
+                }
                 lintdUantycal = exp(-lUperpnew) * (1.0 / (2.0 * M_PI));
                 if (lUcrit + lmunew > lUperpnew)
                     lintdU_corr_delta2 = bilin_interp(lmunew, lUcrit, FF, mumu, UU, sizemumu, sizeUU, -1, -1);
                 else
                     lintdU_corr_delta2 = 0.0;
                 lintdU_corr_delta = lintdU_corr_delta2;
+
+                if (want_jac) {
+                    const double hj = 1e-4;
+                    double mp = lmunew + hj, mm = (lmunew > hj) ? lmunew - hj : lmunew;
+                    double pmin = phi_imin >= 0 ? phi[phi_imin] : 0.0;
+                    int jsl = -1, ksl = -1;
+                    lift_Ulb(j, lmunew, lUperpnew, i, phi_monotone, js_phi_imin, sizexbar, mu, Uperp, lowerlimit, upper, upperlimit, pmin, &jsl, &ksl);
+                    double Gp = closed_intdU(mp, lUperpnew, lift_Ulb(j, mp, lUperpnew, i, phi_monotone, js_phi_imin, sizexbar, mu, Uperp, lowerlimit, upper, upperlimit, pmin, NULL, NULL),
+                                             ucrit_at(muopen, Ucritf, maxj, mp), Ucap, dvz, FF, mumu, UU, sizemumu, sizeUU);
+                    double Gm = closed_intdU(mm, lUperpnew, lift_Ulb(j, mm, lUperpnew, i, phi_monotone, js_phi_imin, sizexbar, mu, Uperp, lowerlimit, upper, upperlimit, pmin, NULL, NULL),
+                                             ucrit_at(muopen, Ucritf, maxj, mm), Ucap, dvz, FF, mumu, UU, sizemumu, sizeUU);
+                    jGmu[nlev] = (Gp - Gm) / (mp - mm);
+                    /* The lift (U_lb = Uperp at which orbit js* has this mu) moves with this orbit's mu, which the
+                     * difference above includes, and with orbit js*'s own mu table: delta U_lb gets
+                     * -delta mu_js*(U_lb) / mu'_js*, and dG/dU_lb / mu'_js* is the part of dG/dmu due to the lift
+                     * (dG/dmu with the lift following minus with it frozen). */
+                    jLs[nlev] = -1; jLc[nlev] = 0.0;
+                    if (jsl >= 0 && ksl >= 0 && ksl + 1 <= upperlimit[jsl]) {
+                        double Gpf = closed_intdU(mp, lUperpnew, lU_lb, ucrit_at(muopen, Ucritf, maxj, mp), Ucap, dvz, FF, mumu, UU, sizemumu, sizeUU);
+                        double Gmf = closed_intdU(mm, lUperpnew, lU_lb, ucrit_at(muopen, Ucritf, maxj, mm), Ucap, dvz, FF, mumu, UU, sizemumu, sizeUU);
+                        double dmk = mu[jsl][ksl+1] - mu[jsl][ksl];
+                        jLs[nlev] = jsl; jLk[nlev] = ksl;
+                        jLt[nlev] = (fabs(dmk) > 1e-14) ? (lmunew - mu[jsl][ksl]) / dmk : 0.0;
+                        jLc[nlev] = -(jGmu[nlev] - (Gpf - Gmf) / (mp - mm));
+                    }
+                    jGB[nlev]  = (closed_intdU(lmunew, lUperpnew, lU_lb, lUcrit + hj, Ucap, dvz, FF, mumu, UU, sizemumu, sizeUU)
+                                - closed_intdU(lmunew, lUperpnew, lU_lb, lUcrit - hj, Ucap, dvz, FF, mumu, UU, sizemumu, sizeUU)) / (2.0 * hj);
+                    jG[nlev] = lintdU; jU[nlev] = lUperpnew; jmu[nlev] = lmunew; jk[nlev] = kk;
+                    jwA[nlev] = (kk == upper[j][i] && lowerlimit[j] != upper[j][i])
+                              ? (chi[j][i] - Uperp[j][kk]) / (Uperp[j][kk-1] - Uperp[j][kk]) : 0.0;
+                    jw[nlev] = 0.0;
+                    if (kk > lowerlimit[j]) { jw[nlev-1] += ldvx; jw[nlev] += ldvx; }   /* loc_dvx's trapezoid */
+                    if (j == jc0 + 1 && kk == lowerlimit[j] && (ic % 20) == 0) {
+                        double Gc = closed_intdU(lmunew, lUperpnew, lU_lb, lUcrit, Ucap, dvz, FF, mumu, UU, sizemumu, sizeUU);
+                        if (fabs(Gc - lintdU) > 1e-10 * (1.0 + fabs(lintdU)))
+                            printf("WARNING analytic Jacobian: closed_intdU %.12e != lintdU %.12e (i=%d j=%d)\n", Gc, lintdU, i, j);
+                    }
+                    nlev++;
+                }
 
                 if (kk == lowerlimit[j]) {
                     loc_dvx += 0.0;
@@ -1039,6 +1325,68 @@ void densfinorb_par(double Ti, double lenfactor, double alpha,
                 (void)lmin_Uperp_j; (void)lmin_Uperp_bfx_j; (void)lUperp_lb_at_min_j;
             } /* end k loop */
 
+            if (want_jac && nlev > 0) {
+                double *rb = jac_rb + (size_t)omp_get_thread_num() * ncol_jac;
+                int M = imax[j], l, m;
+                /* this j's weight in the trapezoid over xbar (3d), incl. the partial first cell */
+                double dxa = xbar[j] - xbar[j-1], dxc = (j + 1 < sizexbar) ? xbar[j+1] - xbar[j] : 0.0;
+                if (j == jc0 + 1 && i != 0 && i != imax[j])
+                    dxa *= (chiMax[j] - chi[j][i]) / (chiMax[j] - chi[j][i] + chi[j-1][i] - chiMax[j-1]);
+                double Wj = 0.5 * (dxa + dxc);
+                double vx0 = sqrt(fmax(2.0 * (chiMax[j] - chi[j][i]), 0.0));
+                if (vx0 > 0.0 && lowerlimit[j] == 0) {
+                    double S1 = 0.0;   /* int dvx 2 dG/dUperp along this xbar's levels */
+                    for (l = 0; l < nlev; l++) {
+                        int la = (l > 0) ? l - 1 : 0, lb = (l < nlev - 1) ? l + 1 : nlev - 1;
+                        double dU = jU[la] - jU[lb];
+                        if (fabs(dU) > 1e-12) S1 += jw[l] * (jG[la] - jG[lb]) / dU;
+                    }
+                    if ((dfo_jac_terms & DFO_JAC_LOCAL) && i < ncol_jac) rb[i] += Wj * (S1 - 2.0 * jG[0] / vx0);
+                    if ((dfo_jac_terms & DFO_JAC_CHIM) && M < ncol_jac)  rb[M] += Wj * 2.0 * jG[0] / vx0;
+                }
+                for (l = 0; l < nlev; l++) {
+                    double cmu = Wj * jw[l] * jGmu[l], cB = Wj * jw[l] * jGB[l];
+                    if ((dfo_jac_terms & DFO_JAC_MU) && cmu != 0.0 && bk_v[j] != NULL) {
+                        /* delta mu of this level: bsub - delta psi(x_M) dmu/dUperp; the turning level's mu
+                         * interpolates levels kk-1 and kk */
+                        for (int side = 0; side < 2; side++) {
+                            int kq = jk[l] - side;
+                            double c = cmu * (side ? jwA[l] : 1.0 - jwA[l]);
+                            if (c == 0.0 || kq < 0 || bk_v[j][kq] == NULL) continue;
+                            for (m = bk_lo[j][kq]; m <= bk_hi[j][kq] && m < ncol_jac; m++) rb[m] += c * bk_v[j][kq][m - bk_lo[j][kq]];
+                            if (M < ncol_jac) rb[M] -= c * mup[j][kq];
+                        }
+                    }
+                    double cL = Wj * jw[l] * jLc[l];
+                    if ((dfo_jac_terms & DFO_JAC_MU) && cL != 0.0 && jLs[l] >= 0 && bk_v[jLs[l]] != NULL) {
+                        /* delta mu of orbit js* at U_lb, between its levels k and k+1 */
+                        int js = jLs[l], Ms = imax[js];
+                        for (int side = 0; side < 2; side++) {
+                            int kq = jLk[l] + side;
+                            double c = cL * (side ? jLt[l] : 1.0 - jLt[l]);
+                            if (c == 0.0 || bk_v[js][kq] == NULL) continue;
+                            for (m = bk_lo[js][kq]; m <= bk_hi[js][kq] && m < ncol_jac; m++) rb[m] += c * bk_v[js][kq][m - bk_lo[js][kq]];
+                            if (Ms < ncol_jac) rb[Ms] -= c * mup[js][kq];
+                        }
+                    }
+                    if ((dfo_jac_terms & DFO_JAC_BARRIER) && cB != 0.0) {
+                        /* delta B at fixed mu, B linear between table entries a, a+1 */
+                        int a = lin_interp_idx(muopen, jmu[l], maxj);
+                        double dmu_a = muopen[a+1] - muopen[a];
+                        double t = (jmu[l] - muopen[a]) / dmu_a, sB = (Btab[a+1] - Btab[a]) / dmu_a;
+                        for (int side = 0; side < 2; side++) {
+                            int aa = a + side, jo = aa - 1;
+                            double wt = side ? t : 1.0 - t;
+                            if (bnode[aa] >= 0 && bnode[aa] < ncol_jac) rb[bnode[aa]] += cB * wt;
+                            if (jo >= 0 && jo < sizexbar && bk_v[jo] != NULL && bk_v[jo][0] != NULL)
+                                for (m = bk_lo[jo][0]; m <= bk_hi[jo][0] && m < ncol_jac; m++)
+                                    rb[m] -= cB * sB * wt * bk_v[jo][0][m - bk_lo[jo][0]];
+                        }
+                    }
+                }
+            }
+            if (want_jac) { free(jG); free(jk); }
+
             intdvx_j[j]     = loc_dvx;
             intdvx_cd_j[j]  = loc_cd;
             intdvx_cm_j[j]  = loc_cm;
@@ -1068,6 +1416,12 @@ void densfinorb_par(double Ti, double lenfactor, double alpha,
                 printf("intdxbar is NAN, j=%d, i=%d\n", j, i);
                 exit(-1);
             }
+        }
+
+        if (want_jac && ic < dfo_jac_n) {
+            double *row = dfo_jac + (size_t)ic * dfo_jac_n;
+            for (int t = 0; t < nthr_jac; t++)
+                for (int m = 0; m < ncol_jac; m++) row[m] += jac_rb[(size_t)t * ncol_jac + m];
         }
 
         /* 3e. Diagnostic upper_diag, n_grid write, stop logic */
@@ -1160,6 +1514,21 @@ void densfinorb_par(double Ti, double lenfactor, double alpha,
         } else {
             n_grid[ic] = 0.0;
         }
+    }
+
+    if (want_jac) {
+        /* d/dpsi -> d/dphi_grid (psi = charge phi/Ti), normalized as n_grid; rows past the n grid zeroed */
+        for (ic = 0; ic < dfo_jac_n; ic++)
+            for (int m = 0; m < dfo_jac_n; m++)
+                dfo_jac[(size_t)ic * dfo_jac_n + m] = (ic < *size_ngrid) ? dfo_jac[(size_t)ic * dfo_jac_n + m] * (charge / Ti) / n_inf : 0.0;
+        for (j = 0; j < sizexbar; j++) {
+            if (bk_v[j] != NULL) {
+                for (k = 0; k <= upperlimit[j]; k++) free(bk_v[j][k]);
+                free(bk_v[j]); free(bk_lo[j]); free(bk_hi[j]); free(mup[j]);
+            }
+        }
+        free(bk_v); free(bk_lo); free(bk_hi); free(mup); free(Btab); free(bnode); free(jac_rb);
+        (void)wt_jac;
     }
 
     for (j = 0; j < maxj/2; j++) {

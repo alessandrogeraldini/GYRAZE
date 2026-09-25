@@ -965,6 +965,41 @@ static double uperp_from_mu(int j, double mu_target,
 	return Uperp[j][upperlimit[j]];
 }
 
+/* Closed-orbit v_z integral of one level when the accessibility lift is active (U_lb > Uperp): an electron at
+ * this point has U = Uperp + v_z^2/2 with v_z its parallel velocity HERE, and only U >= U_lb (and U >= mu, below
+ * which F = 0) is populated, so the integral runs over v_z from v_lo = sqrt(2 (max(U_lb, mu) - Uperp)). The loop
+ * that handles the unlifted case instead writes U = U_lb + v^2/2 and integrates over v from 0, which drops the
+ * Jacobian dv_z/dv = v/v_z < 1 and overcounted n_e on every lifted level (1-4.5% around a potential bump/dip).
+ * Reflected copy for U < Ucrit + mu, in the same variable. Trapezoid on v = n dvz, part cells at the ends.
+ * Returns the total; *in and *ref (either may be NULL) get the incoming and reflected parts. */
+static double lift_trap_vz(double a, double b, double munew, double Uperp, double dvz,
+                           double **FF, double *mumu, double *UU, int sizemumu, int sizeUU)
+{
+    double I = 0.0;
+    if (b <= a) return 0.0;
+    int n0 = (int)floor(a / dvz), n1 = (int)ceil(b / dvz);
+    for (int n = n0; n < n1; n++) {
+        double lo = fmax(n * dvz, a), hi = fmin((n + 1) * dvz, b);
+        if (hi <= lo) continue;
+        double Flo = bilin_interp(munew, Uperp + 0.5*lo*lo - munew, FF, mumu, UU, sizemumu, sizeUU, -1, -1);
+        double Fhi = bilin_interp(munew, Uperp + 0.5*hi*hi - munew, FF, mumu, UU, sizemumu, sizeUU, -1, -1);
+        I += 0.5 * (hi - lo) * (Flo + Fhi);
+    }
+    return I;
+}
+static double lifted_intdU(double munew, double Uperp, double U_lb, double Ucrit, double Ucap, double dvz,
+                           double **FF, double *mumu, double *UU, int sizemumu, int sizeUU, double *in, double *ref)
+{
+    double Ulo = fmax(fmax(U_lb, munew), Uperp);
+    double a = sqrt(2.0 * (Ulo - Uperp)), b = sqrt(2.0 * fmax(Ucap - Uperp, 0.0));
+    double c = (Ucrit + munew > Ulo) ? sqrt(2.0 * (Ucrit + munew - Uperp)) : a;
+    double Iin  = lift_trap_vz(a, b, munew, Uperp, dvz, FF, mumu, UU, sizemumu, sizeUU);
+    double Iref = lift_trap_vz(a, fmin(c, b), munew, Uperp, dvz, FF, mumu, UU, sizemumu, sizeUU);
+    if (in) *in = Iin;
+    if (ref) *ref = Iref;
+    return Iin + Iref;
+}
+
 static double uperp_from_mu2(int j, double mu_target,
                               double **mu, double **Uperp, int lowerlimit, int upperlimit, int maxk, int current_j, int current_k, int *k_out, double phi_imin)
 {
@@ -1051,7 +1086,7 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 	/* lowerlimit represents the lower limit of k in the integrals over Uperp (or vx). It's needed because some of the earlies energies; (which are the largest because thy are values of chi stored after the maximum is found); may be so large that they are associated with very small values of the distribution function. This avoids integrating in an empty portion of phase space; upperlimit[j] represents the largest value of k (the smallest stored energy Uperp = chi_minimum) associated with some value of j; upper[j][i] represents the value of k associated with the smallest value of vx when integrating over Uperp. Going above upperlimit[j][i] makes Uperp < chi so velocities imaginary; imax/imin[j] stores the position of the maximum/minimum of the effective potential chi (It's x_M/x_m in the paper, which depends on xbar). */
 	double **Uperp, ***vx, *chiMax, *chimpp, *chimin, oorbintgrd, oorbintgrdantycal;
 	/* Uperp stores the possible values of Uperp associated with closed orbits, and so does vx; chiMax and chimin store the local maxima and minima of the effective potential maximum, oorbintgrd is the value of the integrand in the first open orbit integral (oorbintgrdantycal is the analytical result for flat potential) */
-	double vz, U, dvz = 0.1, dvzopen = 0.1, dvx, dxbar, intdU=0.0, intdUopen=0.0, intdU_corr_delta = 0.0, intdU_corr_chiM = 0.0;
+	double vz, U, dvz = DVZ_QUAD, dvzopen = DVZ_QUAD, dvx, dxbar, intdU=0.0, intdUopen=0.0, intdU_corr_delta = 0.0, intdU_corr_chiM = 0.0;
 		/* vz used in the density integral; U is the total energy, used in the density integral; dvz is the thickness of the vz grid used to take the integral over U (which is taken over vz in practice), dvzopen is the same for the open orbit piece; dvx is the thickness of the vx grid used to take the integral over Uperp ( which is taken over vx in practice). It must be evaluated because it depends on stored values of vx[j][i][k]; dxbar is the thickness of the xbar grid; intdU is the value of the integral over U in the closed orbit density integration process; intdUopen is the same as above, for the open orbit integral  */
 	double intdUold=0.0, intdU_corr_delta_old = 0.0, intdU_corr_chiM_old = 0.0, intdvx=0.0, intdvxold = 0.0, intdvx_corr_delta = 0.0, intdvx_corr_delta_old = 0.0, intdvx_corr_chiM = 0.0, intdvx_corr_chiM_old = 0.0, intdxbar=0.0, intdxbar_corr_delta = 0.0, intdxbar_corr_chiM = 0.0, intdxbaropen=0.0, F, Fold=0.0, Fold_ref=0.0, Ucap;
 		/* intdUold is a variable which stores the old intdU, so that the trapezium rule of integration can be applied (intdUold + intdU)*dvz; intdvx stores the integral over Uperp (hence over vx) in the closed orbit integral; intdxbar stores the value of the integral over xbar (which is the final result!), intdxbaropen does the same in the open orbit density integral; intdxbaropenBohm does the same for the Bohm integral; idealBohm is what the Bohm integral shoult be if Bohm condition is marginally satisfied; F is the value of the distribution function evaluated in the density integrals by interpolating FF, and Fold is the `old' needed to apply the trapezium rule; Fprime is the bilinearly interpolated value of FFprime, and Fprimeold is the same at the previous grid point (needed for trapezium rule); used in INTEGRALS OF DISTRIBUTION FUNCTION AT INFINITY; Ucap is the topmost total energy integrated to */
@@ -2225,6 +2260,7 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 								if ( (U > munew) && (U - 0.5*vz*vz + 0.5*(vz-dvz)*(vz-dvz) < munew) ) {
 									frac = (vz - sqrt(2.0*(munew - U_lb+TINY)))/dvz;
 									Fold = bilin_interp(munew, 0.0, FF, mumu, UU, sizemumu, sizeUU, -1, -1); 
+									Fold_ref = Fold; /* the reflected part starts from F(mu, 0) too, not from the F = 0 below the cutoff */
 									F = bilin_interp(munew, U-munew, FF, mumu, UU, sizemumu, sizeUU, -1, -1); 
 								}
 								else if (U > munew){
@@ -2284,6 +2320,12 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 							if(k == lowerlimit[j] && charge < 0){
 								intdU_corr_chiM = intdU;
 							}
+						}
+						if (U_lb > Uperpnew + 1e-14) {   /* lifted level: integrate in the true v_z (see lifted_intdU) */
+							double lin_, lref_;
+							intdU = lifted_intdU(munew, Uperpnew, U_lb, Ucrit, Ucap, dvz, FF, mumu, UU, sizemumu, sizeUU, &lin_, &lref_);
+							if (charge < 0) { intdU_in = lin_; intdU_ref = lref_; }
+							if (k == lowerlimit[j] && charge < 0) intdU_corr_chiM = intdU;
 						}
 						intdUantycal = exp(-Uperpnew)*(1.0/(2.0*M_PI));// result with phi =0
 						if(Ucrit + munew > Uperpnew){
