@@ -235,16 +235,18 @@ OUTPUT: density profile ni_DS
 				if (i==0)
 					intgrdmfl += (1.0/3.0)*( ( pow(2.0*(halfVx0sq + alpha*vzk*twopidmudvy[j]), 1.5) - pow(2.0*halfVx0sq, 1.5) ) * Fk + (pow(2.0*(halfVx0sq + alpha*vzkm*twopidmudvy[j]), 1.5) - pow(2.0*halfVx0sq, 1.5)) * Fkm1 ) * 0.5 * ( vzk - vzkm );
 				}
-				if (i_peak >= 0 && i > i_peak && i_turn[j] >= 0) {
-					double phi_lo    = phi_DS[i_turn[j]];
-					double phi_up_k  = (i_turn_dM[j][k]   >= 0) ? phi_DS[i_turn_dM[j][k]]   : phi_peak;
-					double phi_up_km = (i_turn_dM[j][k-1] >= 0) ? phi_DS[i_turn_dM[j][k-1]] : phi_peak;
-					double arg_lo    = (phi_lo    - phi_DS[i])/TiovTe;   /* T_i units, like halfVx0sq */
-					double arg_up_k  = (phi_up_k  - phi_DS[i])/TiovTe;
-					double arg_up_km = (phi_up_km - phi_DS[i])/TiovTe;
-					if (arg_lo >= 0.0 && arg_up_k >= 0.0 && arg_up_km >= 0.0)
-						intgrd_refl += ( (sqrt(2.0*arg_up_k)  - sqrt(2.0*arg_lo)) * Fk
-						              + (sqrt(2.0*arg_up_km) - sqrt(2.0*arg_lo)) * Fkm1 ) * 0.5*(vzk - vzkm);
+				if (i_peak >= 0 && i > i_peak) {
+					/* Ions of this band that pass x_i toward the wall but are below the peak come back through x_i: their
+					 * kinetic energy at x_i (T_i units) runs from max(bottom, 0) to min(top, peak), with exact band edges.
+					 * This includes bands that only partly reach x_i (near their turning points), which the grid turning
+					 * points (i_turn) missed; checked against a 1x1v ion tracer (analysis_pw32/orb/ion1d.c). */
+					double arg_pk = (phi_peak - phi_DS[i])/TiovTe;
+					double lo = fmax(halfVx0sq, 0.0);
+					double up_k  = fmin(halfVx0sq + alpha*vzk*twopidmudvy[j],  arg_pk);
+					double up_km = fmin(halfVx0sq + alpha*vzkm*twopidmudvy[j], arg_pk);
+					double gk  = (up_k  > lo) ? sqrt(2.0*up_k)  - sqrt(2.0*lo) : 0.0;
+					double gkm = (up_km > lo) ? sqrt(2.0*up_km) - sqrt(2.0*lo) : 0.0;
+					intgrd_refl += (gk*Fk + gkm*Fkm1)*0.5*(vzk - vzkm);
 				}
 				//if ((count == 0) && (intgrd != intgrd) ) {
 				//	count = 1;
@@ -1284,6 +1286,39 @@ static void load_phi_restart(const char *filename, double *x_grid, double *phi_g
     free(rx); free(rphi);
 }
 
+/* The MP electron cutoff vpar_e_cut(mu) comes from the DS open orbits, but a restart only reloads phi: without this
+ * the MP is first re-solved with the model cutoff and drifts away from the restart state (phi_mp0 by ~0.03 at
+ * phi_wall 3.2) before the DS is evaluated. restart_vparcut.txt is a copy of a run's vparcut.txt (mu, vpar_cut),
+ * linearly interpolated onto mu_grid. Returns 1 on success. */
+static int load_vparcut_restart(const char *filename, const double *mu_grid, double *vcut, int size_mu) {
+    FILE *fp = fopen(filename, "r");
+    if (fp == NULL) {
+        printf("WARNING: could not open %s: the MP starts from the model electron cutoff\n", filename);
+        return 0;
+    }
+    int n = 0, cap = 64;
+    double *rm = malloc(cap * sizeof(double)), *rv = malloc(cap * sizeof(double));
+    char buf[200];
+    while (fgets(buf, sizeof(buf), fp) != NULL) {
+        double a, b;
+        if (buf[0] == '#' || sscanf(buf, "%lf %lf", &a, &b) != 2) continue;
+        if (n == cap) { cap *= 2; rm = realloc(rm, cap * sizeof(double)); rv = realloc(rv, cap * sizeof(double)); }
+        rm[n] = a; rv[n] = b; n++;
+    }
+    fclose(fp);
+    if (n < 2) {
+        printf("WARNING: %s has fewer than 2 points: the MP starts from the model electron cutoff\n", filename);
+        free(rm); free(rv); return 0;
+    }
+    for (int i = 0; i < size_mu; i++) {
+        double m = fmin(fmax(mu_grid[i], rm[0]), rm[n-1]);
+        vcut[i] = lin_interp(rm, rv, m, n, 9999);
+    }
+    printf("restart: electron cutoff vpar_cut(mu) from %s (%d points)\n", filename, n);
+    free(rm); free(rv);
+    return 1;
+}
+
 /* Find the grid index N_bvp such that x_DSgrid[N_bvp] is the last point where ne > 0
  * in the restart file. This is the right BC for the linearized BVP (delta_phi=0 there). */
 static int find_bvp_right_bc(const char *filename, double *x_DSgrid, int size_phiDSgrid) {
@@ -1333,6 +1368,7 @@ int main(void) {
 	double deltaxDS; 
 // input parameters set in inputfile.txt
 	int num_spec, fix_current=0, ds_solver=0, restart_flag=0;
+	double *restart_vcut = NULL;   /* electron cutoff read from restart_vparcut.txt (NULL: not used) */
 	int use_linearization = 0, n_lin_refs = 0, use_parallel = 0;
 	double *phi_DS_lin_ref = NULL;
 	double **ni_DS_lin_ref = NULL;
@@ -1425,6 +1461,7 @@ int main(void) {
 			if (i==3) SMALLGAMMA = *storevals; //linetodata(line_hundred, strlen(line_hundred), &ncols); 
 			if (i==4) {
 				tol_MP[0] = storevals[0]; tol_MP[1] = storevals[1]; tol_DS[0] = storevals[2]; tol_DS[1] = storevals[3]; tol_current = storevals[4];
+				ds_tol_max = tol_DS[1];   /* the DS endgame LP targets a fraction of it (DS_SLP_TMAX_FRAC) */
 			}
 			if (i==5) {
 				WEIGHT_MP =  storevals[0]; WEIGHT_DS =  storevals[1]; WEIGHT_j =  storevals[2]; 
@@ -2132,6 +2169,12 @@ i=0;
 					printf("vpar = %f for mu = %f\n", vpar_e_cut[i], mu_e[i]);
 			}
 		}
+		if (restart_flag && N == 0 && restart_vcut == NULL) {
+			restart_vcut = malloc(size_mu_e * sizeof(double));
+			if (!load_vparcut_restart("restart_vparcut.txt", mu_e, restart_vcut, size_mu_e)) { free(restart_vcut); restart_vcut = NULL; }
+		}
+		if (restart_vcut != NULL)   /* restart: keep the DS-derived cutoff of the restart state, not the model */
+			for (i=0; i< size_mu_e; i++) vpar_e_cut[i] = restart_vcut[i];
 		//}
 		// The else loop below is now accounted by the model
 		//else if (gamma_DS < TINY) { // first solve MPS w/ simplified e- reflection
@@ -2354,6 +2397,8 @@ i=0;
 		      for (i=0; i< size_mu_e; i++) 
 			vpar_e_cut[i] = v_cutDS;
 		}
+		if (restart_vcut != NULL)   /* restart: the DS-derived cutoff until the first DS evaluation replaces it */
+			for (i=0; i< size_mu_e; i++) vpar_e_cut[i] = restart_vcut[i];
 		N_DS = 0;
 		convergence_MP = convergence_j = 0;
 		weight_MP = WEIGHT_MP;

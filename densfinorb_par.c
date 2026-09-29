@@ -27,15 +27,19 @@
 /* -----------------------------------------------------------------------
  * Static helpers (copies of the same functions in denscalc.c).
  * ----------------------------------------------------------------------- */
+/* Uperp at which orbit j has invariant mu_target, by linear interpolation in its mu table. Only levels with
+ * Uperp <= Umax_valid are used: above chi at the last grid node the orbit's far turning point is off the grid,
+ * mu_gaussquad leaves such levels with a truncated mu, and inverting through them gave lifts of 0.1-1. */
 static double uperp_from_mu2(int j, double mu_target,
                               double **mu, double **Uperp, int lowerlimit, int upperlimit, int maxk,
-                              int current_j, int current_k, int *k_out, double phi_imin)
+                              int current_j, int current_k, int *k_out, double phi_imin, double Umax_valid)
 {
     int k;
     (void)current_j; (void)current_k; (void)phi_imin;
     if (upperlimit < 0) return -1.0;
     double mu_min = 1e20, Uperp_min = 1e20, mu_max = -1.0;
     for (k = lowerlimit; k <= maxk; k++) {
+        if (Uperp[j][k] > Umax_valid) continue;
         if (mu[j][k] < mu_min) { mu_min = mu[j][k]; Uperp_min = Uperp[j][k]; }
         if (mu[j][k] > mu_max)   mu_max = mu[j][k];
         double lo = mu[j][k+1], hi = mu[j][k];
@@ -97,6 +101,15 @@ static double uperp_from_mu3(int j, double mu_target, double *xbarr, double *xx,
 double *dfo_jac = NULL;
 int dfo_jac_n = 0, dfo_jac_terms = DFO_JAC_ALL;
 
+/* Distribution-function dump (electrons): with the environment variable DFO_FD_X set, the first density node with
+ * x >= DFO_FD_X has every closed-orbit level written to OUTPUT/fdist_levels.txt (j k xbar mu Uperp U_lb Ucrit dvx
+ * first) and the xbar weights to OUTPUT/fdist_j.txt, enough to rebuild f(v_par) there (see
+ * OUTPUT/.../pwall3.30000/fdist_hole/recon.py). Each density call overwrites the files, so run it on a saved state
+ * with test_jac_DS (JAC_DUMP set, one call) rather than inside GYRAZE. */
+static double fd_x = -1.0;
+static int fd_i = -1;
+static FILE *fd_lev = NULL, *fd_j = NULL;
+
 /* Closed-orbit v_z integral of one level when the accessibility lift is active (U_lb > Uperp): an electron at
  * this point has U = Uperp + v_z^2/2 with v_z its parallel velocity HERE, and only U >= U_lb (and U >= mu, below
  * which F = 0) is populated, so the integral runs over v_z from v_lo = sqrt(2 (max(U_lb, mu) - Uperp)). The loop
@@ -119,14 +132,34 @@ static double lift_trap_vz(double a, double b, double munew, double Uperp, doubl
     }
     return I;
 }
+/* TRAP_FILL & 2: one direction of the v_z integral over the well-trapped states U = Uperp + v_z^2/2 < mu, filled with
+ * F(mu, 0) e^(mu - U). 0 if Uperp >= mu. */
+static double well_fill(double munew, double Uperp, double dvz, double **FF, double *mumu, double *UU, int sizemumu, int sizeUU)
+{
+    if (!(TRAP_FILL & 2) || Uperp >= munew) return 0.0;
+    double F0 = bilin_interp(munew, 0.0, FF, mumu, UU, sizemumu, sizeUU, -1, -1), vm = sqrt(2.0 * (munew - Uperp)), I = 0.0;
+    int n1 = (int)ceil(vm / dvz);
+    for (int n = 0; n < n1; n++) {
+        double lo = n * dvz, hi = fmin((n + 1) * dvz, vm);
+        I += 0.5 * (hi - lo) * F0 * (exp(munew - Uperp - 0.5*lo*lo) + exp(munew - Uperp - 0.5*hi*hi));
+    }
+    return I;
+}
 static double lifted_intdU(double munew, double Uperp, double U_lb, double Ucrit, double Ucap, double dvz,
-                           double **FF, double *mumu, double *UU, int sizemumu, int sizeUU, double *in, double *ref)
+                           double **FF, double *mumu, double *UU, int sizemumu, int sizeUU, double *in, double *ref, int electrons)
 {
     double Ulo = fmax(fmax(U_lb, munew), Uperp);
     double a = sqrt(2.0 * (Ulo - Uperp)), b = sqrt(2.0 * fmax(Ucap - Uperp, 0.0));
     double c = (Ucrit + munew > Ulo) ? sqrt(2.0 * (Ucrit + munew - Uperp)) : a;
     double Iin  = lift_trap_vz(a, b, munew, Uperp, dvz, FF, mumu, UU, sizemumu, sizeUU);
     double Iref = lift_trap_vz(a, fmin(c, b), munew, Uperp, dvz, FF, mumu, UU, sizemumu, sizeUU);
+    if ((TRAP_FILL & 1) && electrons) {   /* shadowed band [max(mu, Uperp), U_lb): trapped, so filled, below Ucrit + mu */
+        double Um = fmax(munew, Uperp), Ut = fmin(Ulo, Ucrit + munew);
+        if (Ut > Um) {
+            double I = lift_trap_vz(sqrt(2.0 * (Um - Uperp)), fmin(sqrt(2.0 * (Ut - Uperp)), b), munew, Uperp, dvz, FF, mumu, UU, sizemumu, sizeUU);
+            Iin += I; Iref += I;
+        }
+    }
     if (in) *in = Iin;
     if (ref) *ref = Iref;
     return Iin + Iref;
@@ -137,7 +170,9 @@ static double lifted_intdU(double munew, double Uperp, double U_lb, double Ucrit
 static double closed_intdU(double munew, double Uperp, double U_lb, double Ucrit, double Ucap, double dvz,
                            double **FF, double *mumu, double *UU, int sizemumu, int sizeUU)
 {
-    if (U_lb > Uperp + 1e-14) return lifted_intdU(munew, Uperp, U_lb, Ucrit, Ucap, dvz, FF, mumu, UU, sizemumu, sizeUU, NULL, NULL);
+    double W = 2.0 * well_fill(munew, Uperp, dvz, FF, mumu, UU, sizemumu, sizeUU);   /* TRAP_FILL & 2, as in phase 3 */
+    if ((TRAP_FILL & 1) && U_lb - munew < Ucrit) U_lb = Uperp;   /* whole shadowed band trapped and filled: no lift, as in phase 3 */
+    if (LIFT_VZ_MEASURE && U_lb > Uperp + 1e-14) return W + lifted_intdU(munew, Uperp, U_lb, Ucrit, Ucap, dvz, FF, mumu, UU, sizemumu, sizeUU, NULL, NULL, 1);
     int ll, refl = 1, sizeUU2 = (int)sqrt(2.0 * (Ucap - U_lb)) / dvz;
     double I = 0.0, F = 0.0, Fold = 0.0, Fold_ref = 0.0, frac = 1.0, frac_ref = 0.0, U, vz;
     for (ll = 0; ll < sizeUU2; ll++) {
@@ -170,7 +205,7 @@ static double closed_intdU(double munew, double Uperp, double U_lb, double Ucrit
         } else frac_ref = 0.0;
         I += 0.5 * frac * dvz * ((F + Fold) + frac_ref * (F + Fold_ref));
     }
-    return I;
+    return I + W;
 }
 
 /* interval of lin_interp's search (same bisection, so the same bracket when xx is not monotone) */
@@ -195,19 +230,25 @@ static int lin_interp_idx(const double *xx, double x, int n)
 /* lower bound of the energy integral for level mu of orbit j at x_i: phase 3's lift for a non-monotone psi.
  * If the bound is lifted, *js_out and *k_out give the orbit and the mu-table bracket (k, k+1) that set it
  * (else *js_out = -1); either may be NULL. */
+static double lift_regularize(double Uperpnew, double U_lb)
+{
+    double D = U_lb - Uperpnew;
+    if (LIFT_DMIN > 0.0 && D > 0.0) return Uperpnew + D * pow(D / (D + LIFT_DMIN), LIFT_DMIN_POW);
+    return U_lb;
+}
 static double lift_Ulb(int j, double munew, double Uperpnew, int i, int phi_monotone, int js_phi_imin,
                        int sizexbar, double **mu, double **Uperp, int *lowerlimit, int **upper,
-                       int *upperlimit, double phimin, int *js_out, int *k_out)
+                       int *upperlimit, double phimin, int *js_out, int *k_out, double **chi, int size_finegrid)
 {
     if (js_out) *js_out = -1;
     if (phi_monotone) return Uperpnew;
     double L = Uperpnew;
     for (int js = j + 1; js <= (js_phi_imin + sizexbar) / 2; js++) {
         int kf = -1;
-        double Us = uperp_from_mu2(js, munew, mu, Uperp, lowerlimit[js], upper[js][i], upperlimit[js], j, 0, &kf, phimin);
+        double Us = uperp_from_mu2(js, munew, mu, Uperp, lowerlimit[js], upper[js][i], upperlimit[js], j, 0, &kf, phimin, chi[js][size_finegrid-1]);
         if (Us > L) { L = Us; if (js_out) *js_out = js; if (k_out) *k_out = kf; }
     }
-    return L;
+    return lift_regularize(Uperpnew, L);
 }
 
 /* Ucrit(mu) = lin_interp(muopen, Ucritf, mu) without its exit on the ends */
@@ -266,6 +307,8 @@ void densfinorb_par(double Ti, double lenfactor, double alpha,
                     double *dmudvy_op, int *size_op,
                     FILE *fmu, FILE *fjmc_out)
 {
+    { const char *e = getenv("DFO_FD_X"); fd_x = e ? atof(e) : -1.0; fd_i = -1; }
+
     /* ================================================================
      * PHASE 1 — ARRAY FILLING  (identical to densfinorb)
      * ================================================================ */
@@ -944,6 +987,14 @@ void densfinorb_par(double Ti, double lenfactor, double alpha,
         i = ic * zoomfactor;
         if (want_jac) memset(jac_rb, 0, (size_t)nthr_jac * ncol_jac * sizeof(double));
 
+        if (fd_x >= 0.0 && fd_i < 0 && charge < 0 && xx[i] >= fd_x) {   /* DFO_FD_X dump */
+            fd_i = i;
+            fd_lev = fopen("OUTPUT/fdist_levels.txt", "w");
+            fd_j   = fopen("OUTPUT/fdist_j.txt", "w");
+            if (fd_lev == NULL || fd_j == NULL) { printf("DFO_FD_X: cannot open OUTPUT/fdist_*.txt\n"); exit(-1); }
+            fprintf(fd_lev, "# x = %.6f (i = %d); j k xbar mu Uperp U_lb Ucrit dvx first\n", xx[i], i);
+            fprintf(fd_j, "# x = %.6f; j xbar dxbar intdvx_j\n", xx[i]);
+        }
         memset(intdvx_j,     0, sizexbar * sizeof(double));
         memset(intdvx_cd_j,  0, sizexbar * sizeof(double));
         memset(intdvx_cm_j,  0, sizexbar * sizeof(double));
@@ -1168,10 +1219,11 @@ void densfinorb_par(double Ti, double lenfactor, double alpha,
                     double lUperp_lb = lUperpnew;
                     for (int js = j + 1; js <= (js_phi_imin + sizexbar) / 2; js++) {
                         int k_found = -1;
-                        double Uperps = uperp_from_mu2(js, lmunew, mu, Uperp, lowerlimit[js], upper[js][i], upperlimit[js], j, kk, &k_found, phi[phi_imin]);
+                        double Uperps = uperp_from_mu2(js, lmunew, mu, Uperp, lowerlimit[js], upper[js][i], upperlimit[js], j, kk, &k_found, phi[phi_imin], chi[js][size_finegrid-1]);
                         if (Uperps > lUperp_lb) lUperp_lb = Uperps;
                     }
-                    if (lUperp_lb > lUperpnew) lU_lb = lUperp_lb;
+                    if (lUperp_lb > lUperpnew) lU_lb = lift_regularize(lUperpnew, lUperp_lb);   /* LIFT_DMIN */
+                    if ((TRAP_FILL & 1) && charge < 0 && lU_lb - lmunew < lUcrit) lU_lb = lUperpnew;   /* whole shadowed band trapped and filled: same as no lift, and through the same integral so n_e has no jump when a lift appears */
                     lUperp_lb_k = lUperp_lb;
                 }
                 if (lUperpnew_pre < lmin_Uperp_bfx_j) {
@@ -1231,11 +1283,16 @@ void densfinorb_par(double Ti, double lenfactor, double alpha,
                             lintdU_corr_chiM = lintdU;
                     }
                 }
-                if (lU_lb > lUperpnew + 1e-14) {   /* lifted level: integrate in the true v_z (see lifted_intdU) */
+                if (LIFT_VZ_MEASURE && lU_lb > lUperpnew + 1e-14) {   /* lifted level: integrate in the true v_z (see lifted_intdU) */
                     double lin_, lref_;
-                    lintdU = lifted_intdU(lmunew, lUperpnew, lU_lb, lUcrit, Ucap, dvz, FF, mumu, UU, sizemumu, sizeUU, &lin_, &lref_);
+                    lintdU = lifted_intdU(lmunew, lUperpnew, lU_lb, lUcrit, Ucap, dvz, FF, mumu, UU, sizemumu, sizeUU, &lin_, &lref_, charge < 0);
                     if (charge < 0) { lintdU_in = lin_; lintdU_ref = lref_; }
                     if (kk == lowerlimit[j] && charge < 0) lintdU_corr_chiM = lintdU;
+                }
+                if ((TRAP_FILL & 2) && charge < 0 && lUperpnew < lmunew) {   /* well-trapped U < mu (see well_fill) */
+                    double w = well_fill(lmunew, lUperpnew, dvz, FF, mumu, UU, sizemumu, sizeUU);
+                    lintdU += 2.0 * w; lintdU_in += w; lintdU_ref += w;
+                    if (kk == lowerlimit[j]) lintdU_corr_chiM = lintdU;
                 }
                 lintdUantycal = exp(-lUperpnew) * (1.0 / (2.0 * M_PI));
                 if (lUcrit + lmunew > lUperpnew)
@@ -1249,10 +1306,10 @@ void densfinorb_par(double Ti, double lenfactor, double alpha,
                     double mp = lmunew + hj, mm = (lmunew > hj) ? lmunew - hj : lmunew;
                     double pmin = phi_imin >= 0 ? phi[phi_imin] : 0.0;
                     int jsl = -1, ksl = -1;
-                    lift_Ulb(j, lmunew, lUperpnew, i, phi_monotone, js_phi_imin, sizexbar, mu, Uperp, lowerlimit, upper, upperlimit, pmin, &jsl, &ksl);
-                    double Gp = closed_intdU(mp, lUperpnew, lift_Ulb(j, mp, lUperpnew, i, phi_monotone, js_phi_imin, sizexbar, mu, Uperp, lowerlimit, upper, upperlimit, pmin, NULL, NULL),
+                    lift_Ulb(j, lmunew, lUperpnew, i, phi_monotone, js_phi_imin, sizexbar, mu, Uperp, lowerlimit, upper, upperlimit, pmin, &jsl, &ksl, chi, size_finegrid);
+                    double Gp = closed_intdU(mp, lUperpnew, lift_Ulb(j, mp, lUperpnew, i, phi_monotone, js_phi_imin, sizexbar, mu, Uperp, lowerlimit, upper, upperlimit, pmin, NULL, NULL, chi, size_finegrid),
                                              ucrit_at(muopen, Ucritf, maxj, mp), Ucap, dvz, FF, mumu, UU, sizemumu, sizeUU);
-                    double Gm = closed_intdU(mm, lUperpnew, lift_Ulb(j, mm, lUperpnew, i, phi_monotone, js_phi_imin, sizexbar, mu, Uperp, lowerlimit, upper, upperlimit, pmin, NULL, NULL),
+                    double Gm = closed_intdU(mm, lUperpnew, lift_Ulb(j, mm, lUperpnew, i, phi_monotone, js_phi_imin, sizexbar, mu, Uperp, lowerlimit, upper, upperlimit, pmin, NULL, NULL, chi, size_finegrid),
                                              ucrit_at(muopen, Ucritf, maxj, mm), Ucap, dvz, FF, mumu, UU, sizemumu, sizeUU);
                     jGmu[nlev] = (Gp - Gm) / (mp - mm);
                     /* The lift (U_lb = Uperp at which orbit js* has this mu) moves with this orbit's mu, which the
@@ -1283,6 +1340,10 @@ void densfinorb_par(double Ti, double lenfactor, double alpha,
                     nlev++;
                 }
 
+                if (i == fd_i && fd_lev) {
+                    #pragma omp critical
+                    fprintf(fd_lev, "%d %d %.10e %.10e %.10e %.10e %.10e %.10e %d\n", j, kk, xbar[j], lmunew, lUperpnew, lU_lb, lUcrit, ldvx, kk == lowerlimit[j]);
+                }
                 if (kk == lowerlimit[j]) {
                     loc_dvx += 0.0;
                     loc_cd  += 0.0;
@@ -1406,6 +1467,7 @@ void densfinorb_par(double Ti, double lenfactor, double alpha,
                 dxbj = xbar[j] - xbar[j-1];
             }
             intdxbar            += 0.5 * (intdvx_j[j]     + intdvx_j[j-1])     * dxbj;
+            if (i == fd_i && fd_j) fprintf(fd_j, "%d %.10e %.10e %.10e\n", j, xbar[j], dxbj, intdvx_j[j]);
             intdxbar_corr_delta += 0.5 * (intdvx_cd_j[j]  + intdvx_cd_j[j-1])  * dxbj;
             if (charge < 0) {
                 intdxbar_corr_chiM += 0.5 * (intdvx_cm_j[j]  + intdvx_cm_j[j-1])  * dxbj;
@@ -1451,6 +1513,10 @@ void densfinorb_par(double Ti, double lenfactor, double alpha,
         }
 
         n_grid[ic] = intdxbar + intdxbaropen;
+        if (i == fd_i && fd_j) {
+            fprintf(fd_j, "# closed %.10e open %.10e n_grid %.10e n_inf %.10e\n", intdxbar, intdxbaropen, n_grid[ic], n_inf);
+            fclose(fd_j); fclose(fd_lev); fd_j = fd_lev = NULL;
+        }
         n_grid_corr_delta[ic] = intdxbar_corr_delta;
         if (charge < 0) n_grid_corr_chiM[ic] = intdxbar_corr_chiM;
 

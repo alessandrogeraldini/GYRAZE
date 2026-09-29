@@ -45,6 +45,7 @@ void newvcut(double *v_cut, double v_cutDS, double u_i, double u_e, double curre
 	CALCULATE THE ERROR IN POISSON'S EQUATION OR QUASINEUTRALITY (if invgammasq = 0)
 */
 int error_Poisson_imax = -1;
+double ds_tol_max = 0.0125;   /* tol_DS[1]; GYRAZE.c sets it */
 
 void error_Poisson(double *error, double *x_grid, double *ne_grid, double *ni_grid, double *nioverne, double *phi_grid, int size_phigrid, int size_ngrid, double invgammasq) {
 	int i;
@@ -849,7 +850,11 @@ void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_g
 	 * lives in the near-singular mode, so damp it less (LM_LAMBDA_END): the trust region and the accept/
 	 * reject on the rms still guard the step. */
 	double lm_lam = LM_LAMBDA;
-	if (LM_LAMBDA_END > 0.0 && fabs(phiW_impose - phi0_before) < DS_WALL_TOL) lm_lam = LM_LAMBDA_END;
+	if (LM_LAMBDA_END > 0.0 && fabs(phiW_impose - phi0_before) < DS_WALL_TOL
+#if NR_SAFESTEP == 1
+	    && E_act < DS_SLP_ENGAGE   /* only near a solution: far from one this threw phi into an overshoot */
+#endif
+	   ) lm_lam = LM_LAMBDA_END;
 	/* Row weights for the max-targeted solve (DS_MINIMAX). Fsolve is the right-hand side the damped solve
 	 * actually uses, so the diagnostics below project the same vector the step was computed from. */
 	double *sw = malloc(ninner * sizeof(double));
@@ -1036,7 +1041,7 @@ void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_g
 		}
 		double wmin = (fabs(dWall) > 0.0) ? fmax(0.0, 1.0 - 0.5 * DS_WALL_TOL / fabs(dWall)) : 1.0;
 		/* mean over rows 0..ninner-2 = nodes 1..size_ngrid-2, the ones error_Poisson averages */
-		if (slp_solve(Jslp, F_vec, sv, cw, wmin, ninner, ninner - 1, bd, DS_SLP_SMOOTH, DS_SLP_TMAX, phi_grid + 1, DS_SLP_ZIGZAG,
+		if (slp_solve(Jslp, F_vec, sv, cw, wmin, ninner, ninner - 1, bd, DS_SLP_SMOOTH, DS_SLP_TMAX_FRAC * ds_tol_max, phi_grid + 1, DS_SLP_ZIGZAG,
 		              dl, &wv, &tst, &tpred, &apred)) {
 			for (i = 0; i < ninner; i++) { gsl_vector_set(dphi_gsl, i, dl[i]); dm = fmax(dm, fabs(dl[i])); }
 			gsl_vector_set_zero(d_bc);

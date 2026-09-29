@@ -10,6 +10,37 @@
 // Was hard-coded 0.1. Overridable with -DDVZ_QUAD=... for resolution tests.
 #define MUGAUSSQUAD 1
 // 1: mu of closed orbits in densfinorb(_par) by Gauss-Chebyshev quadrature (mu_gaussquad); 0: original grid integration
+#ifndef LIFT_VZ_MEASURE
+#define LIFT_VZ_MEASURE 1
+#endif
+// DS electrons, non-monotone phi: closed-orbit levels whose energy bound is lifted by accessibility (U >= U_lb,
+// U_lb = max of Uperp(xbar', mu) over xbar' > xbar). 1 = integrate over the true parallel velocity v_z from
+// sqrt(2 (U_lb - Uperp)) (lifted_intdU). 0 = the original change of variable U = U_lb + v^2/2, which drops the
+// Jacobian v/v_z and overcounted n_e by 1-4.5% around bumps and dips (kept to reproduce earlier results).
+#ifndef TRAP_FILL
+#define TRAP_FILL 3
+#endif
+// DS electrons: population of trapped closed-orbit states, which collisionless theory leaves undetermined (bits).
+// 1 = states below an accessibility lift (U < U_lb) that are reflected downstream (U - mu < Ucrit) bounce between
+//     the sheath and the barrier: fill them with F(mu, U - mu) in both directions. A level whose whole shadowed
+//     band is trapped (U_lb - mu < Ucrit) gets no lift at all, through the unlifted integral, so n_e does not jump
+//     when a lift appears; otherwise only U - mu >= Ucrit stays empty (lifted_intdU, needs LIFT_VZ_MEASURE 1).
+// 2 = states in a potential well below the far-field energy (U < mu, phi > 0 regions): fill them with the
+//     Maxwellian continuation F(mu, 0) e^(mu - U) in both directions (well_fill).
+// 3 = both. 0 = empty trapped states, as before. Electrons only; the analytic Jacobian includes both fills.
+// Empty trapped states give a one-signed electron deficit (~1% over the rippled far field at 3.301) that sustained
+// the ripples and loaded the weak mode; filling them let the ripples decay (2026-09-25 tests).
+#ifndef LIFT_DMIN
+#define LIFT_DMIN 0.0
+#endif
+// > 0: lifts smaller than about this are phased out, Delta_eff = Delta (Delta/(Delta + LIFT_DMIN))^LIFT_DMIN_POW
+// (~ Delta^(p+1)/LIFT_DMIN^p for small lifts, ~ Delta - p LIFT_DMIN for large ones). The density a lift removes
+// goes as sqrt(2 Delta_eff), so p = 1 only halves the effect of a lift of LIFT_DMIN/4; p = 2 cuts it by ~4.
+// A regularization knob, not physics: it tests whether the many small (1e-4) lifts from far-field ripples are
+// what sustains them. 1e-3 is where sqrt(2 Delta) is half a v_z cell (DVZ_QUAD 0.1). 0 = off.
+#ifndef LIFT_DMIN_POW
+#define LIFT_DMIN_POW 2
+#endif
 #ifndef MUGAUSSN
 #define MUGAUSSN 16
 #endif
@@ -18,7 +49,11 @@
 // Picard DS update (ds solver 0): mix the last M iterates (Anderson acceleration); 0 = plain damped Picard
 #define NR_SAFESTEP 1
 // DS Newton (ds solver 1): 1 = steps accepted/rejected on the true residual, with a trust region; 0 = original frozen-density backtracking
-#define DS_DPHIMAX 0.005
+#ifndef DS_DPHIMAX
+#define DS_DPHIMAX 0.1
+//#define DS_DPHIMAX 0.005
+
+#endif
 // largest change in phi allowed in one DS update (Newton with NR_SAFESTEP 1, or Anderson)
 #define NONLOCAL_JAC 12
 // DS Newton (ds solver 1): number of localized phi perturbations used to measure the nonlocal
@@ -63,9 +98,13 @@
 // DS Newton (ds solver 1): Levenberg-Marquardt damping of the linear solve; singular values of the Jacobian
 // well above LM_LAMBDA keep the full Newton step, the near-singular smooth mode (0.02-0.16 in the cases
 // looked at, next one ~1) is damped. 0 = plain Newton (LU solve)
+#ifndef LM_LAMBDA_END
 #define LM_LAMBDA_END 0.0
-// LM damping used once the wall is within DS_WALL_TOL of its target (the continuation is then over and what
-// is left lives in the near-singular mode): smaller than LM_LAMBDA lets that mode move. 0 = keep LM_LAMBDA
+#endif
+// LM damping used once the wall is within DS_WALL_TOL of its target AND max|r| < DS_SLP_ENGAGE (what is left
+// then lives in the near-singular mode): smaller than LM_LAMBDA lets that mode move. 0 = keep LM_LAMBDA.
+// Not active on the wall condition alone: at gamma 0.7, phi_wall 2.0 the wall reached its target with max|r|
+// ~0.9, and LM_LAMBDA_END 0.01 there threw phi into a +0.05 overshoot it never recovered from.
 #define DS_LINESEARCH 0
 // 1 = after each DS Newton step, search along the Jacobian's weakest singular vector using true residual
 // 2 = diagnostic: probe that mode out to the amplitude the linear model asks for and print the whole
@@ -118,7 +157,7 @@
 // Solver-free runs at 3.25 (MP fixed) found the plateau is a least-squares optimum (a Gauss-Newton step
 // moved the rms 0.2%) while a max-targeted fit lowered max|r| 0.0139 -> 0.0132 at the cost of +5% rms,
 // which the rms merit test (DS_MERIT_TOL 3%) would reject. 0 = rms objective as before.
-#define DS_SLP 0
+#define DS_SLP 1
 // DS Newton endgame (wall within DS_WALL_TOL of its target): take the step from a linear program that
 // minimises the max of the linearised relative Poisson residual, r_i(d) = (-F_i + (J d)_i) / (gamma^2 ni),
 // over a box trust region, with the mean over error_Poisson's rows capped and a cap on second differences
@@ -139,10 +178,16 @@
 #define DS_SLP_ZIGZAG 1e-4
 // the LP step may not grow the fourth difference of phi (phi'' node-to-node zigzag) at any point beyond
 // max(its current size, this); 1e-4 is ~0.012 in phi'' at dx = 0.093, above a smooth solution's ~7e-5
-#define DS_SLP_TMAX 0.0115
+#ifndef DS_SLP_TMAX_FRAC
+#define DS_SLP_TMAX_FRAC 0.5
+#endif
 // the LP first finds the smallest achievable max t*, then minimises the mean with the max held at
-// max(t*, DS_SLP_TMAX): set just below tol_DS[1] (0.0125) to leave room for the linearization error. The
-// fraction of the pending wall move is an LP unknown too, kept so the remaining gap is below DS_WALL_TOL/2.
+// max(t*, DS_SLP_TMAX_FRAC * tol_DS[1]). It was a fixed 0.0115 (just below a 0.0125 tolerance): the LP then kept
+// the max at 0.0115 even when it could reach ~0.009, the linearisation error pushed the max up, the step was
+// rejected and the trust region collapsed, so with tol_DS[1] = 0.01 it could never converge (gamma 0.7, phi_wall 2.5:
+// stalled at 0.011 although a root with |r| < 1e-5 exists). Half the tolerance leaves room for the linearisation
+// error. The fraction of the pending wall move is an LP unknown too, kept so the remaining gap is below DS_WALL_TOL/2.
+extern double ds_tol_max;   /* tol_DS[1], set in GYRAZE.c after reading input_numparams.txt */
 #if DS_SLP && !NR_SAFESTEP
 #error "DS_SLP needs NR_SAFESTEP 1 (it uses the accept/reject logic for its trust region)"
 #endif
@@ -160,7 +205,8 @@
 // by a few tenths of a percent on its own. Measured scale: run-to-run scatter ~1e-5, resize jitter ~0.7%,
 // a genuinely bad step (lambda = 0.1 at the 3.25 plateau) +176%. 3% sits well clear of both ends.
 #ifndef DS_XEND
-#define DS_XEND 5.2
+#define DS_XEND 8.57
+//#define DS_XEND 16.6
 #endif
 // End the DS n_e grid at the first point with x >= DS_XEND, instead of where n_e first comes within MARGIN_DS
 // of n_inf on the rising branch. 0 = the density threshold, as before. That threshold sits on a knife edge:

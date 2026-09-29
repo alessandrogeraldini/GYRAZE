@@ -987,21 +987,40 @@ static double lift_trap_vz(double a, double b, double munew, double Uperp, doubl
     }
     return I;
 }
+/* TRAP_FILL & 2: one direction of the v_z integral over the well-trapped states U < mu (as in densfinorb_par.c) */
+static double well_fill(double munew, double Uperp, double dvz, double **FF, double *mumu, double *UU, int sizemumu, int sizeUU)
+{
+    if (!(TRAP_FILL & 2) || Uperp >= munew) return 0.0;
+    double F0 = bilin_interp(munew, 0.0, FF, mumu, UU, sizemumu, sizeUU, -1, -1), vm = sqrt(2.0 * (munew - Uperp)), I = 0.0;
+    int n1 = (int)ceil(vm / dvz);
+    for (int n = 0; n < n1; n++) {
+        double lo = n * dvz, hi = fmin((n + 1) * dvz, vm);
+        I += 0.5 * (hi - lo) * F0 * (exp(munew - Uperp - 0.5*lo*lo) + exp(munew - Uperp - 0.5*hi*hi));
+    }
+    return I;
+}
 static double lifted_intdU(double munew, double Uperp, double U_lb, double Ucrit, double Ucap, double dvz,
-                           double **FF, double *mumu, double *UU, int sizemumu, int sizeUU, double *in, double *ref)
+                           double **FF, double *mumu, double *UU, int sizemumu, int sizeUU, double *in, double *ref, int electrons)
 {
     double Ulo = fmax(fmax(U_lb, munew), Uperp);
     double a = sqrt(2.0 * (Ulo - Uperp)), b = sqrt(2.0 * fmax(Ucap - Uperp, 0.0));
     double c = (Ucrit + munew > Ulo) ? sqrt(2.0 * (Ucrit + munew - Uperp)) : a;
     double Iin  = lift_trap_vz(a, b, munew, Uperp, dvz, FF, mumu, UU, sizemumu, sizeUU);
     double Iref = lift_trap_vz(a, fmin(c, b), munew, Uperp, dvz, FF, mumu, UU, sizemumu, sizeUU);
+    if ((TRAP_FILL & 1) && electrons) {   /* shadowed band [max(mu, Uperp), U_lb): trapped, so filled, below Ucrit + mu */
+        double Um = fmax(munew, Uperp), Ut = fmin(Ulo, Ucrit + munew);
+        if (Ut > Um) {
+            double I = lift_trap_vz(sqrt(2.0 * (Um - Uperp)), fmin(sqrt(2.0 * (Ut - Uperp)), b), munew, Uperp, dvz, FF, mumu, UU, sizemumu, sizeUU);
+            Iin += I; Iref += I;
+        }
+    }
     if (in) *in = Iin;
     if (ref) *ref = Iref;
     return Iin + Iref;
 }
 
 static double uperp_from_mu2(int j, double mu_target,
-                              double **mu, double **Uperp, int lowerlimit, int upperlimit, int maxk, int current_j, int current_k, int *k_out, double phi_imin)
+                              double **mu, double **Uperp, int lowerlimit, int upperlimit, int maxk, int current_j, int current_k, int *k_out, double phi_imin, double Umax_valid)
 {
 	int k;
 	if (upperlimit < 0)
@@ -1010,6 +1029,7 @@ static double uperp_from_mu2(int j, double mu_target,
 	double Uperp_min = 1e20;
 	double mu_max = -1.0;
 	for (k = lowerlimit; k <= maxk; k++) {
+		if (Uperp[j][k] > Umax_valid) continue;   /* far turning point off the grid: mu not from the quadrature */
 		if(mu[j][k] < mu_min){
 			mu_min = mu[j][k];
 			Uperp_min = Uperp[j][k];
@@ -2198,7 +2218,7 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 							for (int js = j+1; js <= (js_phi_imin+sizexbar)/2; js++) {
 							//for (int js = j+1; js <= (js_phi_imin+1); js++) {
 								int k_found = -1;
-								double Uperps = uperp_from_mu2(js, munew, mu, Uperp, lowerlimit[js], upper[js][i], upperlimit[js], j, k, &k_found,phi[phi_imin]);
+								double Uperps = uperp_from_mu2(js, munew, mu, Uperp, lowerlimit[js], upper[js][i], upperlimit[js], j, k, &k_found,phi[phi_imin], chi[js][size_finegrid-1]);
 								//double Uperps = uperp_from_mu3(js, munew, xbar, xx, phi, size_finegrid);
 								if (Uperps > Uperp_lb) {
 									// if (phi_monotone)
@@ -2229,6 +2249,8 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 								// }
 								//Uperpnew = Uperp_lb;
 								U_lb = Uperp_lb;
+								if (LIFT_DMIN > 0.0 && Uperp_lb > Uperpnew) U_lb = Uperpnew + (Uperp_lb - Uperpnew)*pow((Uperp_lb - Uperpnew)/((Uperp_lb - Uperpnew) + LIFT_DMIN), LIFT_DMIN_POW);
+								if ((TRAP_FILL & 1) && charge < 0 && U_lb - munew < Ucrit) U_lb = Uperpnew;   /* whole shadowed band trapped and filled: no lift (see densfinorb_par.c) */
 							}
 							Uperp_lb_k = Uperp_lb;
 						}
@@ -2321,11 +2343,16 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 								intdU_corr_chiM = intdU;
 							}
 						}
-						if (U_lb > Uperpnew + 1e-14) {   /* lifted level: integrate in the true v_z (see lifted_intdU) */
+						if (LIFT_VZ_MEASURE && U_lb > Uperpnew + 1e-14) {   /* lifted level: integrate in the true v_z (see lifted_intdU) */
 							double lin_, lref_;
-							intdU = lifted_intdU(munew, Uperpnew, U_lb, Ucrit, Ucap, dvz, FF, mumu, UU, sizemumu, sizeUU, &lin_, &lref_);
+							intdU = lifted_intdU(munew, Uperpnew, U_lb, Ucrit, Ucap, dvz, FF, mumu, UU, sizemumu, sizeUU, &lin_, &lref_, charge < 0);
 							if (charge < 0) { intdU_in = lin_; intdU_ref = lref_; }
 							if (k == lowerlimit[j] && charge < 0) intdU_corr_chiM = intdU;
+						}
+						if ((TRAP_FILL & 2) && charge < 0 && Uperpnew < munew) {   /* well-trapped U < mu (see well_fill) */
+							double w = well_fill(munew, Uperpnew, dvz, FF, mumu, UU, sizemumu, sizeUU);
+							intdU += 2.0 * w; intdU_in += w; intdU_ref += w;
+							if (k == lowerlimit[j]) intdU_corr_chiM = intdU;
 						}
 						intdUantycal = exp(-Uperpnew)*(1.0/(2.0*M_PI));// result with phi =0
 						if(Ucrit + munew > Uperpnew){
