@@ -110,28 +110,6 @@ static double fd_x = -1.0;
 static int fd_i = -1;
 static FILE *fd_lev = NULL, *fd_j = NULL;
 
-/* Closed-orbit v_z integral of one level when the accessibility lift is active (U_lb > Uperp): an electron at
- * this point has U = Uperp + v_z^2/2 with v_z its parallel velocity HERE, and only U >= U_lb (and U >= mu, below
- * which F = 0) is populated, so the integral runs over v_z from v_lo = sqrt(2 (max(U_lb, mu) - Uperp)). The loop
- * that handles the unlifted case instead writes U = U_lb + v^2/2 and integrates over v from 0, which drops the
- * Jacobian dv_z/dv = v/v_z < 1 and overcounted n_e on every lifted level (1-4.5% around a potential bump/dip).
- * Reflected copy for U < Ucrit + mu, in the same variable. Trapezoid on v = n dvz, part cells at the ends.
- * Returns the total; *in and *ref (either may be NULL) get the incoming and reflected parts. */
-static double lift_trap_vz(double a, double b, double munew, double Uperp, double dvz,
-                           double **FF, double *mumu, double *UU, int sizemumu, int sizeUU)
-{
-    double I = 0.0;
-    if (b <= a) return 0.0;
-    int n0 = (int)floor(a / dvz), n1 = (int)ceil(b / dvz);
-    for (int n = n0; n < n1; n++) {
-        double lo = fmax(n * dvz, a), hi = fmin((n + 1) * dvz, b);
-        if (hi <= lo) continue;
-        double Flo = bilin_interp(munew, Uperp + 0.5*lo*lo - munew, FF, mumu, UU, sizemumu, sizeUU, -1, -1);
-        double Fhi = bilin_interp(munew, Uperp + 0.5*hi*hi - munew, FF, mumu, UU, sizemumu, sizeUU, -1, -1);
-        I += 0.5 * (hi - lo) * (Flo + Fhi);
-    }
-    return I;
-}
 /* TRAP_FILL & 2: one direction of the v_z integral over the well-trapped states U = Uperp + v_z^2/2 < mu, filled with
  * F(mu, 0) e^(mu - U). 0 if Uperp >= mu. */
 static double well_fill(double munew, double Uperp, double dvz, double **FF, double *mumu, double *UU, int sizemumu, int sizeUU)
@@ -145,25 +123,6 @@ static double well_fill(double munew, double Uperp, double dvz, double **FF, dou
     }
     return I;
 }
-static double lifted_intdU(double munew, double Uperp, double U_lb, double Ucrit, double Ucap, double dvz,
-                           double **FF, double *mumu, double *UU, int sizemumu, int sizeUU, double *in, double *ref, int electrons)
-{
-    double Ulo = fmax(fmax(U_lb, munew), Uperp);
-    double a = sqrt(2.0 * (Ulo - Uperp)), b = sqrt(2.0 * fmax(Ucap - Uperp, 0.0));
-    double c = (Ucrit + munew > Ulo) ? sqrt(2.0 * (Ucrit + munew - Uperp)) : a;
-    double Iin  = lift_trap_vz(a, b, munew, Uperp, dvz, FF, mumu, UU, sizemumu, sizeUU);
-    double Iref = lift_trap_vz(a, fmin(c, b), munew, Uperp, dvz, FF, mumu, UU, sizemumu, sizeUU);
-    if ((TRAP_FILL & 1) && electrons) {   /* shadowed band [max(mu, Uperp), U_lb): trapped, so filled, below Ucrit + mu */
-        double Um = fmax(munew, Uperp), Ut = fmin(Ulo, Ucrit + munew);
-        if (Ut > Um) {
-            double I = lift_trap_vz(sqrt(2.0 * (Um - Uperp)), fmin(sqrt(2.0 * (Ut - Uperp)), b), munew, Uperp, dvz, FF, mumu, UU, sizemumu, sizeUU);
-            Iin += I; Iref += I;
-        }
-    }
-    if (in) *in = Iin;
-    if (ref) *ref = Iref;
-    return Iin + Iref;
-}
 
 /* closed-orbit vz integral of phase 3 (lintdU) for one level, as a function of mu, the lower energy
  * bound U_lb and the reflection threshold Ucrit; a copy of that loop so it can be differentiated */
@@ -172,33 +131,23 @@ static double closed_intdU(double munew, double Uperp, double U_lb, double Ucrit
 {
     double W = 2.0 * well_fill(munew, Uperp, dvz, FF, mumu, UU, sizemumu, sizeUU);   /* TRAP_FILL & 2, as in phase 3 */
     if ((TRAP_FILL & 1) && U_lb - munew < Ucrit) U_lb = Uperp;   /* whole shadowed band trapped and filled: no lift, as in phase 3 */
-    if (LIFT_VZ_MEASURE && U_lb > Uperp + 1e-14) return W + lifted_intdU(munew, Uperp, U_lb, Ucrit, Ucap, dvz, FF, mumu, UU, sizemumu, sizeUU, NULL, NULL, 1);
-    int ll, refl = 1, sizeUU2 = (int)sqrt(2.0 * (Ucap - U_lb)) / dvz;
-    double I = 0.0, F = 0.0, Fold = 0.0, Fold_ref = 0.0, frac = 1.0, frac_ref = 0.0, U, vz;
+    int ll, refl = 1, sizeUU2 = (int)sqrt(2.0 * (Ucap - Uperp)) / dvz;
+    double I = 0.0, F = 0.0, Fold = 0.0, Fold_ref = 0.0, frac = 1.0, frac_ref = 0.0, U, vz, Ulow = fmax(U_lb, munew);
+    double vzlow = sqrt(2.0 * (Ulow - Uperp));   /* the vz grid starts at U = Ulow */
     for (ll = 0; ll < sizeUU2; ll++) {
-        if (ll == 0) { F = bilin_interp(munew, U_lb - munew, FF, mumu, UU, sizemumu, sizeUU, -1, -1); continue; }
+        if (ll == 0) { F = bilin_interp(munew, Ulow - munew, FF, mumu, UU, sizemumu, sizeUU, -1, -1); continue; }
         Fold = F; Fold_ref = F;
-        vz = dvz * ll;
-        U  = U_lb + 0.5 * vz * vz;
-        if ((U > munew) && (U - 0.5*vz*vz + 0.5*(vz-dvz)*(vz-dvz) < munew)) {
-            frac = (vz - sqrt(2.0 * (munew - U_lb + TINY))) / dvz;
-            Fold = bilin_interp(munew, 0.0, FF, mumu, UU, sizemumu, sizeUU, -1, -1);
-            Fold_ref = Fold;   /* the reflected part starts from F(mu, 0) too, not from the F = 0 below the cutoff */
-            F    = bilin_interp(munew, U - munew, FF, mumu, UU, sizemumu, sizeUU, -1, -1);
-        } else if (U > munew) {
-            frac = 1.0;
-            F    = bilin_interp(munew, U - munew, FF, mumu, UU, sizemumu, sizeUU, -1, -1);
-        } else {
-            frac = 1.0;
-            F    = 0.0;
-        }
+        vz = vzlow + dvz * ll;
+        U  = Uperp + 0.5 * vz * vz;
+        frac = 1.0;
+        F    = bilin_interp(munew, U - munew, FF, mumu, UU, sizemumu, sizeUU, -1, -1);
         if ((U - munew < Ucrit - numb) && (refl == 1))
             frac_ref = 1.0;
         else if ((U - munew > Ucrit - numb) && (refl == 1)) {
             refl = 0;
-            if (Ucrit < U_lb - munew + numb) frac_ref = 0.0;
+            if (Ucrit < Ulow - munew + numb) frac_ref = 0.0;
             else {
-                double vzcrit = sqrt(2.0 * (Ucrit + munew - U_lb));
+                double vzcrit = sqrt(2.0 * (Ucrit + munew - Uperp));
                 Fold_ref = bilin_interp(munew, Ucrit, FF, mumu, UU, sizemumu, sizeUU, -1, -1);
                 frac_ref = (vzcrit - (vz - dvz)) / dvz;
             }
@@ -1154,7 +1103,7 @@ void densfinorb_par(double Ti, double lenfactor, double alpha,
             double lUperpnew = 0.0, lUperpold = 0.0, lU_lb = 0.0;
             double lUcrit = 0.0, lUcritold = 0.0, lUcritp = 0.0, lUcritpold = 0.0;
             double ldmu_dUperp = 0.0, ldmu_dUperp_old = 0.0;
-            double lU = 0.0, lvz = 0.0;
+            double lU = 0.0, lvz = 0.0, lUlow = 0.0, lvzlow = 0.0;
             double lF = 0.0, lFold = 0.0, lFold_ref = 0.0;
             double lfrac = 1.0, lfrac_reflected = 0.0, lvzcrit = 0.0;
             double lvxold = 0.0, lvxnew = 0.0, ldvx = 0.0;
@@ -1232,32 +1181,24 @@ void densfinorb_par(double Ti, double lenfactor, double alpha,
                 }
                 if (lUperpnew < lmin_Uperp_j) lmin_Uperp_j = lUperpnew;
 
-                sizeUU2 = (int)sqrt(2.0 * (Ucap - lU_lb)) / dvz;
+                lUlow   = fmax(lU_lb, lmunew);             /* populated from here: F = 0 below mu, and below U_lb (non-monotone psi) */
+                lvzlow  = sqrt(2.0 * (lUlow - lUperpnew));  /* its parallel velocity here: the vz grid starts there */
+                sizeUU2 = (int)sqrt(2.0 * (Ucap - lUperpnew)) / dvz;
                 refl = 1;
                 for (ll = 0; ll < sizeUU2; ll++) {
                     if (ll != 0) {
                         lFold = lF; lFold_ref = lF;
-                        lU  = lU_lb + 0.5 * (dvz*ll) * (dvz*ll);
-                        lvz = dvz * ll;
-                        if ((lU > lmunew) && (lU - 0.5*lvz*lvz + 0.5*(lvz-dvz)*(lvz-dvz) < lmunew)) {
-                            lfrac  = (lvz - sqrt(2.0 * (lmunew - lU_lb + TINY))) / dvz;
-                            lFold  = bilin_interp(lmunew, 0.0, FF, mumu, UU, sizemumu, sizeUU, -1, -1);
-                            lFold_ref = lFold;   /* the reflected part starts from F(mu, 0) too, not from the F = 0 below the cutoff */
-                            lF     = bilin_interp(lmunew, lU - lmunew, FF, mumu, UU, sizemumu, sizeUU, -1, -1);
-                        } else if (lU > lmunew) {
-                            lfrac = 1.0;
-                            lF    = bilin_interp(lmunew, lU - lmunew, FF, mumu, UU, sizemumu, sizeUU, -1, -1);
-                        } else {
-                            lfrac = 1.0;
-                            lF    = 0.0;
-                        }
+                        lvz = lvzlow + dvz * ll;
+                        lU  = lUperpnew + 0.5 * lvz * lvz;
+                        lfrac = 1.0;
+                        lF    = bilin_interp(lmunew, lU - lmunew, FF, mumu, UU, sizemumu, sizeUU, -1, -1);
                         if ((lU - lmunew < lUcrit - numb) && (refl == 1))
                             lfrac_reflected = 1.0;
                         else if ((lU - lmunew > lUcrit - numb) && (refl == 1)) {
                             refl = 0;
-                            if (lUcrit < lU_lb - lmunew + numb) lfrac_reflected = 0.0;
+                            if (lUcrit < lUlow - lmunew + numb) lfrac_reflected = 0.0;
                             else {
-                                lvzcrit    = sqrt(2.0 * (lUcrit + lmunew - lU_lb));
+                                lvzcrit    = sqrt(2.0 * (lUcrit + lmunew - lUperpnew));
                                 lFold_ref  = bilin_interp(lmunew, lUcrit, FF, mumu, UU, sizemumu, sizeUU, -1, -1);
                                 lfrac_reflected = (lvzcrit - (lvz - dvz)) / dvz;
                             }
@@ -1276,18 +1217,12 @@ void densfinorb_par(double Ti, double lenfactor, double alpha,
                         if (kk == lowerlimit[j] && charge < 0)
                             lintdU_corr_chiM = lintdU;
                     } else {
-                        lU = lU_lb;
+                        lU = lUlow;
                         lF = bilin_interp(lmunew, lU - lmunew, FF, mumu, UU, sizemumu, sizeUU, -1, -1);
                         lintdU += 0.0;
                         if (kk == lowerlimit[j] && charge < 0)
                             lintdU_corr_chiM = lintdU;
                     }
-                }
-                if (LIFT_VZ_MEASURE && lU_lb > lUperpnew + 1e-14) {   /* lifted level: integrate in the true v_z (see lifted_intdU) */
-                    double lin_, lref_;
-                    lintdU = lifted_intdU(lmunew, lUperpnew, lU_lb, lUcrit, Ucap, dvz, FF, mumu, UU, sizemumu, sizeUU, &lin_, &lref_, charge < 0);
-                    if (charge < 0) { lintdU_in = lin_; lintdU_ref = lref_; }
-                    if (kk == lowerlimit[j] && charge < 0) lintdU_corr_chiM = lintdU;
                 }
                 if ((TRAP_FILL & 2) && charge < 0 && lUperpnew < lmunew) {   /* well-trapped U < mu (see well_fill) */
                     double w = well_fill(lmunew, lUperpnew, dvz, FF, mumu, UU, sizemumu, sizeUU);

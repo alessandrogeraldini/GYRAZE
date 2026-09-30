@@ -965,28 +965,6 @@ static double uperp_from_mu(int j, double mu_target,
 	return Uperp[j][upperlimit[j]];
 }
 
-/* Closed-orbit v_z integral of one level when the accessibility lift is active (U_lb > Uperp): an electron at
- * this point has U = Uperp + v_z^2/2 with v_z its parallel velocity HERE, and only U >= U_lb (and U >= mu, below
- * which F = 0) is populated, so the integral runs over v_z from v_lo = sqrt(2 (max(U_lb, mu) - Uperp)). The loop
- * that handles the unlifted case instead writes U = U_lb + v^2/2 and integrates over v from 0, which drops the
- * Jacobian dv_z/dv = v/v_z < 1 and overcounted n_e on every lifted level (1-4.5% around a potential bump/dip).
- * Reflected copy for U < Ucrit + mu, in the same variable. Trapezoid on v = n dvz, part cells at the ends.
- * Returns the total; *in and *ref (either may be NULL) get the incoming and reflected parts. */
-static double lift_trap_vz(double a, double b, double munew, double Uperp, double dvz,
-                           double **FF, double *mumu, double *UU, int sizemumu, int sizeUU)
-{
-    double I = 0.0;
-    if (b <= a) return 0.0;
-    int n0 = (int)floor(a / dvz), n1 = (int)ceil(b / dvz);
-    for (int n = n0; n < n1; n++) {
-        double lo = fmax(n * dvz, a), hi = fmin((n + 1) * dvz, b);
-        if (hi <= lo) continue;
-        double Flo = bilin_interp(munew, Uperp + 0.5*lo*lo - munew, FF, mumu, UU, sizemumu, sizeUU, -1, -1);
-        double Fhi = bilin_interp(munew, Uperp + 0.5*hi*hi - munew, FF, mumu, UU, sizemumu, sizeUU, -1, -1);
-        I += 0.5 * (hi - lo) * (Flo + Fhi);
-    }
-    return I;
-}
 /* TRAP_FILL & 2: one direction of the v_z integral over the well-trapped states U < mu (as in densfinorb_par.c) */
 static double well_fill(double munew, double Uperp, double dvz, double **FF, double *mumu, double *UU, int sizemumu, int sizeUU)
 {
@@ -998,25 +976,6 @@ static double well_fill(double munew, double Uperp, double dvz, double **FF, dou
         I += 0.5 * (hi - lo) * F0 * (exp(munew - Uperp - 0.5*lo*lo) + exp(munew - Uperp - 0.5*hi*hi));
     }
     return I;
-}
-static double lifted_intdU(double munew, double Uperp, double U_lb, double Ucrit, double Ucap, double dvz,
-                           double **FF, double *mumu, double *UU, int sizemumu, int sizeUU, double *in, double *ref, int electrons)
-{
-    double Ulo = fmax(fmax(U_lb, munew), Uperp);
-    double a = sqrt(2.0 * (Ulo - Uperp)), b = sqrt(2.0 * fmax(Ucap - Uperp, 0.0));
-    double c = (Ucrit + munew > Ulo) ? sqrt(2.0 * (Ucrit + munew - Uperp)) : a;
-    double Iin  = lift_trap_vz(a, b, munew, Uperp, dvz, FF, mumu, UU, sizemumu, sizeUU);
-    double Iref = lift_trap_vz(a, fmin(c, b), munew, Uperp, dvz, FF, mumu, UU, sizemumu, sizeUU);
-    if ((TRAP_FILL & 1) && electrons) {   /* shadowed band [max(mu, Uperp), U_lb): trapped, so filled, below Ucrit + mu */
-        double Um = fmax(munew, Uperp), Ut = fmin(Ulo, Ucrit + munew);
-        if (Ut > Um) {
-            double I = lift_trap_vz(sqrt(2.0 * (Um - Uperp)), fmin(sqrt(2.0 * (Ut - Uperp)), b), munew, Uperp, dvz, FF, mumu, UU, sizemumu, sizeUU);
-            Iin += I; Iref += I;
-        }
-    }
-    if (in) *in = Iin;
-    if (ref) *ref = Iref;
-    return Iin + Iref;
 }
 
 static double uperp_from_mu2(int j, double mu_target,
@@ -2254,15 +2213,14 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 							}
 							Uperp_lb_k = Uperp_lb;
 						}
-						// With Uperpnew possibly raised, sizeU and U = Uperpnew + 0.5*vz*vz
-						// inside the l loop automatically use the tighter lower bound.
 						if (Uperpnew_pre < min_Uperp_before_fix_j) {
 							min_Uperp_before_fix_j = Uperpnew_pre;
 							Uperp_lb_at_min_j = Uperp_lb_k;
 						}
 						if (Uperpnew < min_Uperp_j) min_Uperp_j = Uperpnew;
-						//sizeU = (int) sqrt(2.0*(Ucap - Uperpnew))/dvz;
-						sizeU = (int) sqrt(2.0*(Ucap - U_lb))/dvz;
+						double Ulow = fmax(U_lb, munew); // populated from here: F = 0 below mu, and below U_lb (non-monotone psi)
+						double vzlow = sqrt(2.0*(Ulow - Uperpnew)); // its parallel velocity here: the vz grid starts there
+						sizeU = (int) sqrt(2.0*(Ucap - Uperpnew))/dvz;
 						reflected = 1;
 						for (l=0; l < sizeU; l++)
 						{	
@@ -2277,30 +2235,18 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 								//U = Uperpnew + 0.5*vz*vz;
 								
 								//U = U_lb + 0.5*vz*vz;
-								U = U_lb + 0.5*(dvz*l)*(dvz*l);
-								vz = dvz*l;
-								if ( (U > munew) && (U - 0.5*vz*vz + 0.5*(vz-dvz)*(vz-dvz) < munew) ) {
-									frac = (vz - sqrt(2.0*(munew - U_lb+TINY)))/dvz;
-									Fold = bilin_interp(munew, 0.0, FF, mumu, UU, sizemumu, sizeUU, -1, -1); 
-									Fold_ref = Fold; /* the reflected part starts from F(mu, 0) too, not from the F = 0 below the cutoff */
-									F = bilin_interp(munew, U-munew, FF, mumu, UU, sizemumu, sizeUU, -1, -1); 
-								}
-								else if (U > munew){
-									frac = 1.0;
-									F = bilin_interp(munew, U-munew, FF, mumu, UU, sizemumu, sizeUU, -1, -1); 
-								}
-								else {
-									frac = 1.0;
-									F = 0.0;
-								}
+								vz = vzlow + dvz*l;
+								U = Uperpnew + 0.5*vz*vz;
+								frac = 1.0;
+								F = bilin_interp(munew, U-munew, FF, mumu, UU, sizemumu, sizeUU, -1, -1); 
 
 								if ( (U-munew < Ucrit - numb) && (reflected == 1) ) 
 									frac_reflected = 1.0;
 								else if ( (U-munew > Ucrit - numb) && (reflected == 1) ) {
 									reflected = 0;
-									if (Ucrit < U_lb - munew + numb) frac_reflected = 0.0;
+									if (Ucrit < Ulow - munew + numb) frac_reflected = 0.0;
 									else {
-										vzcrit = sqrt(2.0*(Ucrit + munew - U_lb));
+										vzcrit = sqrt(2.0*(Ucrit + munew - Uperpnew));
 										Fold_ref = bilin_interp(munew, Ucrit, FF, mumu, UU, sizemumu, sizeUU, -1, -1); 
 										frac_reflected = (vzcrit - (vz - dvz))/dvz;
 									}
@@ -2328,7 +2274,7 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 								//vz = dvz*l;
 
 								//U = Uperpnew ;//+ 0.5*vz*vz;
-								U = U_lb;
+								U = Ulow;
 
 								//if (phi[0] < 0.0) reflected = 0.0;
 								//if (U-munew > Ucrit) 
@@ -2342,12 +2288,6 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 							if(k == lowerlimit[j] && charge < 0){
 								intdU_corr_chiM = intdU;
 							}
-						}
-						if (LIFT_VZ_MEASURE && U_lb > Uperpnew + 1e-14) {   /* lifted level: integrate in the true v_z (see lifted_intdU) */
-							double lin_, lref_;
-							intdU = lifted_intdU(munew, Uperpnew, U_lb, Ucrit, Ucap, dvz, FF, mumu, UU, sizemumu, sizeUU, &lin_, &lref_, charge < 0);
-							if (charge < 0) { intdU_in = lin_; intdU_ref = lref_; }
-							if (k == lowerlimit[j] && charge < 0) intdU_corr_chiM = intdU;
 						}
 						if ((TRAP_FILL & 2) && charge < 0 && Uperpnew < munew) {   /* well-trapped U < mu (see well_fill) */
 							double w = well_fill(munew, Uperpnew, dvz, FF, mumu, UU, sizemumu, sizeUU);

@@ -157,7 +157,9 @@
 // Solver-free runs at 3.25 (MP fixed) found the plateau is a least-squares optimum (a Gauss-Newton step
 // moved the rms 0.2%) while a max-targeted fit lowered max|r| 0.0139 -> 0.0132 at the cost of +5% rms,
 // which the rms merit test (DS_MERIT_TOL 3%) would reject. 0 = rms objective as before.
+#ifndef DS_SLP
 #define DS_SLP 1
+#endif
 // DS Newton endgame (wall within DS_WALL_TOL of its target): take the step from a linear program that
 // minimises the max of the linearised relative Poisson residual, r_i(d) = (-F_i + (J d)_i) / (gamma^2 ni),
 // over a box trust region, with the mean over error_Poisson's rows capped and a cap on second differences

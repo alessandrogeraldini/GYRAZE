@@ -1227,6 +1227,18 @@ double vparcut_mu(double mu, double vcut) {
 	return vparcutn;
 }
 
+/* phi at the first data point (x = 0) of a restart file, NAN if unreadable */
+static double restart_phi_at_0(const char *filename) {
+    FILE *fp = fopen(filename, "r");
+    char buf[200];
+    double x, p;
+    if (fp == NULL) return NAN;
+    while (fgets(buf, sizeof(buf), fp) != NULL)
+        if (buf[0] != '#' && buf[0] != ' ' && buf[0] != '\n' && sscanf(buf, "%lf %lf", &x, &p) == 2) { fclose(fp); return p; }
+    fclose(fp);
+    return NAN;
+}
+
 static void load_phi_restart(const char *filename, double *x_grid, double *phi_grid, int size_grid, int spline_if_regridded) {
     FILE *fp = fopen(filename, "r");
     if (fp == NULL) {
@@ -2064,6 +2076,17 @@ i=0;
 		printf("\nITERATION # = %d\n", N);
 		fprintf(fout, "ITERATION # = %d\n", N);
 		current = target_current;
+		/* A current-controlled run (set_current 1) starts from v_cut = 3.0, i.e. phi_wall = 4.5, whatever the restart
+		 * files hold. Restarting from a solution with its wall at ~3.2 then first pulled the DS wall toward 4.5 - phi_MP(0)
+		 * and back again. Start instead from the restart state's own wall potential, phi_MP(0) + phi_DS(0). */
+		if (restart_flag && fix_current == 1 && N == 0) {
+			double pm = restart_phi_at_0("restart_phi_MP.txt"), pd = restart_phi_at_0("restart_phi_DS.txt");
+			if (isfinite(pm) && isfinite(pd) && pm + pd < 0.0) {
+				v_cut = sqrt(-2.0*(pm + pd));
+				printf("restart: initial phi_wall = %f from the restart files (phi_MP(0) %f + phi_DS(0) %f)\n", -(pm + pd), pm, pd);
+			}
+			else printf("WARNING: could not read phi(0) from the restart files: initial phi_wall stays %f\n", 0.5*v_cut*v_cut);
+		}
 		if (phi_grid[0] + 0.5*v_cut*v_cut < 0.0)
 			grid_parameter = 0.0001;
 		if ( (2.0*factor_small_grid_parameter*(phi_grid[0] + 0.5*v_cut*v_cut) < grid_parameter) ) { // && (grid_parameter > 0.0001) )
@@ -2252,7 +2275,16 @@ i=0;
 			printf("MP converged --> no iteration needed\n");
 			fprintf(fout, "MP converged --> no iteration needed\n");
 		}
-		if (fix_current == 1) { // calculate new guess for total potential drop
+		if (fix_current == 1 && restart_flag) {
+			/* Restart of a current-controlled run: the restart state already has its wall potential from a coupled
+			 * MP+DS solution. Iterating it here, with the simplified DS model's electron flux, walked phi_wall away
+			 * (3.200 -> 3.096 in 40 iterations from a converged 3.2 state). Hold it; the combined phase iterates the
+			 * current with the DS flux. */
+			convergence_j += 1;
+			printf("restart: wall potential held in the MP-only phase (current %f, ion %f, electron %f)\n", current, sumflux_i, flux_e);
+			fprintf(fout, "restart: wall potential held in the MP-only phase\n");
+		}
+		else if (fix_current == 1) { // calculate new guess for total potential drop
 			if (fabs(target_current - current) > tol_current*sumflux_i) convergence_j = 0;
 			else convergence_j += 1;
 			printf("target current = %f +/- %f\n", target_current, tol_current*sumflux_i);
