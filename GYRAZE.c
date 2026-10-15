@@ -21,6 +21,7 @@
 #include <gsl/gsl_sf_bessel.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <unistd.h>
 #include "mps.h"
 
 #define TEST_EL 0
@@ -1535,7 +1536,7 @@ int main(void) {
 		if ( ( (line_hundred[0] != '#') && (line_hundred[0] != ' ') ) && (line_hundred[0] != '\n') ) {
 		storevals = linetodata(line_hundred, strlen(line_hundred), &ncols);
 		//printf("ndirname = %d\n", ndirname);
-			if ( (i!= 8) && (i!=10) && (i!=0) ) {
+			if ( (i!= 8) && (i!=10) && (i<11) && (i!=0) ) {
 				for (j=0; j < lenstrqty-1; j++) {
 					dirname[ndirname+j] = strqty[i-fix_current-1][j];
 				}
@@ -1591,7 +1592,15 @@ int main(void) {
 		}
 		else if (i==10)
 			ds_solver = (int) (*storevals); /* 0 = Picard, 1 = Newton-Raphson */
-			if (i!=8 && i!=10) {
+		else if (i==11) {   /* optional run name: .../pwall3.2/ becomes .../pwall3.2_<name>/ */
+			rmdir(dirname);   /* the unnamed directory made for the line above, only if it is still empty */
+			dirname[ndirname-1] = '_';
+			for (j=0;j<strlen(line_hundred)-1;j++) dirname[ndirname+j] = line_hundred[j];
+			ndirname += strlen(line_hundred)-1;
+			dirname[ndirname++] = '/';
+			dirname[ndirname] = '\0';
+		}
+			if (i!=8 && i!=10 && i<11) {
 				ndirname += strlen(line_hundred)-1;
 				dirname[ndirname] = '/';
 				ndirname += 1;

@@ -50,7 +50,7 @@
 #define NR_SAFESTEP 1
 // DS Newton (ds solver 1): 1 = steps accepted/rejected on the true residual, with a trust region; 0 = original frozen-density backtracking
 #ifndef DS_DPHIMAX
-#define DS_DPHIMAX 0.1
+#define DS_DPHIMAX 1.0
 //#define DS_DPHIMAX 0.005
 
 #endif
@@ -158,7 +158,7 @@
 // moved the rms 0.2%) while a max-targeted fit lowered max|r| 0.0139 -> 0.0132 at the cost of +5% rms,
 // which the rms merit test (DS_MERIT_TOL 3%) would reject. 0 = rms objective as before.
 #ifndef DS_SLP
-#define DS_SLP 1
+#define DS_SLP 0
 #endif
 // DS Newton endgame (wall within DS_WALL_TOL of its target): take the step from a linear program that
 // minimises the max of the linearised relative Poisson residual, r_i(d) = (-F_i + (J d)_i) / (gamma^2 ni),
@@ -207,7 +207,7 @@ extern double ds_tol_max;   /* tol_DS[1], set in GYRAZE.c after reading input_nu
 // by a few tenths of a percent on its own. Measured scale: run-to-run scatter ~1e-5, resize jitter ~0.7%,
 // a genuinely bad step (lambda = 0.1 at the 3.25 plateau) +176%. 3% sits well clear of both ends.
 #ifndef DS_XEND
-#define DS_XEND 8.57
+#define DS_XEND 16.6
 //#define DS_XEND 16.6
 #endif
 // End the DS n_e grid at the first point with x >= DS_XEND, instead of where n_e first comes within MARGIN_DS

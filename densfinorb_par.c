@@ -1242,9 +1242,12 @@ void densfinorb_par(double Ti, double lenfactor, double alpha,
                     double pmin = phi_imin >= 0 ? phi[phi_imin] : 0.0;
                     int jsl = -1, ksl = -1;
                     lift_Ulb(j, lmunew, lUperpnew, i, phi_monotone, js_phi_imin, sizexbar, mu, Uperp, lowerlimit, upper, upperlimit, pmin, &jsl, &ksl, chi, size_finegrid);
-                    double Gp = closed_intdU(mp, lUperpnew, lift_Ulb(j, mp, lUperpnew, i, phi_monotone, js_phi_imin, sizexbar, mu, Uperp, lowerlimit, upper, upperlimit, pmin, NULL, NULL, chi, size_finegrid),
+                    /* follow the lift only if orbit js*'s mu kernels exist for the cL term below, which cancels this
+                     * part of dG/dmu when phi shifts uniformly; alone it made the far-field rows -10 to -35 */
+                    int lok = jsl >= 0 && ksl >= 0 && ksl + 1 <= upperlimit[jsl] && bk_v[jsl] != NULL && bk_v[jsl][ksl] != NULL && bk_v[jsl][ksl+1] != NULL;
+                    double Gp = closed_intdU(mp, lUperpnew, lok ? lift_Ulb(j, mp, lUperpnew, i, phi_monotone, js_phi_imin, sizexbar, mu, Uperp, lowerlimit, upper, upperlimit, pmin, NULL, NULL, chi, size_finegrid) : lU_lb,
                                              ucrit_at(muopen, Ucritf, maxj, mp), Ucap, dvz, FF, mumu, UU, sizemumu, sizeUU);
-                    double Gm = closed_intdU(mm, lUperpnew, lift_Ulb(j, mm, lUperpnew, i, phi_monotone, js_phi_imin, sizexbar, mu, Uperp, lowerlimit, upper, upperlimit, pmin, NULL, NULL, chi, size_finegrid),
+                    double Gm = closed_intdU(mm, lUperpnew, lok ? lift_Ulb(j, mm, lUperpnew, i, phi_monotone, js_phi_imin, sizexbar, mu, Uperp, lowerlimit, upper, upperlimit, pmin, NULL, NULL, chi, size_finegrid) : lU_lb,
                                              ucrit_at(muopen, Ucritf, maxj, mm), Ucap, dvz, FF, mumu, UU, sizemumu, sizeUU);
                     jGmu[nlev] = (Gp - Gm) / (mp - mm);
                     /* The lift (U_lb = Uperp at which orbit js* has this mu) moves with this orbit's mu, which the
@@ -1252,7 +1255,7 @@ void densfinorb_par(double Ti, double lenfactor, double alpha,
                      * -delta mu_js*(U_lb) / mu'_js*, and dG/dU_lb / mu'_js* is the part of dG/dmu due to the lift
                      * (dG/dmu with the lift following minus with it frozen). */
                     jLs[nlev] = -1; jLc[nlev] = 0.0;
-                    if (jsl >= 0 && ksl >= 0 && ksl + 1 <= upperlimit[jsl]) {
+                    if (lok) {
                         double Gpf = closed_intdU(mp, lUperpnew, lU_lb, ucrit_at(muopen, Ucritf, maxj, mp), Ucap, dvz, FF, mumu, UU, sizemumu, sizeUU);
                         double Gmf = closed_intdU(mm, lUperpnew, lU_lb, ucrit_at(muopen, Ucritf, maxj, mm), Ucap, dvz, FF, mumu, UU, sizemumu, sizeUU);
                         double dmk = mu[jsl][ksl+1] - mu[jsl][ksl];
