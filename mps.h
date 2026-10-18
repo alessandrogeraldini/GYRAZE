@@ -219,6 +219,32 @@ extern double ds_tol_max;   /* tol_DS[1], set in GYRAZE.c after reading input_nu
 // through its margin argument: a margin >= 1 means "stop at this x" (a negative one still means "don't stop").
 #define DS_WALL_TOL 1e-3
 // the DS only counts as converged once its wall potential is within this of -0.5 v_cutDS^2 (<= 0: no check)
+#ifndef DS_BORDERED
+#define DS_BORDERED 1
+#endif
+// DS Newton (ds solver 1): 1 = find the wall potential at which the DS profile is about to become non-monotone.
+// The wall value is then an unknown, fixed by phi'(x*) = 0 at the first interior minimum x* of phi' (bordered
+// Newton step, newguess_bordered in potupdate.c). The input phi_wall is only the starting guess; the phi_wall found
+// is printed every iteration and in the output. Needs NONLOCAL_JAC_ANALYTIC 1 and set_current 0. 0 = wall fixed.
+#define DS_BORDER_XMIN 1.0
+#define DS_BORDER_XEDGE 2.0
+// x* is searched for in DS_BORDER_XMIN <= x <= (end of the n_e grid) - DS_BORDER_XEDGE (rho_e units): away from
+// the wall, and away from the grid end, where phi' is set by the asymptotic tail and decays to 0 anyway
+#define DS_BORDER_TOL 1e-4
+// with DS_BORDERED the DS only counts as converged once phi'(x*) is within DS_BORDER_TOL of 0 (T_e/e per rho_e)
+#define DS_BORDER_DWMAX 0.01
+// largest change of the wall potential in one bordered step (T_e/e)
+#define DS_BORDER_STALL 3
+// the wall also moves once the DS residual has not fallen by 10% in this many iterations (with the MP converged)
+#ifndef DS_BORDER_LAMBDA
+#define DS_BORDER_LAMBDA 0.05
+#endif
+// Levenberg-Marquardt damping of the bordered profile step (and of the wall response z). LM_LAMBDA (0.3) held back
+// the far-field mode so much that a run coming from below the threshold stayed on a far-field hump (residual stuck at
+// 5e-4) past the threshold; 0.05 removed the hump in 3 iterations and converged to 3e-5.
+#if DS_BORDERED && !NONLOCAL_JAC_ANALYTIC
+#error "DS_BORDERED needs the analytic Jacobian (NONLOCAL_JAC_ANALYTIC 1)"
+#endif
 #define MUGAUSSSPLINE 0
 // phi between grid points in mu_gaussquad: 1 = natural cubic spline, 0 = linear interpolation
 
@@ -233,6 +259,7 @@ struct distfuncDKGK { // contains the distribution function on a 2D grid and the
 double tophat(double x1, double x2, double x); 
 void newguess(double *x_grid, double* ne_grid, double *ni, double* phi_grid,int p_size, int size_ngrid, double lambdaDoverl, double v_cutDS, double pfac, double weight); // gsl_permutation *p, gsl_matrix *m);
 void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_grid, int size_phigrid, int size_ngridin, double invgammasq, double v_cutDS, double pfac, double weight, double *ne_corr_delta, double *ne_corr_chiM, double *ni_corr, double *jac_y, double *jac_h, int jac_K, double *dir_h, double *dir_y, double *ls_v, double *ls_tmodel, double *jac_e, double *jac_i, int jac_n);
+double newguess_bordered(double *x_grid, double *ne_grid, double *ni_grid, double *phi_grid, int size_phigrid, int size_ngrid, double invgammasq, double pfac, double weight, double *jac_e, double *jac_i, int jac_n, double *dne_dW, int move_wall);
 void correct_phi_DS_restart(double *x_DSgrid, double *phi_DSgrid, int size_phiDSgrid, double invgammasq, double v_cutDS, double *ne_DSgrid, double *ne_DSgrid_corr_delta, double *ne_DSgrid_corr_chiM, double *ni_corr, int N_bvp);
 void newvcut(double *v_cut, double v_cutDS, double u_i, double u_e, double current, double error_current, double weight);
 extern int error_Poisson_imax;   /* grid index of the largest residual from the last error_Poisson call */

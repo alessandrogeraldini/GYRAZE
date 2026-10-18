@@ -1135,6 +1135,188 @@ void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_g
 	free(ne_corr_total);
 }
 
+/* Interior local minima of phi', for newguess_bordered. phi' at node k is the centred difference
+ * d_k = (phi[k+1] - phi[k-1]) / (2 dx); the minima are looked for at nodes with DS_BORDER_XMIN <= x_k <= x_e -
+ * DS_BORDER_XEDGE. A minimum only counts if it stands out from what the Poisson residual can do: phi' rises from
+ * it to the next local maximum by more than the residual could change it over that distance, sum |F_i| dx (aF[i]
+ * = |F| at node i). Far-field wiggles of phi' at the 1e-5 to 1e-4 level fail this. Picks the first minimum that
+ * counts (nearest the wall). Around it, the parabola through d_{k-1}, d_k, d_{k+1} has its minimum at
+ * x* = x_k + s dx, where its value is g = w[0] d_{k-1} + w[1] d_k + w[2] d_{k+1}. Returns k (-1 if no minimum
+ * counts) and sets the numbers of minima found and counted, w, s, g, and glow = the lowest d_k of all the minima. */
+static int dphi_min(const double *x_grid, const double *phi_grid, int e, const double *aF,
+                    int *nmin, int *nsig, double *w, double *s, double *g, double *glow)
+{
+	int j, k, kstar = -1;
+	double dx = x_grid[1] - x_grid[0], d[3];
+	*nmin = 0; *nsig = 0; *glow = NAN;
+	for (k = 2; k + 2 <= e; k++) {
+		if (x_grid[k] < DS_BORDER_XMIN || x_grid[k] > x_grid[e] - DS_BORDER_XEDGE) continue;
+		for (j = 0; j < 3; j++) d[j] = (phi_grid[k+j] - phi_grid[k+j-2]) / (2.0*dx);   /* d_{k-1}, d_k, d_{k+1} */
+		if (d[1] < d[0] && d[1] <= d[2]) {
+			int km = k;            /* the next local maximum of phi' to the right (or the last node) */
+			double rise = 0.0, slack = 0.0;
+			while (km + 2 <= e && phi_grid[km+2] - phi_grid[km] >= phi_grid[km+1] - phi_grid[km-1]) { km++; slack += aF[km] * dx; }
+			rise = (phi_grid[km+1] - phi_grid[km-1]) / (2.0*dx) - d[1];
+			(*nmin)++;
+			if (!(d[1] >= *glow)) *glow = d[1];
+			if (rise > slack) { (*nsig)++; if (kstar < 0) kstar = k; }
+		}
+	}
+	if (kstar < 0) { *g = NAN; return -1; }
+	for (j = 0; j < 3; j++) d[j] = (phi_grid[kstar+j] - phi_grid[kstar+j-2]) / (2.0*dx);
+	*s = (d[0] - d[2]) / (2.0*(d[0] - 2.0*d[1] + d[2]));
+	w[0] = 0.5*(*s)*(*s - 1.0); w[1] = 1.0 - (*s)*(*s); w[2] = 0.5*(*s)*(*s + 1.0);
+	*g = w[0]*d[0] + w[1]*d[1] + w[2]*d[2];
+	return kstar;
+}
+
+/* Bordered Newton step for the Debye sheath (DS_BORDERED): solve for the wall potential at which the DS profile
+ * is about to become non-monotone, together with the profile itself.
+ *
+ * The problem. The ordinary DS solve (newguess_NR) holds the wall value phi[0] fixed and solves Poisson's equation
+ *     F_i = phi''(x_i) - gamma^2 (n_e - n_i)(x_i) = 0        at the nodes i = 1 .. n
+ * (n = last node of the n_e grid; beyond it phi follows an asymptotic tail). Here the wall value W = phi[0] is an
+ * unknown too, fixed by the extra equation
+ *     g = phi'(x*) = 0,     x* an interior local minimum of phi'.
+ * A monotone profile has phi' > 0. As the drop is lowered, phi' dips towards zero at some x* (where phi'' = 0, x*
+ * being a minimum of phi'); g = 0 is the profile on the edge of becoming non-monotone, phi' = phi'' = 0 at x*.
+ *
+ * x*: the first minimum of phi' (nearest the wall) that stands out from the residual (dphi_min). In the
+ * near-neutral far field phi' has wiggles of the size the residual allows (a residual r lets phi' change by
+ * ~gamma^2 n r per rho_e), which the wall does not control. For the same reason threshold runs need a tight DS
+ * tolerance (~1e-4): with tol_DS = 0.01 two runs converged to drops 0.08 apart.
+ *
+ * One step (the bordered Newton system [J b; c^T 0] solved by block elimination, with two changes noted below):
+ *   - profile at fixed wall: dphi_F = -J^{-1} F, applied by the fraction weight (less if any value would change by
+ *     more than DS_DPHIMAX). J = Laplacian - gamma^2 d(n_e - n_i)/dphi, from the analytic Jacobian (jac_e, jac_i:
+ *     d n/d phi[m] at node i stored at [i*jac_n + m]);
+ *   - wall: dW = -g / (dg/dW), at most DS_BORDER_DWMAX, with the profile following by -z dW, z = J^{-1} b,
+ *     b = dF/dW (from dne_dW = d n_e/d phi[0], measured by GYRAZE.c; n_i does not depend on the wall).
+ * Change 1: J^{-1} is damped (Levenberg-Marquardt, DS_BORDER_LAMBDA). Near the threshold J is nearly singular
+ * (smallest singular value down to ~1e-3: the solution branch folds) and the undamped step blew the residual up.
+ * Change 2: dg/dW is not the linear-model value -c.z (the damping suppresses the very mode the wall acts through;
+ * it scattered around 0 with either sign) but the secant between the converged states at the last two wall moves,
+ * which also includes the MP's response. And the block elimination's term that feeds the residual F into dW is
+ * left out: divided by the small dg/dW it made the wall jump by 0.03-0.05 while g was already ~1e-5.
+ *
+ * When the wall moves (move_wall, set in GYRAZE.c):
+ *   0: MP not converged, or DS residual above tolerance and still falling: wall held, profile step only;
+ *   1: MP converged and DS residual within tolerance: dW from the secant. A larger drop makes the profile more
+ *      monotone, so dg/dW < 0; without a secant of that sign (first move, or x* jumped to another feature) the
+ *      step is DS_BORDER_DWMAX in the direction sign(g) gives (W up, a smaller drop, if g > 0). If no minimum of
+ *      phi' stands out the profile is monotone as far as the residual can tell: W up by DS_BORDER_DWMAX;
+ *   2: DS residual stalled above tolerance: no exact solution at this drop, i.e. below the threshold: W down by
+ *      DS_BORDER_DWMAX (a larger drop), whatever g says (at drop 1.565 the near-sheath minimum had g ~ -5e-5 while
+ *      the residual stalled at 3e-4).
+ *
+ * Returns phi'(x*) on the updated profile, for the convergence test in GYRAZE.c (the lowest of all the minima is
+ * printed too); NAN if no minimum stands out. */
+double newguess_bordered(double *x_grid, double *ne_grid, double *ni_grid, double *phi_grid,
+                         int size_phigrid, int size_ngrid, double invgammasq, double pfac, double weight,
+                         double *jac_e, double *jac_i, int jac_n, double *dne_dW, int move_wall)
+{
+	static double W_last = NAN, g_last = NAN, x_last = NAN;   /* wall, g and x* where the wall last moved (secant) */
+	int i, j, m, nmin, nsig;
+	int n = size_ngrid - 1;            /* unknowns phi[1] .. phi[n] are vector entries 0 .. n-1; n = last node of the n_e grid */
+	double dx = x_grid[1] - x_grid[0], dx2 = dx*dx, gamma2 = 1.0/invgammasq;
+	double pdec = 2.0/(1.0 - pfac);    /* tail beyond the n_e grid: phi = phi0 (x + CC)^pdec */
+	gsl_matrix *J = gsl_matrix_calloc(n, n);
+	gsl_vector *mF = gsl_vector_alloc(n), *b = gsl_vector_alloc(n), *dphiF = gsl_vector_alloc(n), *z = gsl_vector_alloc(n);
+	double *aF = calloc(n + 1, sizeof(double));   /* |F| by node, for dphi_min */
+	gsl_matrix *V = gsl_matrix_alloc(n, n);
+	gsl_vector *S = gsl_vector_alloc(n), *work = gsl_vector_alloc(n);
+
+	/* 1. The first tail point follows the last unknown along the current tail, phi[n+1] = rho phi[n]
+	 *    (rho = 0: no valid tail, phi[n+1] held fixed) */
+	double CC = 0.0, rho = 0.0;
+	if (n + 2 < size_phigrid && phi_grid[n+1] < 0.0 && phi_grid[n+2] > phi_grid[n+1]) {
+		CC = pdec * phi_grid[n+1] * (x_grid[n+2] - x_grid[n+1]) / (phi_grid[n+2] - phi_grid[n+1]) - x_grid[n+1];
+		if (x_grid[n] + CC > 0.0) rho = pow((x_grid[n+1] + CC) / (x_grid[n] + CC), pdec);
+	}
+
+	/* 2. Poisson residual (row i <-> node i+1), with the wall at its current value phi[0] */
+	for (i = 0; i < n; i++) {
+		double right = (i == n-1 && rho > 0.0) ? rho * phi_grid[n] : phi_grid[i+2];
+		gsl_vector_set(mF, i, -((right - 2.0*phi_grid[i+1] + phi_grid[i]) / dx2 - gamma2 * (ne_grid[i+1] - ni_grid[i+1])));
+		aF[i+1] = fabs(gsl_vector_get(mF, i));
+	}
+
+	/* 3. J and the wall column b. n_e near the grid end also depends on phi beyond it, which moves with phi[n]
+	 *    through the tail, so those columns are folded into the last one. */
+	for (i = 0; i < n; i++) {
+		const double *re = jac_e + (size_t)(i+1)*jac_n, *ri = jac_i + (size_t)(i+1)*jac_n;
+		for (j = 0; j < n; j++) {
+			double lap = (i == j) ? -2.0/dx2 : ((i == j+1 || i == j-1) ? 1.0/dx2 : 0.0);
+			gsl_matrix_set(J, i, j, lap - gamma2 * (re[j+1] - ri[j+1]));
+		}
+		if (rho > 0.0) {
+			double tail = 0.0;
+			for (m = n + 1; m < jac_n; m++) tail += (re[m] - ri[m]) * pow((x_grid[m] + CC) / (x_grid[n] + CC), pdec);
+			gsl_matrix_set(J, i, n-1, gsl_matrix_get(J, i, n-1) - gamma2 * tail);
+		}
+		gsl_vector_set(b, i, ((i == 0) ? 1.0/dx2 : 0.0) - gamma2 * dne_dW[i+1]);
+	}
+	gsl_matrix_set(J, n-1, n-1, gsl_matrix_get(J, n-1, n-1) + rho/dx2);
+
+	/* 4. Profile step at fixed wall, dphi_F = -J^{-1} F, and the profile's response to the wall, z = J^{-1} b,
+	 *    both damped (LM_LAMBDA) */
+	gsl_linalg_SV_decomp(J, V, S, work);   /* J now holds U */
+	lm_solve(J, V, S, DS_BORDER_LAMBDA, mF, dphiF);
+	lm_solve(J, V, S, DS_BORDER_LAMBDA, b, z);
+
+	/* 5. Wall step from g = phi'(x*), with the secant dg/dW (g, W and x* where the wall last moved: g_last, W_last,
+	 *    x_last; no secant if x* has jumped to another feature since, by more than a gyroradius) */
+	double wgt[3], s, g, glow, xstar = NAN, dgdW = NAN, dW = 0.0;
+	int kstar = dphi_min(x_grid, phi_grid, n, aF, &nmin, &nsig, wgt, &s, &g, &glow);
+	if (kstar >= 0) {
+		xstar = x_grid[kstar] + s*dx;
+		if (move_wall == 2) { dW = -DS_BORDER_DWMAX; W_last = NAN; }
+		else if (move_wall) {
+			if (isfinite(W_last) && fabs(phi_grid[0] - W_last) > TINY && fabs(xstar - x_last) < 1.0)
+				dgdW = (g - g_last) / (phi_grid[0] - W_last);
+			dW = (dgdW < 0.0) ? -g / dgdW : ((g > 0.0) ? DS_BORDER_DWMAX : -DS_BORDER_DWMAX);
+			dW = fmax(-DS_BORDER_DWMAX, fmin(DS_BORDER_DWMAX, dW));
+			W_last = phi_grid[0]; g_last = g; x_last = xstar;
+		}
+		printf("bordered: x* = %.3f (first of %d minima of phi' that stand out, %d in all), phi'(x*) = %.3e, lowest minimum %.3e, secant dphi'(x*)/dW = %.4f\n",
+		       xstar, nsig, nmin, g, glow, dgdW);
+	}
+	else {
+		if (move_wall) { dW = (move_wall == 2) ? -DS_BORDER_DWMAX : DS_BORDER_DWMAX; W_last = NAN; }
+		printf("bordered: no minimum of phi' in x = [%.2f, %.2f] stands out from the residual (%d in all, lowest %.3e): monotone\n",
+		       DS_BORDER_XMIN, x_grid[n] - DS_BORDER_XEDGE, nmin, glow);
+	}
+	if (!move_wall) printf("bordered: wall held (MP not converged, or DS residual above tolerance and still falling)\n");
+	if (move_wall == 2) printf("bordered: DS residual stalled above tolerance: no exact solution at this drop, drop raised\n");
+
+	/* 6. Apply: the profile step by the fraction frac, the wall and the profile's response to it in full */
+	double big = 0.0, frac = weight, W_old = phi_grid[0];
+	for (i = 0; i < n; i++) big = fmax(big, fabs(gsl_vector_get(dphiF, i)));
+	if (!isfinite(big) || !isfinite(dW)) { printf("bordered: singular Jacobian, no step\n"); frac = 0.0; dW = 0.0; }
+	else if (frac * big > DS_DPHIMAX) frac = DS_DPHIMAX / big;
+	for (i = 0; i < n; i++) phi_grid[i+1] += frac * gsl_vector_get(dphiF, i) - dW * gsl_vector_get(z, i);
+	phi_grid[0] += dW;
+
+	/* 7. Re-attach the tail beyond the n_e grid, matched in value and slope at node n (as newguess_NR does) */
+	double slope = (3.0*phi_grid[n] - 4.0*phi_grid[n-1] + phi_grid[n-2]) / (2.0*dx);
+	if (phi_grid[n] < 0.0 && slope > 0.0) CC = pdec*phi_grid[n]/slope - x_grid[n];
+	if ((phi_grid[n] < 0.0 && slope > 0.0) || rho > 0.0) {
+		double phi0 = phi_grid[n] / pow(x_grid[n] + CC, pdec);
+		for (i = n + 1; i < size_phigrid; i++) phi_grid[i] = phi0 * pow(x_grid[i] + CC, pdec);
+	}
+	else printf("bordered: no valid tail at the edge, tail left unchanged\n");
+
+	/* 8. The new profile: x* located again (with the old residual), and the lowest minimum of phi' */
+	kstar = dphi_min(x_grid, phi_grid, n, aF, &nmin, &nsig, wgt, &s, &g, &glow);
+	xstar = (kstar >= 0) ? x_grid[kstar] + s*dx : NAN;
+	printf("bordered: wall %f -> %f, profile step fraction %.3f (max change %.2e); new profile: x* = %.3f, phi'(x*) = %.3e, lowest minimum %.3e\n",
+	       W_old, phi_grid[0], frac, frac*big, xstar, g, glow);
+
+	gsl_matrix_free(J); gsl_vector_free(mF); gsl_vector_free(b); gsl_vector_free(dphiF); gsl_vector_free(z);
+	gsl_matrix_free(V); gsl_vector_free(S); gsl_vector_free(work); free(aF);
+	return (kstar >= 0) ? g : NAN;
+}
+
 /* Linearized BVP correction for DS phi when restarting from a different phi_wall.
  * Solves: delta_phi'' = gamma2*(f(x)*delta_phi - g(x)*delta_phi_wall)
  * where f = ne_corr_total, g = ni_corr (sumni_DS_corr).

@@ -876,6 +876,36 @@ void densfinorb_par(double Ti, double lenfactor, double alpha,
     }
     n_inf = 2.0 * intdxbar;
     printf("n_inf = %f\n", n_inf);
+
+    /* Analytic Jacobian: n_grid is normalized by n_inf, which depends on phi through Ucrit(mu) only. dninf[m] =
+     * d n_inf/d psi[m], with the trapezoid weights of the integral above (level k of index j: Wj Wk) and delta
+     * Ucrit from the barrier table exactly as in the rows (DFO_JAC_BARRIER). Subtracted at the end. */
+    double *dninf = NULL;
+    if (want_jac && (dfo_jac_terms & DFO_JAC_BARRIER)) {
+        const double hj = 1e-4;
+        dninf = calloc(dfo_jac_n, sizeof(double));
+        for (j = 0; j < j_inf; j++) {
+            double Wj = 2.0 * 0.5 * deltax_inf * ((j >= 1) + (j + 1 < j_inf));   /* the factor 2 of n_inf included */
+            for (k = j; k < j_inf; k++) {
+                double Wk = ((k > j) ? vxinf[j][k] - vxinf[j][k-1] : 0.0) + ((k + 1 < j_inf) ? vxinf[j][k+1] - vxinf[j][k] : 0.0);
+                double m0 = muinf[k], U0 = chiinf[k], Uc = lin_interp(muopen, Ucritf, m0, maxj, 790);
+                double cB = Wj * Wk * (closed_intdU(m0, U0, U0, Uc + hj, Ucap, dvz, FF, mumu, UU, sizemumu, sizeUU)
+                                     - closed_intdU(m0, U0, U0, Uc - hj, Ucap, dvz, FF, mumu, UU, sizemumu, sizeUU)) / (2.0 * hj);
+                if (cB == 0.0) continue;
+                int a = lin_interp_idx(muopen, m0, maxj);
+                double dmu_a = muopen[a+1] - muopen[a];
+                double t = (m0 - muopen[a]) / dmu_a, sB = (Btab[a+1] - Btab[a]) / dmu_a;
+                for (int side = 0; side < 2; side++) {
+                    int aa = a + side, jo = aa - 1, m;
+                    double wt = side ? t : 1.0 - t;
+                    if (bnode[aa] >= 0 && bnode[aa] < dfo_jac_n) dninf[bnode[aa]] += cB * wt;
+                    if (jo >= 0 && jo < sizexbar && bk_v[jo] != NULL && bk_v[jo][0] != NULL)
+                        for (m = bk_lo[jo][0]; m <= bk_hi[jo][0] && m < dfo_jac_n; m++)
+                            dninf[m] -= cB * sB * wt * bk_v[jo][0][m - bk_lo[jo][0]];
+                }
+            }
+        }
+    }
     if (DEBUG == 1) {
         printf("for charge = %f\n", charge);
         printf("n_inf = %f\n", n_inf);
@@ -1521,10 +1551,13 @@ void densfinorb_par(double Ti, double lenfactor, double alpha,
     }
 
     if (want_jac) {
-        /* d/dpsi -> d/dphi_grid (psi = charge phi/Ti), normalized as n_grid; rows past the n grid zeroed */
+        /* d/dpsi -> d/dphi_grid (psi = charge phi/Ti), normalized as n_grid (n/n_inf, so minus n d n_inf/n_inf);
+         * rows past the n grid zeroed */
         for (ic = 0; ic < dfo_jac_n; ic++)
             for (int m = 0; m < dfo_jac_n; m++)
-                dfo_jac[(size_t)ic * dfo_jac_n + m] = (ic < *size_ngrid) ? dfo_jac[(size_t)ic * dfo_jac_n + m] * (charge / Ti) / n_inf : 0.0;
+                dfo_jac[(size_t)ic * dfo_jac_n + m] = (ic < *size_ngrid)
+                    ? (dfo_jac[(size_t)ic * dfo_jac_n + m] - (dninf ? n_grid[ic] * dninf[m] : 0.0)) * (charge / Ti) / n_inf : 0.0;
+        free(dninf);
         for (j = 0; j < sizexbar; j++) {
             if (bk_v[j] != NULL) {
                 for (k = 0; k <= upperlimit[j]; k++) free(bk_v[j][k]);

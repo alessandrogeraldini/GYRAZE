@@ -1390,6 +1390,7 @@ int main(void) {
 	double alpha_deg, factor_small_grid_parameter=1.0;
 // quantities related to overall current, potential drop or any bump in potential in Debye sheath (not implemented yet)
 	double v_cut, current, v_cutDS = 0.5;
+	double ds_border_g = NAN;   /* DS_BORDERED: phi'(x*) of the current DS profile, from newguess_bordered */
 	double phi0_DSions = 0.0;   /* MP entrance potential the DS ion density was last evaluated with */
 // quantities related to electrostatic potential in the magnetic preasheath / Chodura sheath
 	double *x_grid, *phi_grid;
@@ -1746,6 +1747,11 @@ i=0;
 	}
 	printf("\tfix_current = %d\n", fix_current);
 	fprintf(fout, "\tfix_current = %d\n", fix_current);
+	if (DS_BORDERED && (fix_current != 0 || ds_solver != 1)) {
+		printf("ERROR: DS_BORDERED (mps.h) finds phi_wall itself: it needs set_current 0 and ds solver 1\n");
+		exit(-1);
+	}
+	if (DS_BORDERED) printf("\tDS_BORDERED: phi_wall is solved for (marginally monotone DS); the input value is the starting guess\n");
 	if (fix_current != 0) {
 		printf("\tcurrent = j/(e*n_MPE*v_t,i) = %f\n", target_current);
 		fprintf(fout, "\tcurrent = j/(e*n_MPE*v_t,i) = %f\n", target_current);
@@ -2423,6 +2429,16 @@ i=0;
 			make_phigrid(x_DSgrid, phi_DSgrid, size_phiDSgrid, 0.0, deltaxDS, 0, -phi_grid[0] - 0.5*v_cut*v_cut, 1.0, alpha);
 		if (restart_flag)
 			load_phi_restart("restart_phi_DS.txt", x_DSgrid, phi_DSgrid, size_phiDSgrid, 1);
+#if DS_BORDERED
+		/* A restarted DS keeps its own wall value (DS_RESTART_CORRECTION 0), and with DS_BORDERED the wall is then taken
+		 * from the profile, which silently replaced the input phi_wall. Move the wall to the input value instead, by a
+		 * shift that dies off over ~1 rho_e, so that the input phi_wall is the starting guess. */
+		if (restart_flag) {
+			double dW = -0.5*v_cutDS*v_cutDS - phi_DSgrid[0];
+			printf("restart (DS_BORDERED): DS wall moved from %f to the input %f\n", phi_DSgrid[0], phi_DSgrid[0] + dW);
+			for (i=0; i<size_phiDSgrid; i++) phi_DSgrid[i] += dW*exp(-x_DSgrid[i]);
+		}
+#endif
 		printf("At beginning phi_DSgrid[1] = %f, phi_DSgrid[0] = %f\n", phi_DSgrid[1], phi_DSgrid[0]);
 
 		if (gamma_DS >= TINY) {
@@ -2683,7 +2699,18 @@ i=0;
 				printf("\tTo avoid a non-monotonic potential, setting the total potential drop to be just above the presheath potential drop\n");
 				v_cut = sqrt(-2.0*phi_grid[0] + 1.0);
 			}
+#if DS_BORDERED
+			/* The DS wall value is an unknown of the DS solve (newguess_bordered): the DS drop is what the DS solution
+			 * says, and phi_wall = phi_MP(0) + phi_DS(0) follows from it and the MP entrance potential. */
+			v_cutDS = sqrt(-2.0*phi_DSgrid[0]);
+			v_cut = sqrt(v_cutDS*v_cutDS - 2.0*phi_grid[0]);
+			printf("bordered: phi_wall = %f (MP drop %f + DS drop %f), phi'(x*) %.3e\n",
+			       -0.5*v_cut*v_cut, phi_grid[0], phi_DSgrid[0], ds_border_g);
+			fprintf(fout, "bordered: phi_wall = %f (MP drop %f + DS drop %f), phi'(x*) %.3e\n",
+			        -0.5*v_cut*v_cut, phi_grid[0], phi_DSgrid[0], ds_border_g);
+#else
 			v_cutDS = sqrt(2.0*phi_grid[0] + v_cut*v_cut);
+#endif
 
 			//if ( 0.5*v_cutDS*v_cutDS < 0.1) {
 			//	weight_DS = WEIGHT_DS/10.0;
@@ -2791,7 +2818,8 @@ i=0;
 				fclose(fp);
 
 				if ( (error_DS[0] < tol_DS[0]) && (error_DS[1] < tol_DS[1])
-				     && (DS_WALL_TOL <= 0.0 || fabs(phi_DSgrid[0] + 0.5*v_cutDS*v_cutDS) < DS_WALL_TOL) ) convergence_DS += 1 ;
+				     && (DS_WALL_TOL <= 0.0 || fabs(phi_DSgrid[0] + 0.5*v_cutDS*v_cutDS) < DS_WALL_TOL)
+				     && (!DS_BORDERED || fabs(ds_border_g) < DS_BORDER_TOL) ) convergence_DS += 1 ;
 			else convergence_DS = 0;
 			if (convergence_DS == 0 || convergence_MP == 0 || convergence_j == 0) { 
 				printf("phi_DSgrid[0] = %f, wall target %f (gap %.2e)\n", phi_DSgrid[0], -0.5*v_cutDS*v_cutDS, phi_DSgrid[0] + 0.5*v_cutDS*v_cutDS);
@@ -3044,11 +3072,50 @@ i=0;
 						free(colbuf); free(spec); free(isspec);
 					}
 #endif
+#if DS_BORDERED
+					/* Wall column of the bordered system, d n_e/d phi_DS(0), by central differences: two electron density
+					 * evaluations with the wall moved by +-NONLOCAL_JAC_EPS. (Column 0 of the analytic Jacobian is not used:
+					 * it misses the change of the normalization n_inf through the reflection cutoff, test_jac_DS node 0.)
+					 * n_i does not depend on the wall value. All outputs except dne_dW go to scratch arrays. */
+					{
+						static double *dne_dW = NULL, *ne_p, *ne_m, *s_delta, *s_chiM, *s_vy, *s_muop, *s_chiop, *s_dmudvy;
+						static int nalloc = 0;
+						int sz_p = size_neDSgrid, sz_m = size_neDSgrid, op_scr, jj;
+						double flux_scr, Q_scr, phiW = phi_DSgrid[0];
+						if (nalloc != size_phiDSgrid) {
+							if (dne_dW != NULL) { free(dne_dW); free(ne_p); free(ne_m); free(s_delta); free(s_chiM); free(s_vy); free(s_muop); free(s_chiop); free(s_dmudvy); }
+							dne_dW = calloc(size_phiDSgrid, sizeof(double));
+							ne_p = calloc(size_phiDSgrid, sizeof(double)); ne_m = calloc(size_phiDSgrid, sizeof(double));
+							s_delta = malloc(size_phiDSgrid*sizeof(double)); s_chiM = malloc(size_phiDSgrid*sizeof(double));
+							s_vy = malloc((ZOOM_DS*size_phiDSgrid+1)*sizeof(double)); s_muop = malloc((ZOOM_DS*size_phiDSgrid+1)*sizeof(double));
+							s_chiop = malloc((ZOOM_DS*size_phiDSgrid+1)*sizeof(double)); s_dmudvy = malloc((ZOOM_DS*size_phiDSgrid+1)*sizeof(double));
+							nalloc = size_phiDSgrid;
+						}
+						phi_DSgrid[0] = phiW + NONLOCAL_JAC_EPS;
+						DENSFINORB(1.0, 1.0, alpha, size_phiDSgrid, &sz_p, ne_p, s_delta, s_chiM, x_DSgrid, phi_DSgrid, -1.0, dist_e_GK, mu_e, U_e_DS, size_mu_e, size_vpar_e, 0.0, &flux_scr, &Q_scr, ZOOM_DS, ds_stop, -999.9, s_vy, s_muop, s_chiop, s_dmudvy, &op_scr, NULL, NULL);
+						phi_DSgrid[0] = phiW - NONLOCAL_JAC_EPS;
+						DENSFINORB(1.0, 1.0, alpha, size_phiDSgrid, &sz_m, ne_m, s_delta, s_chiM, x_DSgrid, phi_DSgrid, -1.0, dist_e_GK, mu_e, U_e_DS, size_mu_e, size_vpar_e, 0.0, &flux_scr, &Q_scr, ZOOM_DS, ds_stop, -999.9, s_vy, s_muop, s_chiop, s_dmudvy, &op_scr, NULL, NULL);
+						phi_DSgrid[0] = phiW;
+						for (jj = 0; jj < size_phiDSgrid; jj++)
+							dne_dW[jj] = (jj < sz_p && jj < sz_m) ? (ne_p[jj] - ne_m[jj]) / (2.0*NONLOCAL_JAC_EPS) : 0.0;
+						/* The wall moves only once the MP is converged and the DS residual is within tolerance, or has stopped
+						 * falling (no 10% drop in DS_BORDER_STALL iterations since the wall last moved: a drop below the
+						 * threshold may have no exact solution). See newguess_bordered. */
+						static double best_err = 1e30;
+						static int n_stall = 0;
+						if (error_DS[1] < 0.9 * best_err) { best_err = error_DS[1]; n_stall = 0; } else n_stall++;
+						int move_wall = (convergence_MP < 1) ? 0 : (error_DS[0] < tol_DS[0] && error_DS[1] < tol_DS[1]) ? 1 : (n_stall >= DS_BORDER_STALL) ? 2 : 0;
+						ds_border_g = newguess_bordered(x_DSgrid, ne_DSgrid, sumni_DSgrid, phi_DSgrid, size_phiDSgrid, size_neDSgrid,
+						                                1.0/(gamma_DS*gamma_DS), 2.0, weight_DS, jac_e_DS, jac_i_DS, jac_DS_n, dne_dW, move_wall);
+						if (phi_DSgrid[0] != phiW) { best_err = 1e30; n_stall = 0; }
+					}
+#else
 					{ double _wt0 = omp_get_wtime();
 					newguess_NR(x_DSgrid, ne_DSgrid, sumni_DSgrid, phi_DSgrid, size_phiDSgrid, size_neDSgrid, 1.0/(gamma_DS*gamma_DS), v_cutDS, 2.0, weight_DS, ne_DSgrid_corr_delta, ne_DSgrid_corr_chiM, sumni_DS_corr, jac_y, jac_h, NONLOCAL_JAC_ANALYTIC ? 0 : NONLOCAL_JAC, dir_h, have_dir ? dir_y : NULL, ls_v, &ls_tmodel,
 					            NONLOCAL_JAC_ANALYTIC ? jac_e_DS : NULL, NONLOCAL_JAC_ANALYTIC ? jac_i_DS : NULL, jac_DS_n);
 					have_dir = (dir_h != NULL);
 					printf("newguess_NR (DS) took %.4f s\n", omp_get_wtime() - _wt0); }
+#endif
 #if DS_LINESEARCH == 1 && NONLOCAL_JAC > 0
 					/* Line search along the weakest singular vector (ls_v, from newguess_NR). The LM solve
 					 * suppresses that mode by ~lambda^2/s relative to Newton and s falls to ~1e-3 at a stall,
