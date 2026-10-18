@@ -1192,8 +1192,12 @@ static int dphi_min(const double *x_grid, const double *phi_grid, int e, const d
  *     d n/d phi[m] at node i stored at [i*jac_n + m]);
  *   - wall: dW = -g / (dg/dW), at most DS_BORDER_DWMAX, with the profile following by -z dW, z = J^{-1} b,
  *     b = dF/dW (from dne_dW = d n_e/d phi[0], measured by GYRAZE.c; n_i does not depend on the wall).
- * Change 1: J^{-1} is damped (Levenberg-Marquardt, DS_BORDER_LAMBDA). Near the threshold J is nearly singular
+ * Change 1: J^{-1} is damped (Levenberg-Marquardt: DS_BORDER_LAMBDA for the profile step, LM_LAMBDA for z, as
+ * newguess_NR damps its wall response). Near the threshold J is nearly singular
  * (smallest singular value down to ~1e-3: the solution branch folds) and the undamped step blew the residual up.
+ * While the residual is still large (above DS_BORDER_EARLY_RES, e.g. from a cold guess) the step is taken as
+ * cautiously as newguess_NR takes it (LM_LAMBDA, fraction DS_BORDER_EARLY_WEIGHT): a full first step from a cold
+ * guess threw the weakly constrained far field to +0.03.
  * Change 2: dg/dW is not the linear-model value -c.z (the damping suppresses the very mode the wall acts through;
  * it scattered around 0 with either sign) but the secant between the converged states at the last two wall moves,
  * which also includes the MP's response. And the block elimination's term that feeds the residual F into dW is
@@ -1259,10 +1263,19 @@ double newguess_bordered(double *x_grid, double *ne_grid, double *ni_grid, doubl
 	gsl_matrix_set(J, n-1, n-1, gsl_matrix_get(J, n-1, n-1) + rho/dx2);
 
 	/* 4. Profile step at fixed wall, dphi_F = -J^{-1} F, and the profile's response to the wall, z = J^{-1} b,
-	 *    both damped (LM_LAMBDA) */
+	 *    both damped. z always with LM_LAMBDA, as newguess_NR damps its wall response d_bc: with DS_BORDER_LAMBDA its
+	 *    weak far-field part made a 0.01 wall move swing the far field by ~0.03. dphi_F early on (max relative
+	 *    residual above DS_BORDER_EARLY_RES) as in newguess_NR too: LM_LAMBDA, and the step limited to the fraction
+	 *    DS_BORDER_EARLY_WEIGHT below; then DS_BORDER_LAMBDA and the full weight. */
+	double rmax = 0.0;
+	for (i = 0; i < n; i++) rmax = fmax(rmax, aF[i+1] * invgammasq / ni_grid[i+1]);
+	int early = (rmax > DS_BORDER_EARLY_RES);
+	double lam = early ? LM_LAMBDA : DS_BORDER_LAMBDA;
 	gsl_linalg_SV_decomp(J, V, S, work);   /* J now holds U */
-	lm_solve(J, V, S, DS_BORDER_LAMBDA, mF, dphiF);
-	lm_solve(J, V, S, DS_BORDER_LAMBDA, b, z);
+	lm_solve(J, V, S, lam, mF, dphiF);
+	lm_solve(J, V, S, LM_LAMBDA, b, z);
+	if (early) printf("bordered: early step (max relative residual %.3g > %g): LM lambda %g, step fraction at most %g\n",
+	                  rmax, DS_BORDER_EARLY_RES, lam, DS_BORDER_EARLY_WEIGHT);
 
 	/* 5. Wall step from g = phi'(x*), with the secant dg/dW (g, W and x* where the wall last moved: g_last, W_last,
 	 *    x_last; no secant if x* has jumped to another feature since, by more than a gyroradius) */
@@ -1290,11 +1303,12 @@ double newguess_bordered(double *x_grid, double *ne_grid, double *ni_grid, doubl
 	if (move_wall == 2) printf("bordered: DS residual stalled above tolerance: no exact solution at this drop, drop raised\n");
 
 	/* 6. Apply: the profile step by the fraction frac, the wall and the profile's response to it in full */
-	double big = 0.0, frac = weight, W_old = phi_grid[0];
+	double big = 0.0, zmax = 0.0, frac = early ? fmin(weight, DS_BORDER_EARLY_WEIGHT) : weight, W_old = phi_grid[0];
 	for (i = 0; i < n; i++) big = fmax(big, fabs(gsl_vector_get(dphiF, i)));
 	if (!isfinite(big) || !isfinite(dW)) { printf("bordered: singular Jacobian, no step\n"); frac = 0.0; dW = 0.0; }
 	else if (frac * big > DS_DPHIMAX) frac = DS_DPHIMAX / big;
 	for (i = 0; i < n; i++) phi_grid[i+1] += frac * gsl_vector_get(dphiF, i) - dW * gsl_vector_get(z, i);
+	for (i = 0; i < n; i++) zmax = fmax(zmax, fabs(dW * gsl_vector_get(z, i)));
 	phi_grid[0] += dW;
 
 	/* 7. Re-attach the tail beyond the n_e grid, matched in value and slope at node n (as newguess_NR does) */
@@ -1309,8 +1323,8 @@ double newguess_bordered(double *x_grid, double *ne_grid, double *ni_grid, doubl
 	/* 8. The new profile: x* located again (with the old residual), and the lowest minimum of phi' */
 	kstar = dphi_min(x_grid, phi_grid, n, aF, &nmin, &nsig, wgt, &s, &g, &glow);
 	xstar = (kstar >= 0) ? x_grid[kstar] + s*dx : NAN;
-	printf("bordered: wall %f -> %f, profile step fraction %.3f (max change %.2e); new profile: x* = %.3f, phi'(x*) = %.3e, lowest minimum %.3e\n",
-	       W_old, phi_grid[0], frac, frac*big, xstar, g, glow);
+	printf("bordered: wall %f -> %f (profile response max %.2e), profile step fraction %.3f (max change %.2e); new profile: x* = %.3f, phi'(x*) = %.3e, lowest minimum %.3e\n",
+	       W_old, phi_grid[0], zmax, frac, frac*big, xstar, g, glow);
 
 	gsl_matrix_free(J); gsl_vector_free(mF); gsl_vector_free(b); gsl_vector_free(dphiF); gsl_vector_free(z);
 	gsl_matrix_free(V); gsl_vector_free(S); gsl_vector_free(work); free(aF);

@@ -242,6 +242,15 @@ extern double ds_tol_max;   /* tol_DS[1], set in GYRAZE.c after reading input_nu
 // Levenberg-Marquardt damping of the bordered profile step (and of the wall response z). LM_LAMBDA (0.3) held back
 // the far-field mode so much that a run coming from below the threshold stayed on a far-field hump (residual stuck at
 // 5e-4) past the threshold; 0.05 removed the hump in 3 iterations and converged to 3e-5.
+#ifndef DS_BORDER_EARLY_RES
+#define DS_BORDER_EARLY_RES 0.05
+#endif
+#ifndef DS_BORDER_EARLY_WEIGHT
+#define DS_BORDER_EARLY_WEIGHT 0.1
+#endif
+// early bordered steps: while the max relative DS residual is above DS_BORDER_EARLY_RES the profile step is taken as
+// newguess_NR takes it, damped with LM_LAMBDA and by at most the fraction DS_BORDER_EARLY_WEIGHT. A full, lightly
+// damped first step from a cold guess (residual ~7) threw the far field to +0.03 (phi_wall 4.0, tol_DS 0.01).
 #if DS_BORDERED && !NONLOCAL_JAC_ANALYTIC
 #error "DS_BORDERED needs the analytic Jacobian (NONLOCAL_JAC_ANALYTIC 1)"
 #endif
