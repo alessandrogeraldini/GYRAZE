@@ -18,7 +18,7 @@
 // sqrt(2 (U_lb - Uperp)) (lifted_intdU). 0 = the original change of variable U = U_lb + v^2/2, which drops the
 // Jacobian v/v_z and overcounted n_e by 1-4.5% around bumps and dips (kept to reproduce earlier results).
 #ifndef TRAP_FILL
-#define TRAP_FILL 3
+#define TRAP_FILL 0
 #endif
 // DS electrons: population of trapped closed-orbit states, which collisionless theory leaves undetermined (bits).
 // 1 = states below an accessibility lift (U < U_lb) that are reflected downstream (U - mu < Ucrit) bounce between
@@ -207,7 +207,7 @@ extern double ds_tol_max;   /* tol_DS[1], set in GYRAZE.c after reading input_nu
 // by a few tenths of a percent on its own. Measured scale: run-to-run scatter ~1e-5, resize jitter ~0.7%,
 // a genuinely bad step (lambda = 0.1 at the 3.25 plateau) +176%. 3% sits well clear of both ends.
 #ifndef DS_XEND
-#define DS_XEND 16.6
+#define DS_XEND 0.0
 //#define DS_XEND 16.6
 #endif
 // End the DS n_e grid at the first point with x >= DS_XEND, instead of where n_e first comes within MARGIN_DS
@@ -217,10 +217,19 @@ extern double ds_tol_max;   /* tol_DS[1], set in GYRAZE.c after reading input_nu
 // x ~ 6.5 to x ~ 16.6, and in steady state the grid length locked into the bump/dip limit cycle (67 <-> 71
 // points at 3.25). x = 9 is about where MARGIN_DS = 0.0005 stops on the 3.25 plateau. Handed to densfinorb(_par)
 // through its margin argument: a margin >= 1 means "stop at this x" (a negative one still means "don't stop").
+// With DS_XEND 0 the electron margin end is outward-only (dfo_xend_min): once the margin has been met at some x,
+// later iterations never end the n_e grid before it. Phi_wall 3.8, bordered, tol_DS 1e-4: MARGIN_DS 0.008 ends at
+// 14.3-14.8 and 0.005 at 16.1-16.7, both converging to the DS_XEND 16.6 threshold (3.7010 / 3.7013 vs 3.7013).
 #define DS_WALL_TOL 1e-3
 // the DS only counts as converged once its wall potential is within this of -0.5 v_cutDS^2 (<= 0: no check)
+#ifndef DS_FF_KAPPA
+#define DS_FF_KAPPA 0.0
+#endif
+// DS Newton (ds solver 1) with the analytic Jacobian: floor each row's local d(ne - ni)/dphi at DS_FF_KAPPA * n_e
+// (Picard's Boltzmann model: 1), which stiffens the step along the weakly determined far-field level. 0 = off.
+// phi_wall 3.4, TRAP_FILL 0, LM from a cold start: 1 converged with DS_XEND 16.6 (107 its), not with DS_XEND 0.
 #ifndef DS_BORDERED
-#define DS_BORDERED 1
+#define DS_BORDERED 0
 #endif
 // DS Newton (ds solver 1): 1 = find the wall potential at which the DS profile is about to become non-monotone.
 // The wall value is then an unknown, fixed by phi'(x*) = 0 at the first interior minimum x* of phi' (bordered
@@ -285,6 +294,12 @@ double bilin_interp(double x, double y, double **FF, double *xx, double *yy, int
  * channels (DFO_JAC_* bits; for testing). */
 extern double *dfo_jac;
 extern int dfo_jac_n, dfo_jac_terms;
+/* DS electrons with the margin end (DS_XEND 0): the n_e grid never ends before dfo_xend_min, which GYRAZE.c raises to
+ * the farthest end reached so far, so the end can move outward but not back in (see DS_XEND). dfo_margin_stop says
+ * whether the last call's grid ended on the margin test (1) or ran to the end of the grid (0); only the former
+ * raises dfo_xend_min, so a cold start whose first profiles never meet the margin does not lock the end at the cap. */
+extern double dfo_xend_min;
+extern int dfo_margin_stop;
 #define DFO_JAC_LOCAL   1   /* chi(x) at the point itself: the v_x <-> U_perp map, incl. the chi_M limit there */
 #define DFO_JAC_CHIM    2   /* chi_M of each orbit: the upper U_perp limit, delta psi at the orbit's maximum */
 #define DFO_JAC_MU      4   /* mu of each closed orbit, an integral of psi over the orbit */

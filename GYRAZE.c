@@ -2593,6 +2593,7 @@ i=0;
 #endif
 					DENSFINORB(1.0, 1.0, alpha, size_phiDSgrid, &size_neDSgrid, ne_DSgrid, ne_DSgrid_corr_delta, ne_DSgrid_corr_chiM, x_DSgrid, phi_DSgrid, -1.0, dist_e_GK, mu_e, U_e_DS, size_mu_e, size_vpar_e, 0.0, &flux_eDS, &garbage, ZOOM_DS, ds_stop, -999.9, vy_e_wall, mu_e_op, chiM_e, twopidmudvy_e, &size_op_e, fmu_DS, fjmc_DS);
 					dfo_jac = NULL;
+					if (DS_XEND <= 0.0 && dfo_margin_stop && x_DSgrid[size_neDSgrid] > dfo_xend_min) dfo_xend_min = x_DSgrid[size_neDSgrid];   /* margin end: outward only, once the margin is actually met */
 					if (fmu_DS != NULL) fclose(fmu_DS);
 					if (fjmc_DS != NULL) fclose(fjmc_DS);
 				}

@@ -100,6 +100,8 @@ static double uperp_from_mu3(int j, double mu_target, double *xbarr, double *xx,
  * ----------------------------------------------------------------------- */
 double *dfo_jac = NULL;
 int dfo_jac_n = 0, dfo_jac_terms = DFO_JAC_ALL;
+double dfo_xend_min = 0.0;   /* electrons, margin end: never stop before this x (see mps.h) */
+int dfo_margin_stop = 0;     /* 1 if the last call's grid ended on the margin test, 0 if it ran to size_xlim */
 
 /* Distribution-function dump (electrons): with the environment variable DFO_FD_X set, the first density node with
  * x >= DFO_FD_X has every closed-orbit level written to OUTPUT/fdist_levels.txt (j k xbar mu Uperp U_lb Ucrit dvx
@@ -1499,12 +1501,14 @@ void densfinorb_par(double Ti, double lenfactor, double alpha,
          * on the rising branch below phi = 0 (negative margin: never, run to size_xlim) */
         int stop_here = (margin >= 1.0)
             ? ((ic != size_xlim) && (x_grid[ic] >= margin))
-            : ((ic != size_xlim) && (1.0 - n_grid[ic]/n_inf <= margin) && (ic > 0 && phi_grid[ic] > phi_grid[ic-1]) && phi_grid[ic] < 0.0);
+            : ((ic != size_xlim) && (1.0 - n_grid[ic]/n_inf <= margin) && (ic > 0 && phi_grid[ic] > phi_grid[ic-1]) && phi_grid[ic] < 0.0
+               && (charge > 0.0 || x_grid[ic] >= dfo_xend_min));
         if (stop_here) {
             if (margin >= 1.0) printf("ic = %d/%d, size_xlim = %d, fixed end x >= %f (1 - n/n_inf = %f)\n", ic, size_phigrid, size_xlim, margin, 1.0 - n_grid[ic]/n_inf);
             else printf("ic = %d/%d, size_xlim = %d, margin = %f, condition (< margin?) = %f\n", ic, size_phigrid, size_xlim, margin, 1.0 - n_grid[ic]/n_inf);
             stop = 1;
             *size_ngrid = ic;
+            dfo_margin_stop = (margin < 1.0);
             printf("stopping density evaluation at x = %f, density = %f*n_inf\n", x_grid[ic], n_grid[ic]/n_inf);
         }
         if (DEBUG == 1) {
@@ -1515,6 +1519,7 @@ void densfinorb_par(double Ti, double lenfactor, double alpha,
             printf("ic = %d/%d\n", ic, size_phigrid);
             stop = 1;
             *size_ngrid = ic;
+            dfo_margin_stop = 0;
             printf("In densfinorb_par.c: reached maximum distance from wall\n");
         }
         if (ic == size_xlim) {

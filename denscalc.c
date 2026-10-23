@@ -2443,11 +2443,13 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 		//if ( (ic != size_xlim) && ( 1.0 - n_grid[ic]/n_inf <= margin ) && (ic >= 5 && phi_grid[ic] > phi_grid[ic-1] && phi_grid[ic-1] > phi_grid[ic-2] && phi_grid[ic-2] > phi_grid[ic-3] && phi_grid[ic-3] > phi_grid[ic-4] && phi_grid[ic-4] > phi_grid[ic-5]) && (charge >= 0 || x_grid[ic] > 4.0) && phi_grid[ic] < 0.0 ) {
 		/* margin >= 1: a fixed end at x = margin (DS_XEND); otherwise the density threshold, as before */
 		if ( (margin >= 1.0) ? ((ic != size_xlim) && (x_grid[ic] >= margin))
-		                     : ((ic != size_xlim) && ( 1.0 - n_grid[ic]/n_inf <= margin ) && (ic > 0 && phi_grid[ic] > phi_grid[ic-1]) && phi_grid[ic] < 0.0) ) {
+		                     : ((ic != size_xlim) && ( 1.0 - n_grid[ic]/n_inf <= margin ) && (ic > 0 && phi_grid[ic] > phi_grid[ic-1]) && phi_grid[ic] < 0.0
+		                        && (charge > 0.0 || x_grid[ic] >= dfo_xend_min)) ) {
 		//if ( (ic != size_xlim) && ( 1.0 - n_grid[ic]/n_inf <= margin )){
 			printf("ic = %d/%d, size_xlim = %d, margin = %f, condition (< margin?) = %f\n", ic, size_phigrid, size_xlim, margin, 1.0 - n_grid[ic]/n_inf);
 			stop = 1;
 			*size_ngrid = ic; 
+			dfo_margin_stop = (margin < 1.0);
 			printf("stopping density evaluation at x = %f, density = %f*n_inf, because either the potential or the charge density perturbation are too small\n", x_grid[ic], n_grid[ic]/n_inf);
 		}
 		//else if (xx[i] > xx[size_finegrid-1] - limit_rho) {
@@ -2469,6 +2471,7 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 			printf("ic = %d/%d\n", ic, size_phigrid);
 			stop = 1;
 			*size_ngrid = ic; 
+			dfo_margin_stop = 0;
 			printf("In densfinorb.c: reached maximum distance from wall at which can calculate density\n");
 		}
 		if (ic == size_xlim) {

@@ -684,6 +684,24 @@ void newguess_NR(double *x_grid, double *ne_grid, double *ni_grid, double *phi_g
 			}
 		}
 		gsl_matrix_set(J, ninner-1, ninner-1, gsl_matrix_get(J, ninner-1, ninner-1) + rho / deltaxsq);
+		/* DS_FF_KAPPA > 0: floor each row's local (diagonal) density response at kappa n_e, the Boltzmann response
+		 * Picard's model uses (kappa 1). In the near-neutral far field the electron and ion parts of d(ne - ni)/dphi
+		 * nearly cancel (marginal Bohm), so J barely resists a shift of the far-field level and the step moves it a
+		 * long way (phi_wall 3.4, TRAP_FILL 0: up to the entrance level, where the margin grid end jumps and the
+		 * empty wells make n_e kink). The diagonal of the nonlocal Jacobian is small almost everywhere, so the floor
+		 * acts on nearly every row, but near the wall the Laplacian (-2/dx^2) dominates: in effect only smooth,
+		 * long-wavelength changes such as the far-field level are stiffened. Only the step changes, not the residual. */
+		if (DS_FF_KAPPA > 0.0) {
+			int nfl = 0; double add = 0.0;
+			for (i = 0; i < ninner; i++) {
+				double dresp = jac_e[(size_t)(i+1)*jac_n + i+1] - jac_i[(size_t)(i+1)*jac_n + i+1], floor = DS_FF_KAPPA * ne_grid[i+1];
+				if (dresp < floor) {
+					gsl_matrix_set(J, i, i, gsl_matrix_get(J, i, i) - gamma2 * (floor - dresp));
+					nfl++; add += floor - dresp;
+				}
+			}
+			printf("NR: far-field floor (kappa %g): %d of %d rows, mean added response %.3g\n", DS_FF_KAPPA, nfl, ninner, nfl ? add/nfl : 0.0);
+		}
 	}
 
 	/* Nonlocal electron response (NONLOCAL_JAC > 0): the loop above took dne/dphi to be the local
