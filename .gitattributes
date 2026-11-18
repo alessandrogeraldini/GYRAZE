@@ -1,0 +1,2 @@
+# Input files are read line by line, and a Windows line ending on a blank line would be read as data
+input_*.txt text eol=lf

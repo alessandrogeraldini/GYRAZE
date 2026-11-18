@@ -62,10 +62,10 @@ double lin_interp(double *xx, double *yy, double x, int n, int bla) {
 	else {
 		if ( (x < xx[0]) && (x > xx[0] - (xx[1] - xx[0])) ) {
 			answer = yy[0] - (xx[0] - x)*(yy[1] - yy[0])/(xx[1]-xx[0]);
-			printf("WARNING in lin_interp: extrapolation carried out on the right. Make sure this does not happen often\n");
+			printf("WARNING in lin_interp: extrapolation carried out on the left. Make sure this does not happen often\n");
 		}
 		else if ( (x > xx[n-1]) && (x < xx[n-1] + (xx[n-1] - xx[n-2])) ) {
-			answer = yy[0] + (xx[n-1] - x)*(yy[n-1] - yy[n-2])/(xx[n-1]-xx[n-2]); 
+			answer = yy[n-1] + (x - xx[n-1])*(yy[n-1] - yy[n-2])/(xx[n-1]-xx[n-2]); 
 			printf("WARNING in lin_interp: extrapolation carried out on the right. Make sure this does not happen often\n");
 		}
 		else {
