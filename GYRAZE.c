@@ -18,6 +18,7 @@
 #include <gsl/gsl_spline.h>
 #include <gsl/gsl_linalg.h>
 #include <gsl/gsl_sf_bessel.h>
+#include <gsl/gsl_sf_erf.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include "mps.h"
@@ -616,6 +617,22 @@ void evalBohmshouldbe(double *Bohmshouldbe, double phi0, double **distfunc, doub
 	free(nepart);
 }
 
+// turn a Windows line ending "\r\n" at the end of a line read by fgets into "\n"
+static void strip_cr(char *line) {
+	size_t len = strlen(line);
+	if ( (len >= 2) && (line[len-2] == '\r') && (line[len-1] == '\n') ) {
+		line[len-2] = '\n';
+		line[len-1] = '\0';
+	}
+	else if ( (len >= 1) && (line[len-1] == '\r') ) line[len-1] = '\n'; // last line, no \n
+}
+
+// exp(1/u)*erfc(1/sqrt(u)), evaluated as exp(1/u + log(erfc(1/sqrt(u)))) so that it neither loses all its digits
+// (1 - erf(1/sqrt(u)) is exactly 0 in double precision for u below about 0.03) nor overflows at small u
+static double exp_erfc_invsqrt(double u) {
+	return exp(1.0/u + gsl_sf_log_erfc(1.0/sqrt(u)));
+}
+
 void Figen(double ***ffarr, double **Uminmuarr, double **muarr, int num_spec, double *nioverne, double *mioverme, double *TioverTe, int *sizevpar, int *sizevperp, double dvpar, double dvperp) {
 	int n, i, j, coldelectrons;
 	double mu, Uminmu, ff;
@@ -651,9 +668,13 @@ void Figen(double ***ffarr, double **Uminmuarr, double **muarr, int num_spec, do
 						u -= 0.001;
 					else
 						u += 0.001;
-					normalization = (1.0/sqrt(2.0))*2.0*(sqrt(M_PI*u) - M_PI*exp(1/u)*(1-erf(1.0/sqrt(u))))/(2.0*u*sqrt(u));
+					if (u < 0.0005) { // the integral is about 1 + u at small u, so the search can't get closer with this step
+						printf("ERROR: no ADHOC flow parameter found for T_i/T_e = %f: the search reached u = 0\n", condition);
+						exit(EXIT_FAILURE);
+					}
+					normalization = (1.0/sqrt(2.0))*2.0*(sqrt(M_PI*u) - M_PI*exp_erfc_invsqrt(u))/(2.0*u*sqrt(u));
 					//printf("normalization = %f\n", normalization);
-					chodura = (1.0/sqrt(2.0))*0.5*2.0*M_PI*exp(1.0/u)*(1.0-erf(1.0/sqrt(u)))/(2.0*sqrt(u)*normalization);
+					chodura = (1.0/sqrt(2.0))*0.5*2.0*M_PI*exp_erfc_invsqrt(u)/(2.0*sqrt(u)*normalization);
 					//printf("%f, %f, %f, %f %f\n", normalization, u, flow, chodura, condition);
 				}
 			}
@@ -666,7 +687,7 @@ void Figen(double ***ffarr, double **Uminmuarr, double **muarr, int num_spec, do
 				//normalization =  (1 + erf(u))*(1.0+2.0*u*u) + (2.0/sqrt(M_PI))*u*exp(-u*u);
 			else
 				//normalization =  2.0*(sqrt(M_PI*u) - M_PI*exp(1/u)*(1-erf(1/sqrt(u))))/(2.0*u*sqrt(u));
-				normalization = (1.0/sqrt(2.0))*2.0*(sqrt(M_PI*u) - M_PI*exp(1/u)*(1-erf(1.0/sqrt(u))))/(2.0*u*sqrt(u));
+				normalization = (1.0/sqrt(2.0))*2.0*(sqrt(M_PI*u) - M_PI*exp_erfc_invsqrt(u))/(2.0*u*sqrt(u));
 		}
 
 		if (coldelectrons == 0) {
@@ -770,9 +791,13 @@ void Figenerate(struct distfuncDKGK *FiGK, int num_spec, double *nioverne, doubl
 						u -= 0.001;
 					else
 						u += 0.001;
-					normalization = (1.0/sqrt(2.0))*2.0*(sqrt(M_PI*u) - M_PI*exp(1/u)*(1-erf(1.0/sqrt(u))))/(2.0*u*sqrt(u));
+					if (u < 0.0005) { // the integral is about 1 + u at small u, so the search can't get closer with this step
+						printf("ERROR: no ADHOC flow parameter found for T_i/T_e = %f: the search reached u = 0\n", condition);
+						exit(EXIT_FAILURE);
+					}
+					normalization = (1.0/sqrt(2.0))*2.0*(sqrt(M_PI*u) - M_PI*exp_erfc_invsqrt(u))/(2.0*u*sqrt(u));
 					//printf("normalization = %f\n", normalization);
-					chodura = (1.0/sqrt(2.0))*0.5*2.0*M_PI*exp(1.0/u)*(1.0-erf(1.0/sqrt(u)))/(2.0*sqrt(u)*normalization);
+					chodura = (1.0/sqrt(2.0))*0.5*2.0*M_PI*exp_erfc_invsqrt(u)/(2.0*sqrt(u)*normalization);
 					//printf("%f, %f, %f, %f %f\n", normalization, u, flow, chodura, condition);
 				}
 			}
@@ -785,7 +810,7 @@ void Figenerate(struct distfuncDKGK *FiGK, int num_spec, double *nioverne, doubl
 				//normalization =  (1 + erf(u))*(1.0+2.0*u*u) + (2.0/sqrt(M_PI))*u*exp(-u*u);
 			else
 				//normalization =  2.0*(sqrt(M_PI*u) - M_PI*exp(1/u)*(1-erf(1/sqrt(u))))/(2.0*u*sqrt(u));
-				normalization = (1.0/sqrt(2.0))*2.0*(sqrt(M_PI*u) - M_PI*exp(1/u)*(1-erf(1.0/sqrt(u))))/(2.0*u*sqrt(u));
+				normalization = (1.0/sqrt(2.0))*2.0*(sqrt(M_PI*u) - M_PI*exp_erfc_invsqrt(u))/(2.0*u*sqrt(u));
 		}
 
 		if (coldelectrons == 0) {
@@ -1147,6 +1172,7 @@ int main(void) {
 	ncols = 0; // for counting numbers in each row (line) of file
 	i=0;
 	while (fgets(line_hundred, 100, numinput) != NULL) {
+		strip_cr(line_hundred);
 		if ( ( (line_hundred[0] != '#') && (line_hundred[0] != ' ') ) && (line_hundred[0] != '\n') ) {
 			storevals = linetodata(line_hundred, strlen(line_hundred), &ncols);
 			if (i==0) MAX_IT = *storevals;
@@ -1219,6 +1245,7 @@ int main(void) {
 	for (ndirname=0; ndirname<strlen(outputstr);ndirname++) 
 		dirname[ndirname] = outputstr[ndirname];
 	while (fgets(line_hundred, 100, input) != NULL) {	
+		strip_cr(line_hundred);
 		if ( ( (line_hundred[0] != '#') && (line_hundred[0] != ' ') ) && (line_hundred[0] != '\n') ) {
 		storevals = linetodata(line_hundred, strlen(line_hundred), &ncols);
 		//printf("ndirname = %d\n", ndirname);
@@ -2234,7 +2261,7 @@ i=0;
 			if (fp == NULL) {
 				printf("error when opening file %s\n", fpstr);
 			}
-			for (i=0; i<=size_mu_e; i++) {
+			for (i=0; i<size_mu_e; i++) {
 				fprintf(fp, "%f %f\n", mu_e[i], vpar_e_cut[i]);
 			}
 			fclose(fp);

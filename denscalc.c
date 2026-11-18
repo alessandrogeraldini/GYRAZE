@@ -1902,11 +1902,11 @@ void densfinorb(double Ti, double lenfactor, double alpha, int size_phigrid, int
 						Fopen = bilin_interp(mu[j][0], 0.0, FF, mumu, UU, sizemumu, sizeUU, -1, -1); 
 						oorbintgrdold = sqrt(2.0*alpha*sqrt(2.0*(mu[j][0] - chiMax[j]))*openorbit[j])*Fopen;
 						oorbintgrdflowold = alpha*sqrt(2.0*(mu[j][0] - chiMax[j]))*openorbit[j]*Fopen;
-						oorbintgrdenerold = 0.125*pow(2.0*alpha*sqrt(2.0*(mu[j][0] - chiMax[j]))*openorbit[j], 2.0)*Fopen + U*oorbintgrdflowold;
+						oorbintgrdenerold = 0.125*pow(2.0*alpha*sqrt(2.0*(mu[j][0] - chiMax[j]))*openorbit[j], 2.0)*Fopen + mu[j][0]*oorbintgrdflowold;
 						Fopen = bilin_interp(mu[j][0], U-mu[j][0], FF, mumu, UU, sizemumu, sizeUU, -1, -1); 
 						oorbintgrd = sqrt(2.0*alpha*vz*openorbit[j])*Fopen;
 						oorbintgrdflow = alpha*vz*openorbit[j]*Fopen;
-						oorbintgrdenerold = 0.125*pow(2.0*alpha*vz*openorbit[j], 2.0)*Fopen + U*oorbintgrdflow;
+						oorbintgrdener = 0.125*pow(2.0*alpha*vz*openorbit[j], 2.0)*Fopen + U*oorbintgrdflow;
 					}
 					else {
 						frac = 1.0;

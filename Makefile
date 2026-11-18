@@ -18,7 +18,8 @@ ifeq ($(PROFILE), debug)
 CFLAGS+= -O1 -g -ggdb -fsanitize=address -DDEBUG -fno-omit-frame-pointer
 endif
 
-LDFLAGS+= $(CFLAGS) -lgsl -lgslcblas -lm
+LDFLAGS+= $(CFLAGS)
+LDLIBS+= -lgsl -lgslcblas -lm
 
 binaries=GYRAZE
 
