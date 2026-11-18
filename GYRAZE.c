@@ -1112,6 +1112,7 @@ int main(void) {
 // quantities related to the iteration
 	int zoomfactor;
 	int N=0, N_DS=0, convergence_MP = 0, convergence_DS = 0, convergence_j = 0;
+	int converged = 0; // set from the convergence flags, not from the iteration count
 	double error_MP[2], error_DS[2];
 	double weight_j, weight_MP, weight_DS;
 	double Bohmshouldbe=0.0;
@@ -1963,8 +1964,16 @@ i=0;
 	}
 	clock_t end_it = clock(); // finds end time of last iteration
 	tot_time = (double) (end_it - begin_it) / CLOCKS_PER_SEC;
-	printf("At %dth iteration MP iteration with simplified DS model converged successfully in %f seconds\n", N, tot_time);
-	fprintf(fout, "At %dth iteration MP iteration with simplified DS model converged successfully in %f seconds\n", N, tot_time);
+	// the loop above stops either on its convergence flags or on MAX_IT: only the first is convergence
+	converged = ( (convergence_MP >= 2) && ( (fix_current != 1) || (convergence_j >= 2) ) );
+	if (converged) {
+		printf("At %dth iteration MP iteration with simplified DS model converged successfully in %f seconds\n", N, tot_time);
+		fprintf(fout, "At %dth iteration MP iteration with simplified DS model converged successfully in %f seconds\n", N, tot_time);
+	}
+	else {
+		printf("MP iteration with simplified DS model did NOT converge in %d iterations (%f seconds)\n", N, tot_time);
+		fprintf(fout, "MP iteration with simplified DS model did NOT converge in %d iterations (%f seconds)\n", N, tot_time);
+	}
 	printf("FINAL CHECK on accuracy of electrostatic potential solution in MP with simplified electron reflection model in DS\n");
 	fprintf(fout, "FINAL CHECK on accuracy of electrostatic potential solution in MP with simplified electron reflection model in DS\n");
 	for (i=0; i<size_sumnigrid; i++) sumni_grid[i] = 0.0;
@@ -2298,6 +2307,8 @@ i=0;
 			//gsl_permutation_free (p);
 			//gsl_matrix_free (m);
 		}
+		// as above: converged only if the loop stopped on its flags, not on MAX_IT
+		converged = ( (convergence_MP >= 2) && (convergence_DS >= 2) && (convergence_j >= 2) );
 		printf("FINAL CHECK on accuracy of electrostatic potential solutions in MP and DS\n");
 		fprintf(fout, "FINAL CHECK on accuracy of electrostatic potential solutions in MP and DS\n");
 		for (i=0; i<size_sumnigrid; i++) sumni_grid[i] = 0.0;
@@ -2385,13 +2396,14 @@ i=0;
 		fclose(fp);
 	// Print potential and density profiles to files
 	}
-	else {
-	
+	else if (gamma_DS >= TINY) {
+		printf("NOTE: gamma_DS = %f is outside [SMALLGAMMA, 5] = [%f, 5]: the Debye sheath was not solved with finite electron orbits, and the simplified DS model was used\n", gamma_DS, SMALLGAMMA);
+		fprintf(fout, "NOTE: gamma_DS = %f is outside [SMALLGAMMA, 5] = [%f, 5]: the Debye sheath was not solved with finite electron orbits, and the simplified DS model was used\n", gamma_DS, SMALLGAMMA);
 	}
 
-	if (N== MAX_IT) {
-		printf("No convergence after %d iterations :(\n", MAX_IT);
-		fprintf(fout, "No convergence after %d iterations :(\n", MAX_IT);
+	if (!converged) {
+		printf("No convergence after %d iterations :(\n", N);
+		fprintf(fout, "No convergence after %d iterations :(\n", N);
 	}
 	else {
 		clock_t end_itDS = clock(); // finds end time of last iteration
@@ -2543,5 +2555,7 @@ i=0;
 	free(ni_DSgrid);
 	free(U_e_DS);
 	free(vpar_e_DS);
+	// exit status: 0 converged, 2 not converged (a failed final DS Poisson check still exits with -1 above)
+	if (!converged) exit(2);
 	exit(0);
 }
